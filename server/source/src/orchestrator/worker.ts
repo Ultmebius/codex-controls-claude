@@ -3,13 +3,16 @@ import { consumeQuery, type ConsumeQueryHandle } from "../tools/query-consumer.j
 import { buildOptions } from "../utils/build-options.js";
 import { toSessionCreateParams } from "../utils/session-create.js";
 import { raceWithAbort } from "../utils/race-with-abort.js";
-import type {
-  AgentResult,
-  PermissionRequestRecord,
-  PermissionResult,
-  SessionEvent,
-} from "../types.js";
-import { localConfig, inside, withinScope, processSpawner } from "./runtime.js";
+import type { AgentResult, PermissionRequestRecord, SessionEvent } from "../types.js";
+import {
+  localConfig,
+  inside,
+  withinScope,
+  processSpawner,
+  permissionSettings,
+  decisionTimeoutMs,
+  startupTimeoutMs,
+} from "./runtime.js";
 import { InputQueue } from "./input-queue.js";
 import { SupervisorMailbox, type SupervisorMessage } from "./messaging.js";
 import { getSessionMessages, type SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -63,13 +66,19 @@ export interface Worker {
   context?(sessionId: string): ContextInfo;
   isLive?(sessionId: string): boolean;
   maintenanceComplete?(sessionId: string): void;
+  interrupt?(sessionId: string, timeoutMs?: number): Promise<void>;
   stop(sessionId?: string): void;
   destroy(): void;
   setWriteScope?(cwd: string, paths?: string[]): void;
+  permitsArtifact?(cwd: string, file: string): boolean;
 }
 
 export class ClaudeWorker implements Worker {
-  readonly manager = new SessionManager({ maxSessions: 1, sessionTtlMs: Infinity });
+  readonly manager = new SessionManager({
+    maxSessions: 1,
+    sessionTtlMs: Infinity,
+    nativeToolHandling: true,
+  });
   private input?: InputQueue;
   private handle?: ConsumeQueryHandle;
   private abort?: AbortController;
@@ -86,6 +95,14 @@ export class ClaudeWorker implements Worker {
   private writeScope?: { cwd: string; paths: string[] };
   setWriteScope(cwd: string, paths?: string[]) {
     this.writeScope = paths?.length ? { cwd, paths: [...paths] } : undefined;
+  }
+  permitsArtifact(cwd: string, file: string) {
+    // Ledger ownership hint only: this never intercepts a Claude tool call.
+    return (
+      inside(cwd, file) &&
+      (!this.writeScope ||
+        this.writeScope.paths.some((scope) => withinScope(this.writeScope!.cwd, scope, file)))
+    );
   }
   private mailbox?: SupervisorMailbox;
   private messageListeners = new Set<
@@ -178,47 +195,6 @@ export class ClaudeWorker implements Worker {
     };
   }
 
-  private scopedPermission(
-    cwd: string,
-    tool: string,
-    input: Record<string, unknown>
-  ): PermissionResult | undefined {
-    if (
-      [
-        "mcp__codex_supervisor__notify_supervisor",
-        "mcp__codex_supervisor__ask_supervisor",
-      ].includes(tool)
-    )
-      return { behavior: "allow", updatedInput: input };
-    if (!["Read", "Write", "Edit", "Glob", "Grep"].includes(tool)) return undefined;
-    const file = input.file_path ?? input.path ?? ".";
-    if (typeof file !== "string" || !inside(cwd, file))
-      return {
-        behavior: "deny",
-        message: "File operation outside the task workspace",
-        interrupt: false,
-      };
-    if (
-      ["Write", "Edit"].includes(tool) &&
-      this.writeScope &&
-      !this.writeScope.paths.some(
-        (scope) =>
-          inside(this.writeScope!.cwd, scope) && withinScope(this.writeScope!.cwd, scope, file)
-      )
-    )
-      return {
-        behavior: "deny",
-        message: "File mutation outside this worker's reserved write scope",
-        interrupt: false,
-      };
-    if (
-      typeof input.pattern === "string" &&
-      (input.pattern.includes("..") || /^[a-zA-Z]:[\\/]|^[/\\]/.test(input.pattern))
-    )
-      return undefined;
-    return { behavior: "allow", updatedInput: input };
-  }
-
   async start(
     cwd: string,
     prompt: string,
@@ -237,7 +213,7 @@ export class ClaudeWorker implements Worker {
     this.generation++;
     this.eventFloor = -1;
     this.mailbox?.close("Native query replaced");
-    const mailbox = new SupervisorMailbox();
+    const mailbox = new SupervisorMailbox(decisionTimeoutMs());
     this.mailbox = mailbox;
     mailbox.subscribe((message) => {
       if (this.mailbox === mailbox && this.currentId)
@@ -246,6 +222,7 @@ export class ClaudeWorker implements Worker {
     });
     this.hydrated.clear();
     const config = localConfig();
+    const permission = permissionSettings(cwd);
     if (resumeId && this.manager.get(resumeId)) this.manager.delete(resumeId);
     const model = config.model;
     this.configurationSignature = nativeMcpSignature(cwd);
@@ -267,12 +244,11 @@ export class ClaudeWorker implements Worker {
       disallowedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
       persistSession: true,
       strictMcpConfig: false,
-      settings: { model, disableAllHooks: true },
       systemPrompt: {
         type: "preset" as const,
         preset: "claude_code" as const,
         append:
-          "You execute scoped tasks for Codex. Do exactly the requested implementation. Do not run acceptance checks unless asked; the supervisor independently runs them. Report changed paths, important findings and blockers concisely; never omit information needed for acceptance. Use codex_supervisor notify_supervisor only for meaningful milestones and ask_supervisor for scoped questions requiring Codex decisions; an answer is guidance, not human permission or acceptance. If unanswered, stop and report BLOCKED:. Do not spawn subagents/teammates; Codex schedules up to3 workers. Use actually available built-in and enabled MCP tools; supervisor tools are not necessarily yours. Choose suitable command tools yourself. Use absolute file paths on Windows.",
+          "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Do not spawn subagents/teammates; Codex schedules up to3 managed sessions. Supervisor tools are not necessarily yours; select from your actually available tools.",
       },
     };
     if (resumeId)
@@ -280,7 +256,7 @@ export class ClaudeWorker implements Worker {
         toSessionCreateParams({
           sessionId: resumeId,
           source,
-          permissionMode: "default",
+          permissionMode: permission.mode,
           abortController: this.abort,
         })
       );
@@ -290,13 +266,14 @@ export class ClaudeWorker implements Worker {
       abortController: this.abort,
       options: {
         ...buildOptions(source),
+        permissionMode: permission.mode,
+        allowDangerouslySkipPermissions: permission.mode === "bypassPermissions",
         spawnClaudeCodeProcess: processSpawner(this.processStoppers),
         mcpServers: { codex_supervisor: mailbox.createServer() },
       },
-      permissionPolicy: (tool: string, input: Record<string, unknown>) =>
-        this.scopedPermission(cwd, tool, input),
-      permissionRequestTimeoutMs: 60000,
-      sessionInitTimeoutMs: 45000,
+      nativeToolHandling: true,
+      permissionRequestTimeoutMs: decisionTimeoutMs(),
+      sessionInitTimeoutMs: startupTimeoutMs(),
       sessionManager: this.manager,
       onInit: (init: SDKSystemMessage) => {
         this.capabilitySnapshot = capabilitiesFromInit(init);
@@ -306,7 +283,7 @@ export class ClaudeWorker implements Worker {
             toSessionCreateParams({
               sessionId: init.session_id,
               source,
-              permissionMode: "default",
+              permissionMode: permission.mode,
               abortController,
             })
           );
@@ -439,20 +416,59 @@ export class ClaudeWorker implements Worker {
       return;
     }
     this.generation++;
-    this.mailbox?.close("Worker stopped");
-    this.input?.close();
-    this.handle?.close();
-    this.live = false;
-    if (sessionId) {
-      this.manager.cancel(sessionId, { source: "orchestrator" });
-      this.manager.delete(sessionId);
+    let errors = 0;
+    try {
+      this.mailbox?.close("Worker stopped");
+      this.input?.close();
+      this.handle?.close();
+      if (sessionId) {
+        this.manager.cancel(sessionId, { source: "orchestrator" });
+        this.manager.delete(sessionId);
+      }
+    } catch {
+      errors++;
+    } finally {
+      this.live = false;
+      for (const stop of [...this.processStoppers]) {
+        try {
+          stop();
+        } catch {
+          errors++;
+        }
+      }
+      this.processStoppers.clear();
+      this.currentId = undefined;
     }
-    for (const stop of [...this.processStoppers]) stop();
-    this.processStoppers.clear();
-    this.currentId = undefined;
+    if (errors) console.error(`Worker cleanup completed with ${errors} resource errors`);
+  }
+  async interrupt(sessionId: string, timeoutMs = 3000) {
+    if (sessionId !== this.currentId || !this.handle) return;
+    const started = this.manager.getLastEventId(sessionId) ?? -1;
+    // Subscribe before requesting interruption so an immediate native result is retained.
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        off();
+        resolve();
+      };
+      const off = this.manager.subscribe((id, event) => {
+        if (
+          id === sessionId &&
+          event &&
+          event.id > started &&
+          ["result", "error"].includes(event.type)
+        )
+          finish();
+      });
+      const timer = setTimeout(finish, timeoutMs);
+      this.handle!.interrupt();
+    });
   }
   destroy() {
-    this.stop();
-    this.manager.destroy();
+    try {
+      this.stop();
+    } finally {
+      this.manager.destroy();
+    }
   }
 }

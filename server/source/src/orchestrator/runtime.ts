@@ -4,7 +4,62 @@ import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { TerminalProcess, terminalInfo, stopTerminalProcesses } from "./terminal.js";
-import type { Options, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SpawnOptions, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+
+export function permissionSettings(cwd?: string, home = os.homedir()) {
+  const files = [path.join(home, ".claude/settings.json")];
+  if (cwd) {
+    const ancestors: string[] = [];
+    for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+      ancestors.unshift(dir);
+      if (path.dirname(dir) === dir) break;
+    }
+    for (const dir of ancestors)
+      files.push(
+        path.join(dir, ".claude/settings.json"),
+        path.join(dir, ".claude/settings.local.json")
+      );
+  }
+  let mode: PermissionMode = "default";
+  let source = "SDK compatibility default";
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    const settings = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+    const candidate: unknown = settings.permissions?.defaultMode;
+    if (
+      typeof candidate === "string" &&
+      ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"].includes(candidate)
+    ) {
+      mode = candidate as PermissionMode;
+      source = file;
+    }
+  }
+  return { mode, source };
+}
+
+export function decisionTimeoutMs() {
+  const value = Number(process.env.CCC_DECISION_TIMEOUT_MS ?? 300000);
+  if (!Number.isSafeInteger(value) || value < 1000 || value > 1800000)
+    throw new Error("INVALID_DECISION_TIMEOUT: 1000..1800000 milliseconds");
+  return value;
+}
+
+export function defaultWaitMs() {
+  const value = Number(process.env.CCC_WAIT_MS ?? 45000);
+  return Number.isSafeInteger(value) && value >= 1 && value <= 600000 ? value : 45000;
+}
+export function startupTimeoutMs() {
+  const value = Number(process.env.CCC_INIT_TIMEOUT_MS ?? 120000);
+  if (!Number.isSafeInteger(value) || value < 1000 || value > 600000)
+    throw new Error("INVALID_INIT_TIMEOUT: 1000..600000ms");
+  return value;
+}
+export function checkTimeoutMs() {
+  const value = Number(process.env.CCC_CHECK_TIMEOUT_MS ?? 300000);
+  if (!Number.isSafeInteger(value) || value < 1000 || value > 600000)
+    throw new Error("INVALID_CHECK_TIMEOUT: 1000..600000ms");
+  return value;
+}
 
 export function localConfig() {
   const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
@@ -51,8 +106,8 @@ export function inside(root: string, target: string): boolean {
     suffix.unshift(path.basename(existing));
     existing = parent;
   }
-  const resolved = path.join(realpathSync(existing), ...suffix);
-  const relative = path.relative(realpathSync(root), resolved);
+  const resolved = path.join(realpathSync.native(existing), ...suffix);
+  const relative = path.relative(realpathSync.native(root), resolved);
   return (
     relative === "" ||
     (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
@@ -69,7 +124,7 @@ export function withinScope(cwd: string, scope: string, target: string): boolean
       suffix.unshift(path.basename(existing));
       existing = parent;
     }
-    return path.join(realpathSync(existing), ...suffix);
+    return path.join(realpathSync.native(existing), ...suffix);
   };
   const relative = path.relative(resolve(scope), resolve(target));
   return (
@@ -108,8 +163,32 @@ function terminate(child: ChildProcessWithoutNullStreams) {
 }
 
 export function stopOwnedProcesses() {
-  stopTerminalProcesses();
-  for (const child of [...children]) terminate(child);
+  try {
+    stopTerminalProcesses();
+  } finally {
+    for (const child of [...children]) {
+      try {
+        terminate(child);
+      } catch {
+        /* Stop the remaining owned children. */
+      }
+    }
+  }
+}
+export async function shutdownWithFallback(
+  close: () => void | Promise<void>,
+  stop: () => void | Promise<void>,
+  disconnect: () => Promise<void>
+) {
+  try {
+    await close();
+  } finally {
+    try {
+      await stop();
+    } finally {
+      await disconnect();
+    }
+  }
 }
 
 export function executeCheck(command: string, args: string[], cwd: string, signal: AbortSignal) {

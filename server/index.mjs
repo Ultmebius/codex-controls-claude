@@ -3222,8 +3222,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path8) {
-      let input = path8;
+    function removeDotSegments(path10) {
+      let input = path10;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3422,8 +3422,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path8, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path8 && path8 !== "/" ? path8 : void 0;
+        const [path10, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -7568,10 +7568,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path8) {
-  if (!path8)
+function getElementAtPath(obj, path10) {
+  if (!path10)
     return obj;
-  return path8.reduce((acc, key) => acc?.[key], obj);
+  return path10.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -7954,11 +7954,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path8, issues) {
+function prefixIssues(path10, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path8);
+    iss.path.unshift(path10);
     return iss;
   });
 }
@@ -8141,7 +8141,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result2 = { errors: [] };
-  const processError = (error49, path8 = []) => {
+  const processError = (error49, path10 = []) => {
     var _a2, _b2;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -8151,7 +8151,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path8, ...issue2.path];
+        const fullpath = [...path10, ...issue2.path];
         if (fullpath.length === 0) {
           result2.errors.push(mapper(issue2));
           continue;
@@ -8183,8 +8183,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path8 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path8) {
+  const path10 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path10) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -20161,13 +20161,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path8 = ref.slice(1).split("/").filter(Boolean);
-  if (path8.length === 0) {
+  const path10 = ref.slice(1).split("/").filter(Boolean);
+  if (path10.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path8[0] === defsKey) {
-    const key = path8[1];
+  if (path10[0] === defsKey) {
+    const key = path10[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -22535,8 +22535,8 @@ function getErrorMap2() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path8, errorMaps, issueData } = params;
-  const fullPath = [...path8, ...issueData.path || []];
+  const { data, path: path10, errorMaps, issueData } = params;
+  const fullPath = [...path10, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -22651,11 +22651,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path8, key) {
+  constructor(parent, value, path10, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path8;
+    this._path = path10;
     this._key = key;
   }
   get path() {
@@ -30090,55 +30090,166 @@ var EMPTY_COMPLETION_RESULT = {
 
 // src/orchestrator/server.ts
 import os4 from "node:os";
-import path7 from "node:path";
-import { execFileSync as execFileSync3 } from "node:child_process";
+import path9 from "node:path";
+import { execFileSync as execFileSync5 } from "node:child_process";
 
 // src/orchestrator/controller.ts
-import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash3, randomUUID as randomUUID3 } from "node:crypto";
 import {
-  existsSync as existsSync3,
+  existsSync as existsSync5,
   mkdirSync,
-  readFileSync as readFileSync3,
-  readdirSync,
+  readFileSync as readFileSync5,
+  readdirSync as readdirSync2,
   realpathSync as realpathSync2,
   renameSync,
-  writeFileSync,
-  unlinkSync
+  writeFileSync
 } from "node:fs";
-import path3 from "node:path";
+import path5 from "node:path";
 
 // src/orchestrator/runtime.ts
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync as existsSync2, readFileSync as readFileSync2, realpathSync } from "node:fs";
 import os from "node:os";
-import path from "node:path";
-import { execFileSync as execFileSync2, spawn as spawn2 } from "node:child_process";
+import path2 from "node:path";
+import { execFileSync as execFileSync3, spawn as spawn2 } from "node:child_process";
 
 // src/orchestrator/terminal.ts
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { createServer } from "node:net";
-import { randomUUID } from "node:crypto";
-import { spawn, execFileSync } from "node:child_process";
+import { randomUUID as randomUUID2 } from "node:crypto";
+import { spawn, execFileSync as execFileSync2 } from "node:child_process";
 import { createInterface } from "node:readline";
+
+// src/orchestrator/ownership.ts
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import path from "node:path";
+function nativeHelperFile() {
+  const own = fileURLToPath(new URL("./native/CodexClaudeTerminal.dll", import.meta.url));
+  for (const file2 of [
+    process.env.CCC_NATIVE_HELPER,
+    own,
+    fileURLToPath(new URL("../../../native-dist/CodexClaudeTerminal.dll", import.meta.url))
+  ])
+    if (file2 && existsSync(file2)) return file2;
+  const root = path.resolve(path.dirname(own), "../.."), family = path.dirname(root);
+  if (path.basename(family) === "codex-controls-claude" && /^\d+\.\d+\.\d+/.test(path.basename(root)) && existsSync(family)) {
+    for (const version2 of readdirSync(family).filter((v2) => /^\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/.test(v2)).sort((a3, b) => b.localeCompare(a3, void 0, { numeric: true }))) {
+      const file2 = path.join(family, version2, "server/native/CodexClaudeTerminal.dll");
+      try {
+        const manifest = JSON.parse(
+          readFileSync(path.join(family, version2, ".codex-plugin/plugin.json"), "utf8")
+        );
+        if (manifest.name === "codex-controls-claude" && manifest.version === version2 && existsSync(file2))
+          return file2;
+      } catch {
+      }
+    }
+  }
+  return own;
+}
+function processAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error48) {
+    return error48.code === "EPERM";
+  }
+}
+var posixOperation = `const fs=require('node:fs'),r=JSON.parse(fs.readFileSync(0,'utf8'));let owner;
+if(fs.existsSync(r.file))owner=JSON.parse(fs.readFileSync(r.file,'utf8'));
+const matches=owner&&owner.pid===r.record.pid&&owner[r.identity]===r.record[r.identity];
+let alive=false;if(Number.isSafeInteger(owner?.pid)&&owner.pid>0){try{process.kill(owner.pid,0);alive=true;}catch(e){alive=e.code==='EPERM';}}
+let result;
+if(r.release){if(matches)fs.unlinkSync(r.file);result={released:!!matches};}
+else if(alive)result=matches&&r.allowSame?{acquired:true}:{error:'LEASE_BUSY'};
+else{const temp=r.file+'.'+process.pid+'.tmp';fs.writeFileSync(temp,JSON.stringify(r.record),{mode:0o600});fs.renameSync(temp,r.file);result={acquired:true};}
+process.stdout.write(JSON.stringify(result));`;
+function leaseOperation(file2, identity, record2, release = false, allowSame = false) {
+  const input = JSON.stringify({ file: file2, identity, record: record2, release, allowSame });
+  let output;
+  if (process.platform === "win32") {
+    const helper = nativeHelperFile();
+    if (!existsSync(helper))
+      throw new Error("NATIVE_LEASE_HELPER_MISSING: build the native test helper");
+    output = execFileSync("dotnet.exe", [helper, "--lease"], {
+      input,
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 1e4,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+  } else {
+    output = execFileSync(
+      "flock",
+      [
+        "-x",
+        "-w",
+        "2",
+        file2 + ".guard",
+        process.execPath,
+        "--input-type=commonjs",
+        "-e",
+        posixOperation
+      ],
+      { input, encoding: "utf8", timeout: 1e4 }
+    );
+  }
+  return JSON.parse(output);
+}
+function acquireJsonLease(file2, identity, record2, busyError, allowSame = false) {
+  const result2 = leaseOperation(file2, identity, record2, false, allowSame);
+  if (!result2.acquired)
+    throw new Error(result2.error === "LEASE_BUSY" ? busyError : "LEASE_GUARD_BUSY");
+}
+function releaseJsonLease(file2, identity, record2) {
+  try {
+    return leaseOperation(file2, identity, record2, true).released === true;
+  } catch {
+    if (!existsSync(file2)) return false;
+    const owner = JSON.parse(readFileSync(file2, "utf8"));
+    if (record2.pid !== process.pid || owner.pid !== process.pid || owner[identity] !== record2[identity])
+      return false;
+    unlinkSync(file2);
+    return true;
+  }
+}
+function claimFile(file2) {
+  const record2 = { pid: process.pid, token: randomUUID() };
+  acquireJsonLease(file2, "token", record2, "RECOVERY_CLAIM_BUSY");
+  return () => {
+    const released = releaseJsonLease(file2, "token", record2);
+    if (!released && existsSync(file2)) throw new Error("STALE_RECOVERY_CLAIM");
+  };
+}
+
+// src/orchestrator/terminal.ts
 var active = /* @__PURE__ */ new Set();
 function terminalInfo() {
   return [...active].map((process4) => ({ ...process4.info }));
 }
 function stopTerminalProcesses() {
-  for (const process4 of [...active]) process4.kill("SIGTERM");
+  for (const process4 of [...active]) {
+    try {
+      process4.kill("SIGTERM");
+    } catch {
+    }
+  }
 }
 function killTree(pid) {
   if (!pid) return;
   try {
-    execFileSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+    execFileSync2("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
       windowsHide: true,
       stdio: "ignore"
     });
   } catch {
   }
 }
-var nativeHelper = () => fileURLToPath(new URL("./native/CodexClaudeTerminal.dll", import.meta.url));
+var nativeHelper = nativeHelperFile;
 function closeWindow(info) {
   if (!info.windowHandle || info.windowHandle === "0") return;
   const closer = spawn(
@@ -30174,8 +30285,8 @@ var TerminalProcess = class extends EventEmitter {
   constructor(opts, options = {}) {
     super();
     this.opts = opts;
-    const id2 = randomUUID();
-    const token = randomUUID();
+    const id2 = randomUUID2();
+    const token = randomUUID2();
     const pipe2 = `\\\\.\\pipe\\codex-controls-claude-${id2}`;
     this.info = { title: `Codex Controls Claude ${id2.slice(0, 8)}` };
     active.add(this);
@@ -30333,27 +30444,76 @@ var TerminalProcess = class extends EventEmitter {
 };
 
 // src/orchestrator/runtime.ts
+function permissionSettings(cwd, home = os.homedir()) {
+  const files = [path2.join(home, ".claude/settings.json")];
+  if (cwd) {
+    const ancestors = [];
+    for (let dir = path2.resolve(cwd); ; dir = path2.dirname(dir)) {
+      ancestors.unshift(dir);
+      if (path2.dirname(dir) === dir) break;
+    }
+    for (const dir of ancestors)
+      files.push(
+        path2.join(dir, ".claude/settings.json"),
+        path2.join(dir, ".claude/settings.local.json")
+      );
+  }
+  let mode = "default";
+  let source = "SDK compatibility default";
+  for (const file2 of files) {
+    if (!existsSync2(file2)) continue;
+    const settings = JSON.parse(readFileSync2(file2, "utf8").replace(/^\uFEFF/, ""));
+    const candidate = settings.permissions?.defaultMode;
+    if (typeof candidate === "string" && ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"].includes(candidate)) {
+      mode = candidate;
+      source = file2;
+    }
+  }
+  return { mode, source };
+}
+function decisionTimeoutMs() {
+  const value = Number(process.env.CCC_DECISION_TIMEOUT_MS ?? 3e5);
+  if (!Number.isSafeInteger(value) || value < 1e3 || value > 18e5)
+    throw new Error("INVALID_DECISION_TIMEOUT: 1000..1800000 milliseconds");
+  return value;
+}
+function defaultWaitMs() {
+  const value = Number(process.env.CCC_WAIT_MS ?? 45e3);
+  return Number.isSafeInteger(value) && value >= 1 && value <= 6e5 ? value : 45e3;
+}
+function startupTimeoutMs() {
+  const value = Number(process.env.CCC_INIT_TIMEOUT_MS ?? 12e4);
+  if (!Number.isSafeInteger(value) || value < 1e3 || value > 6e5)
+    throw new Error("INVALID_INIT_TIMEOUT: 1000..600000ms");
+  return value;
+}
+function checkTimeoutMs() {
+  const value = Number(process.env.CCC_CHECK_TIMEOUT_MS ?? 3e5);
+  if (!Number.isSafeInteger(value) || value < 1e3 || value > 6e5)
+    throw new Error("INVALID_CHECK_TIMEOUT: 1000..600000ms");
+  return value;
+}
 function localConfig() {
-  const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
-  const settings = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, "utf8").replace(/^\uFEFF/, "")) : {};
+  const settingsPath = path2.join(os.homedir(), ".claude", "settings.json");
+  const settings = existsSync2(settingsPath) ? JSON.parse(readFileSync2(settingsPath, "utf8").replace(/^\uFEFF/, "")) : {};
   const env = { ...process.env, ...settings.env };
   const model = env.ANTHROPIC_MODEL?.trim() || settings.model?.trim() || void 0;
   if (model) env.ANTHROPIC_MODEL = model;
   let executable = process.env.CCC_CLAUDE_PATH;
   if (!executable) {
-    const native = path.join(
+    const native = path2.join(
       os.homedir(),
       ".local",
       "bin",
       process.platform === "win32" ? "claude.exe" : "claude"
     );
-    if (existsSync(native)) executable = native;
+    if (existsSync2(native)) executable = native;
     else {
       const command = process.platform === "win32" ? "where.exe" : "which";
-      executable = execFileSync2(command, ["claude"], { encoding: "utf8", windowsHide: true }).trim().split(/\r?\n/)[0];
+      executable = execFileSync3(command, ["claude"], { encoding: "utf8", windowsHide: true }).trim().split(/\r?\n/)[0];
     }
   }
-  if (!executable || !existsSync(executable)) throw new Error("Local Claude executable not found");
+  if (!executable || !existsSync2(executable)) throw new Error("Local Claude executable not found");
   const endpoint = env.ANTHROPIC_BASE_URL;
   if (endpoint) {
     const url2 = new URL(endpoint);
@@ -30362,32 +30522,32 @@ function localConfig() {
   return { env, executable: realpathSync(executable), endpoint, model };
 }
 function inside(root, target) {
-  let existing = path.resolve(root, target);
+  let existing = path2.resolve(root, target);
   const suffix = [];
-  while (!existsSync(existing)) {
-    const parent = path.dirname(existing);
+  while (!existsSync2(existing)) {
+    const parent = path2.dirname(existing);
     if (parent === existing) return false;
-    suffix.unshift(path.basename(existing));
+    suffix.unshift(path2.basename(existing));
     existing = parent;
   }
-  const resolved = path.join(realpathSync(existing), ...suffix);
-  const relative = path.relative(realpathSync(root), resolved);
-  return relative === "" || !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative);
+  const resolved = path2.join(realpathSync.native(existing), ...suffix);
+  const relative = path2.relative(realpathSync.native(root), resolved);
+  return relative === "" || !relative.startsWith(`..${path2.sep}`) && relative !== ".." && !path2.isAbsolute(relative);
 }
 function withinScope(cwd, scope, target) {
   const resolve = (value) => {
-    let existing = path.resolve(cwd, value);
+    let existing = path2.resolve(cwd, value);
     const suffix = [];
-    while (!existsSync(existing)) {
-      const parent = path.dirname(existing);
+    while (!existsSync2(existing)) {
+      const parent = path2.dirname(existing);
       if (parent === existing) throw new Error("UNRESOLVED_SCOPE");
-      suffix.unshift(path.basename(existing));
+      suffix.unshift(path2.basename(existing));
       existing = parent;
     }
-    return path.join(realpathSync(existing), ...suffix);
+    return path2.join(realpathSync.native(existing), ...suffix);
   };
-  const relative = path.relative(resolve(scope), resolve(target));
-  return relative === "" || !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative);
+  const relative = path2.relative(resolve(scope), resolve(target));
+  return relative === "" || !relative.startsWith(`..${path2.sep}`) && relative !== ".." && !path2.isAbsolute(relative);
 }
 var children = /* @__PURE__ */ new Set();
 var enabled = false;
@@ -30401,7 +30561,7 @@ function terminate(child) {
   if (child.exitCode !== null || !child.pid) return;
   if (process.platform === "win32") {
     try {
-      execFileSync2("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+      execFileSync3("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
         stdio: "ignore",
         windowsHide: true
       });
@@ -30416,8 +30576,27 @@ function terminate(child) {
   }
 }
 function stopOwnedProcesses() {
-  stopTerminalProcesses();
-  for (const child of [...children]) terminate(child);
+  try {
+    stopTerminalProcesses();
+  } finally {
+    for (const child of [...children]) {
+      try {
+        terminate(child);
+      } catch {
+      }
+    }
+  }
+}
+async function shutdownWithFallback(close, stop, disconnect) {
+  try {
+    await close();
+  } finally {
+    try {
+      await stop();
+    } finally {
+      await disconnect();
+    }
+  }
 }
 function executeCheck(command, args, cwd, signal) {
   return new Promise(
@@ -30494,84 +30673,63 @@ function processSpawner(stoppers) {
   };
 }
 
-// src/orchestrator/capabilities.ts
+// src/orchestrator/changes.ts
+import { execFileSync as execFileSync4 } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import os2 from "node:os";
-import path2 from "node:path";
-function capabilitiesFromInit(init) {
+import { existsSync as existsSync3, readFileSync as readFileSync3, statSync } from "node:fs";
+import path3 from "node:path";
+var git = (cwd, args) => execFileSync4("git", args, {
+  cwd,
+  encoding: "utf8",
+  windowsHide: true,
+  timeout: 5e3,
+  maxBuffer: 4 * 1024 * 1024,
+  stdio: ["ignore", "pipe", "ignore"]
+});
+function workspaceSnapshot(cwd, artifacts, baselineHeads) {
+  const roots = /* @__PURE__ */ new Set();
+  for (const file2 of [".", ...artifacts]) {
+    let dir = path3.resolve(cwd, file2);
+    while (!existsSync3(dir)) dir = path3.dirname(dir);
+    if (!statSync(dir).isDirectory()) dir = path3.dirname(dir);
+    try {
+      roots.add(git(dir, ["rev-parse", "--show-toplevel"]).trim());
+    } catch {
+    }
+  }
+  const files = {};
+  let available = roots.size > 0;
+  const heads = {};
+  for (const root of roots) {
+    try {
+      heads[root] = git(root, ["rev-parse", "HEAD"]).trim();
+      const changed = git(root, [
+        "diff",
+        baselineHeads?.[root] ?? "HEAD",
+        "--name-only",
+        "-z",
+        "--no-renames"
+      ]);
+      const added = git(root, ["ls-files", "--others", "--exclude-standard", "-z"]);
+      for (const name of new Set((changed + added).split("\0").filter(Boolean))) {
+        const absolute = path3.resolve(root, name);
+        if (!inside(cwd, absolute)) continue;
+        const relative = path3.relative(cwd, absolute).replaceAll("\\", "/");
+        files[relative] = existsSync3(absolute) && statSync(absolute).isFile() ? createHash("sha256").update(readFileSync3(absolute)).digest("hex") : null;
+      }
+    } catch {
+      available = false;
+    }
+  }
+  return { source: available ? "git" : "unavailable", roots: [...roots], files, heads };
+}
+function changedSince(baseline, current) {
+  if (!baseline || baseline.source !== "git" || current.source !== "git")
+    return { source: "unavailable", changedFiles: [] };
   return {
-    source: "sdk_init",
-    capturedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    permissionMode: init.permissionMode,
-    builtInTools: init.tools.filter((tool) => !tool.startsWith("mcp__")),
-    mcpServers: (init.mcp_servers ?? []).map((server) => ({
-      name: server.name,
-      status: server.status
-    })),
-    policy: { builtIns: "claude_code_default", mcp: "native_enabled_configuration" }
+    source: "git",
+    changedFiles: [.../* @__PURE__ */ new Set([...Object.keys(baseline.files), ...Object.keys(current.files)])].filter((file2) => baseline.files[file2] !== current.files[file2]).sort()
   };
-}
-function capabilitiesFromStatus(initial, servers) {
-  return {
-    ...initial,
-    source: "sdk_status",
-    capturedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    statusRefresh: void 0,
-    mcpServers: servers.map((server) => ({
-      name: server.name,
-      status: server.status,
-      ...server.tools ? { toolCount: server.tools.length, tools: server.tools.map((tool) => tool.name) } : {}
-    }))
-  };
-}
-function compactCapabilities(snapshot) {
-  return snapshot ? { ...snapshot, mcpServers: snapshot.mcpServers.map(({ tools: _tools, ...server }) => server) } : void 0;
-}
-var switches = [
-  "disabledMcpServers",
-  "enabledMcpServers",
-  "disabledMcpjsonServers",
-  "enabledMcpjsonServers",
-  "enableAllProjectMcpServers"
-];
-function json2(file2) {
-  return existsSync2(file2) ? JSON.parse(readFileSync2(file2, "utf8").replace(/^\uFEFF/, "")) : {};
-}
-function selected(value) {
-  return Object.fromEntries(
-    ["mcpServers", "enabledPlugins", ...switches].filter((key) => value[key] !== void 0).map((key) => [
-      key,
-      switches.includes(key) && Array.isArray(value[key]) ? [...value[key]].sort() : value[key]
-    ])
-  );
-}
-function normalize(file2) {
-  const resolved = path2.resolve(file2).replaceAll("\\", "/").replace(/\/$/, "");
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
-}
-function stable(value) {
-  if (Array.isArray(value)) return value.map(stable);
-  if (value && typeof value === "object")
-    return Object.fromEntries(
-      Object.entries(value).sort(([a3], [b]) => a3.localeCompare(b)).map(([key, item]) => [key, stable(item)])
-    );
-  return value;
-}
-function nativeMcpSignature(cwd, home = os2.homedir()) {
-  const config2 = json2(path2.join(home, ".claude.json"));
-  const projects = config2.projects;
-  const target = normalize(cwd);
-  const scopes2 = Object.entries(projects ?? {}).filter(([dir]) => target === normalize(dir) || target.startsWith(normalize(dir) + "/")).map(([dir, value]) => [normalize(dir), selected(value)]);
-  const sources = [
-    selected(config2),
-    scopes2,
-    selected(json2(path2.join(home, ".claude/settings.json"))),
-    json2(path2.join(cwd, ".mcp.json")),
-    selected(json2(path2.join(cwd, ".claude/settings.json"))),
-    selected(json2(path2.join(cwd, ".claude/settings.local.json")))
-  ];
-  return createHash("sha256").update(JSON.stringify(stable(sources))).digest("hex");
 }
 
 // src/orchestrator/budget.ts
@@ -30622,6 +30780,123 @@ function settleReservation(budget, reserved, reported) {
   return charge;
 }
 
+// src/orchestrator/execution.ts
+function settleExecution(budget, execution, reported, reason) {
+  const known = typeof reported === "number" && Number.isSafeInteger(reported) && reported >= 0;
+  if (execution.status === "confirmed" || execution.status === "provisional" && !known)
+    return false;
+  if (execution.status === "provisional") {
+    budget.used -= execution.provisionalCharge;
+    budget.estimated = Math.max(0, (budget.estimated ?? 0) - execution.provisionalCharge);
+    budget.used += reported;
+  } else settleReservation(budget, execution.reservedTurns, known ? reported : void 0);
+  execution.confirmedTurns = known ? reported : void 0;
+  execution.provisionalCharge = known ? 0 : execution.reservedTurns;
+  execution.reservedTurns = 0;
+  execution.status = known ? "confirmed" : "provisional";
+  execution.reason = reason;
+  execution.settledAt = (/* @__PURE__ */ new Date()).toISOString();
+  budget.overrun = Math.max(0, budget.used - budget.limit) || void 0;
+  return true;
+}
+function budgetSummary(budget) {
+  return {
+    limit: budget.limit,
+    charged: budget.used,
+    confirmedTurns: Math.max(0, budget.used - (budget.estimated ?? 0)),
+    provisionalCharge: budget.estimated ?? 0,
+    reservedTurns: budget.reserved,
+    availableTurns: Math.max(0, budget.limit - budget.used - budget.reserved),
+    accounting: "SDK-reported turns; provisional is a conservative unknown, not tokens"
+  };
+}
+
+// src/orchestrator/capabilities.ts
+import { createHash as createHash2 } from "node:crypto";
+import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
+import os2 from "node:os";
+import path4 from "node:path";
+function capabilitiesFromInit(init) {
+  return {
+    source: "sdk_init",
+    capturedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    permissionMode: init.permissionMode,
+    builtInTools: init.tools.filter((tool) => !tool.startsWith("mcp__")),
+    mcpServers: (init.mcp_servers ?? []).map((server) => ({
+      name: server.name,
+      status: server.status
+    })),
+    policy: {
+      builtIns: "claude_code_default",
+      mcp: "native_enabled_configuration",
+      permissions: "native_configuration",
+      hooks: "native_configuration",
+      blockedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"]
+    }
+  };
+}
+function capabilitiesFromStatus(initial, servers) {
+  return {
+    ...initial,
+    source: "sdk_status",
+    capturedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    statusRefresh: void 0,
+    mcpServers: servers.map((server) => ({
+      name: server.name,
+      status: server.status,
+      ...server.tools ? { toolCount: server.tools.length, tools: server.tools.map((tool) => tool.name) } : {}
+    }))
+  };
+}
+function compactCapabilities(snapshot) {
+  return snapshot ? { ...snapshot, mcpServers: snapshot.mcpServers.map(({ tools: _tools, ...server }) => server) } : void 0;
+}
+var switches = [
+  "disabledMcpServers",
+  "enabledMcpServers",
+  "disabledMcpjsonServers",
+  "enabledMcpjsonServers",
+  "enableAllProjectMcpServers"
+];
+function json2(file2) {
+  return existsSync4(file2) ? JSON.parse(readFileSync4(file2, "utf8").replace(/^\uFEFF/, "")) : {};
+}
+function selected(value) {
+  return Object.fromEntries(
+    ["mcpServers", "enabledPlugins", "permissions", "hooks", "disableAllHooks", ...switches].filter((key) => value[key] !== void 0).map((key) => [
+      key,
+      switches.includes(key) && Array.isArray(value[key]) ? [...value[key]].sort() : value[key]
+    ])
+  );
+}
+function normalize(file2) {
+  const resolved = path4.resolve(file2).replaceAll("\\", "/").replace(/\/$/, "");
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).sort(([a3], [b]) => a3.localeCompare(b)).map(([key, item]) => [key, stable(item)])
+    );
+  return value;
+}
+function nativeMcpSignature(cwd, home = os2.homedir()) {
+  const config2 = json2(path4.join(home, ".claude.json"));
+  const projects = config2.projects;
+  const target = normalize(cwd);
+  const scopes2 = Object.entries(projects ?? {}).filter(([dir]) => target === normalize(dir) || target.startsWith(normalize(dir) + "/")).map(([dir, value]) => [normalize(dir), selected(value)]);
+  const sources = [
+    selected(config2),
+    scopes2,
+    selected(json2(path4.join(home, ".claude/settings.json"))),
+    json2(path4.join(cwd, ".mcp.json")),
+    selected(json2(path4.join(cwd, ".claude/settings.json"))),
+    selected(json2(path4.join(cwd, ".claude/settings.local.json")))
+  ];
+  return createHash2("sha256").update(JSON.stringify(stable(sources))).digest("hex");
+}
+
 // src/orchestrator/controller.ts
 function taskContract(task2) {
   const { id: id2, title, instructions, dependsOn, acceptance, artifacts, checks } = task2;
@@ -30630,52 +30905,15 @@ function taskContract(task2) {
 function fail(message) {
   throw new Error(message);
 }
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 var Orchestrator = class {
   constructor(dataDir, worker) {
     this.dataDir = dataDir;
     this.worker = worker;
     mkdirSync(dataDir, { recursive: true });
-    for (const file2 of readdirSync(dataDir).filter((f6) => /^run-[\w-]+\.json$/.test(f6))) {
-      const run = JSON.parse(readFileSync3(path3.join(dataDir, file2), "utf8"));
+    for (const file2 of readdirSync2(dataDir).filter((f6) => /^run-[\w-]+\.json$/.test(f6))) {
+      const run = JSON.parse(readFileSync5(path5.join(dataDir, file2), "utf8"));
       this.migrate(run);
-      const last = run.events.at(-1);
-      if (!alive(run.ownerPid) && run.status === "cancelled" && last?.type === "run_cancelled" && [
-        "Execution deadline exceeded",
-        "MCP connection closed",
-        "Host cancelled wait",
-        "Host cancelled acceptance"
-      ].includes(last.data.reason ?? ""))
-        run.status = "open";
-      if ((run.status === "open" || run.status === "awaiting_user_review") && !alive(run.ownerPid)) {
-        if (run.turnBudget.reserved) {
-          const orphaned = run.turnBudget.reserved;
-          settleReservation(run.turnBudget, orphaned, void 0);
-          run.turnBudget.recovered = (run.turnBudget.recovered ?? 0) + orphaned;
-        }
-        run.ownerPid = process.pid;
-        run.activeTaskId = void 0;
-        run.sessionState = "closed";
-        run.sessionOperation = void 0;
-        for (const task2 of run.tasks)
-          if (task2.state === "running") {
-            task2.state = "interrupted";
-            task2.failure = { kind: "interrupted" };
-            try {
-              this.captureCheckpoint(run, task2, "Owner process was lost", false);
-            } catch {
-            }
-          }
-        this.runs.set(run.id, run);
-        this.emit(run, "recovered", { automaticReplay: false });
-      } else this.runs.set(run.id, run);
+      this.runs.set(run.id, run);
     }
     this.unsubscribe = worker.subscribe((event) => this.consume(event));
     this.unsubscribeMessages = worker.subscribeMessages?.(({ sessionId, message }) => {
@@ -30684,14 +30922,23 @@ var Orchestrator = class {
       ) ?? [...this.runs.values()].find(
         (r3) => r3.activeTaskId && r3.status === "open" && this.startups.get(r3.id)?.valid
       );
-      if (!run || this.closed) return;
+      if (!run || this.closed || !this.owns(run)) return;
       run.sessionId = sessionId;
-      if (message.kind === "question")
+      if (message.kind === "question") {
         this.pendingMessages.set(message.id, {
           runId: run.id,
           taskId: run.activeTaskId,
           sessionId
         });
+        this.task(run, run.activeTaskId).decisions ??= [];
+        this.task(run, run.activeTaskId).decisions.push({
+          id: message.id,
+          kind: "question",
+          state: "pending",
+          text: message.text,
+          expiresAt: message.expiresAt
+        });
+      }
       this.emit(
         run,
         message.kind === "question" ? "worker_question" : "worker_message",
@@ -30703,7 +30950,8 @@ var Orchestrator = class {
           requiresResponse: message.kind === "question",
           nextActions: message.kind === "question" ? ["respond_message"] : ["continue_wait"]
         },
-        run.activeTaskId
+        run.activeTaskId,
+        message.kind === "question"
       );
     });
   }
@@ -30716,6 +30964,8 @@ var Orchestrator = class {
   unsubscribeMessages;
   pendingMessages = /* @__PURE__ */ new Map();
   closed = false;
+  ownerId = randomUUID3();
+  interruptions = /* @__PURE__ */ new Map();
   reviewing = /* @__PURE__ */ new Set();
   idleTimers = /* @__PURE__ */ new Map();
   eventSubscribers = /* @__PURE__ */ new Set();
@@ -30730,6 +30980,7 @@ var Orchestrator = class {
     wakeups: 0,
     waitTimeouts: 0,
     statusReads: 0,
+    ledgerReads: 0,
     logPolls: 0,
     outputBytes: 0
   };
@@ -30739,6 +30990,8 @@ var Orchestrator = class {
     if (!pending || pending.runId !== runId || pending.taskId !== run.activeTaskId || run.sessionId !== pending.sessionId || !this.worker.respondMessage?.(messageId2, answer))
       fail("MESSAGE_NOT_PENDING_OR_STALE");
     this.pendingMessages.delete(messageId2);
+    const decision = this.task(run, pending.taskId).decisions?.find((d) => d.id === messageId2);
+    if (decision) decision.state = "answered";
     this.emit(
       run,
       "supervisor_answered",
@@ -30759,6 +31012,7 @@ var Orchestrator = class {
     };
   }
   migrate(run) {
+    run.executions ??= [];
     if (!run.turnBudget) {
       let used = 0, observed = 0;
       for (const event of run.events)
@@ -30794,17 +31048,18 @@ var Orchestrator = class {
   }
   artifactSnapshot(run, task2) {
     return Object.fromEntries(
-      task2.artifacts.map((file2) => {
+      this.artifactPaths(task2).map((file2) => {
         if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
-        const absolute = path3.resolve(run.cwd, file2);
+        const absolute = path5.resolve(run.cwd, file2);
         return [
           file2,
-          existsSync3(absolute) ? createHash2("sha256").update(readFileSync3(absolute)).digest("hex") : null
+          existsSync5(absolute) ? createHash3("sha256").update(readFileSync5(absolute)).digest("hex") : null
         ];
       })
     );
   }
   captureCheckpoint(run, task2, reason, accountingKnown) {
+    this.inventory(run, task2);
     const artifacts = this.artifactSnapshot(run, task2);
     task2.checkpoint = {
       at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -30817,6 +31072,96 @@ var Orchestrator = class {
       accountingKnown
     };
     return task2.checkpoint;
+  }
+  artifactPaths(task2) {
+    return [.../* @__PURE__ */ new Set([...task2.artifacts, ...task2.additionalArtifacts ?? []])];
+  }
+  inventory(run, task2) {
+    const changes = changedSince(
+      task2.workspaceBaseline,
+      workspaceSnapshot(run.cwd, task2.artifacts, task2.workspaceBaseline?.heads)
+    );
+    const owned = changes.changedFiles.filter(
+      (file2) => this.worker.permitsArtifact?.(run.cwd, file2) !== false
+    );
+    const included = new Set(
+      this.artifactPaths(task2).map((file2) => path5.resolve(run.cwd, file2).toLowerCase())
+    );
+    for (const peer of run.tasks.filter((peer2) => peer2.id !== task2.id && peer2.state === "accepted"))
+      for (const file2 of this.artifactPaths(peer))
+        included.add(path5.resolve(run.cwd, file2).toLowerCase());
+    for (const file2 of run.peerArtifacts ?? [])
+      included.add(path5.resolve(run.cwd, file2).toLowerCase());
+    task2.changeInventory = {
+      ...changes,
+      changedFiles: changes.changedFiles,
+      outsideScopeObservations: changes.changedFiles.filter((file2) => !owned.includes(file2)),
+      undeclaredChanges: changes.changedFiles.filter(
+        (file2) => !included.has(path5.resolve(run.cwd, file2).toLowerCase())
+      )
+    };
+    return task2.changeInventory;
+  }
+  /** Coordinator-only coverage links. Every linked peer must pass review before team finish. */
+  setPeerArtifacts(runId, files) {
+    const run = this.get(runId);
+    const paths = [...new Set(files)].sort();
+    for (const file2 of paths) if (!inside(run.cwd, file2)) fail("PEER_ARTIFACT_OUTSIDE_WORKSPACE");
+    if (JSON.stringify(paths) !== JSON.stringify(run.peerArtifacts ?? [])) {
+      run.peerArtifacts = paths;
+      this.save(run);
+    }
+  }
+  includeArtifacts(runId, taskId, files, evidence) {
+    const run = this.get(runId), task2 = this.task(run, taskId);
+    this.open(run);
+    if (run.activeTaskId || run.sessionOperation || this.reviewing.has(run.id))
+      fail("EXECUTOR_BUSY");
+    if (!evidence.trim() || !files.length) fail("ARTIFACT_INCLUSION_EVIDENCE_REQUIRED");
+    if (task2.state === "accepted" || task2.state === "superseded") fail("TASK_NOT_RECONCILABLE");
+    for (const file2 of files) if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
+    task2.additionalArtifacts = [.../* @__PURE__ */ new Set([...task2.additionalArtifacts ?? [], ...files])];
+    this.inventory(run, task2);
+    if (task2.state === "awaiting_review") task2.artifactHash = this.hash(run, task2);
+    this.emit(
+      run,
+      "artifacts_included",
+      { files, evidence, artifactHash: task2.artifactHash },
+      taskId,
+      false
+    );
+    return {
+      runId,
+      taskId,
+      artifactHash: task2.artifactHash,
+      changeInventory: task2.changeInventory,
+      nextActions: ["reconcile", "review"]
+    };
+  }
+  settle(run, reported, reason) {
+    const execution = run.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (execution) settleExecution(run.turnBudget, execution, reported, reason);
+    else if (run.turnBudget.reserved)
+      settleReservation(run.turnBudget, run.turnBudget.reserved, reported);
+    run.activeExecutionId = void 0;
+  }
+  warnBudget(run, task2) {
+    const committed = run.turnBudget.used + run.turnBudget.reserved;
+    const pendingTasks = run.tasks.filter((t) => t.id !== task2.id && t.state === "pending").map((t) => t.id);
+    if (run.budgetWarningAt || committed < run.turnBudget.limit * 0.7 || !pendingTasks.length)
+      return;
+    run.budgetWarningAt = committed;
+    this.emit(
+      run,
+      "budget_risk",
+      {
+        budget: budgetSummary(run.turnBudget),
+        pendingTasks,
+        nextActions: ["review_checkpoint", "plan_remaining_stages"],
+        warning: "Charged or reserved allowance leaves limited room for pending stages; reservations are not observed use and no allowance is added"
+      },
+      task2.id
+    );
   }
   dependenciesAccepted(run, task2) {
     return task2.dependsOn.every((id2) => {
@@ -30832,7 +31177,7 @@ var Orchestrator = class {
   stoppedTask(run, task2, reason, kind, state, eventType) {
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
-    settleReservation(run.turnBudget, run.turnBudget.reserved, void 0);
+    this.settle(run, void 0, kind);
     run.activeTaskId = void 0;
     run.sessionOperation = void 0;
     run.sessionState = "closed";
@@ -30849,6 +31194,8 @@ var Orchestrator = class {
       totalCostUsd: 0
     };
     task2.checkpoint = void 0;
+    for (const decision of task2.decisions ?? [])
+      if (decision.state === "pending") decision.state = "interrupted";
     let checkpoint;
     try {
       checkpoint = this.captureCheckpoint(run, task2, reason, false);
@@ -30865,11 +31212,16 @@ var Orchestrator = class {
         failureClass: kind,
         checkpointAvailable: !!checkpoint,
         changedDeclaredArtifacts: checkpoint?.changedDeclaredArtifacts,
+        changeSummary: task2.changeInventory ? {
+          undeclaredChanges: task2.changeInventory.undeclaredChanges,
+          outsideScopeObservations: task2.changeInventory.outsideScopeObservations
+        } : void 0,
         nextActions: Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0 ? ["continue", "reconcile", "cancel"] : ["reconcile", "cancel"],
         turnBudget: run.turnBudget
       },
       task2.id
     );
+    this.warnBudget(run, task2);
   }
   stopExecution(run, reason, kind) {
     const startup = this.startups.get(run.id);
@@ -30886,7 +31238,7 @@ var Orchestrator = class {
         "worker_finished"
       );
     else {
-      settleReservation(run.turnBudget, run.turnBudget.reserved, void 0);
+      this.settle(run, void 0, kind);
       run.sessionOperation = void 0;
       run.sessionState = "closed";
       this.release(run);
@@ -30894,7 +31246,13 @@ var Orchestrator = class {
     }
   }
   save(run) {
-    const dest = path3.join(this.dataDir, `run-${run.id}.json`);
+    const dest = path5.join(this.dataDir, `run-${run.id}.json`);
+    if (existsSync5(dest)) {
+      const disk = JSON.parse(readFileSync5(dest, "utf8"));
+      if (disk.ownerId && disk.ownerId !== run.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
+        fail("STALE_SUPERVISOR_OWNER");
+      if ((disk.ownerGeneration ?? 0) > (run.ownerGeneration ?? 0)) fail("STALE_SUPERVISOR_OWNER");
+    }
     const tmp = `${dest}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(run, null, 2), { mode: 384 });
     renameSync(tmp, dest);
@@ -30929,8 +31287,81 @@ var Orchestrator = class {
   }
   get(id2, writable = true) {
     const run = this.runs.get(id2) ?? fail("RUN_NOT_FOUND");
-    if (writable && run.ownerPid !== process.pid) fail("RUN_OWNED_BY_ANOTHER_CONNECTION");
+    if (writable && (this.closed || !this.owns(run)))
+      fail("RUN_OWNED_BY_ANOTHER_CONNECTION: use plan attach after the owner disconnects");
     return run;
+  }
+  owns(run) {
+    if (run.ownerPid !== process.pid || run.ownerReleased || run.ownerId && run.ownerId !== this.ownerId)
+      return false;
+    const file2 = path5.join(this.dataDir, `run-${run.id}.json`);
+    if (!existsSync5(file2)) return true;
+    const disk = JSON.parse(readFileSync5(file2, "utf8"));
+    return !disk.ownerReleased && disk.ownerPid === process.pid && disk.ownerId === run.ownerId && disk.ownerGeneration === run.ownerGeneration;
+  }
+  attach(runId) {
+    if (this.closed) fail("CONNECTION_CLOSED");
+    const file2 = path5.join(this.dataDir, `run-${runId}.json`);
+    if (!existsSync5(file2)) fail("RUN_NOT_FOUND");
+    const claim = `${file2}.claim`;
+    const releaseClaim = claimFile(claim);
+    try {
+      const run = JSON.parse(readFileSync5(file2, "utf8"));
+      if (!run.ownerReleased && processAlive(run.ownerPid) && (run.ownerPid !== process.pid || run.ownerId && run.ownerId !== this.ownerId))
+        fail("OWNER_STILL_ACTIVE: no takeover of a live supervisor");
+      if (this.startups.size || [...this.runs.values()].some((r3) => this.owns(r3) && (r3.activeTaskId || r3.sessionOperation)))
+        fail("EXECUTOR_BUSY");
+      if (run.ownerId === this.ownerId && !run.ownerReleased)
+        return {
+          runId,
+          attached: true,
+          generation: run.ownerGeneration,
+          nextCursor: this.cursor(runId)
+        };
+      this.migrate(run);
+      run.ownerPid = process.pid;
+      run.ownerId = this.ownerId;
+      run.ownerReleased = false;
+      run.ownerGeneration = (run.ownerGeneration ?? 0) + 1;
+      if (run.turnBudget.reserved) {
+        const orphaned = run.turnBudget.reserved;
+        this.settle(run, void 0, "owner_lost");
+        run.turnBudget.recovered = (run.turnBudget.recovered ?? 0) + orphaned;
+      }
+      run.activeTaskId = void 0;
+      run.sessionOperation = void 0;
+      run.sessionState = "closed";
+      for (const task2 of run.tasks) {
+        if (task2.state === "running") {
+          task2.state = "interrupted";
+          task2.failure = { kind: "interrupted" };
+          try {
+            this.captureCheckpoint(run, task2, "Owner was lost", false);
+          } catch {
+          }
+        }
+        for (const decision of task2.decisions ?? [])
+          if (decision.state === "pending") decision.state = "interrupted";
+      }
+      this.runs.set(runId, run);
+      this.emit(
+        run,
+        "supervisor_attached",
+        { generation: run.ownerGeneration, automaticReplay: false },
+        void 0,
+        false
+      );
+      return {
+        runId,
+        attached: true,
+        generation: run.ownerGeneration,
+        budget: budgetSummary(run.turnBudget),
+        nextCursor: this.cursor(runId),
+        nextActions: ["reconcile", "continue", "review"]
+      };
+    } finally {
+      releaseClaim();
+    }
   }
   cursor(runId) {
     return this.get(runId, false).events.at(-1)?.seq ?? 0;
@@ -30954,16 +31385,17 @@ var Orchestrator = class {
         changedDeclaredArtifacts: data.changedDeclaredArtifacts,
         nextActions: data.nextActions,
         turnBudget: data.turnBudget,
+        changeSummary: data.changeSummary,
         checkpointRef: data.checkpointAvailable ? { tool: "orchestrator_status", runId, taskId: event.taskId, sections: ["checkpoint"] } : void 0,
         result: data.result ? {
           sessionId: data.result.sessionId,
-          summary: ["failed", "blocked"].includes(data.state) ? data.result.result : data.result.result.slice(0, 1e3),
-          truncated: !["failed", "blocked"].includes(data.state) && data.result.result.length > 1e3,
+          summary: data.state === "blocked" ? data.result.result : data.result.result.slice(0, 1e3),
+          truncated: data.state !== "blocked" && data.result.result.length > 1e3,
           detailRef: {
             runId,
             taskId: event.taskId,
             tool: "orchestrator_status",
-            includeEvidence: true
+            sections: ["result"]
           },
           isError: data.result.isError,
           numTurns: data.result.numTurns,
@@ -30972,7 +31404,11 @@ var Orchestrator = class {
           stopReason: data.result.stopReason,
           permissionDenials: data.result.permissionDenials
         } : void 0,
-        feedback: data.feedback
+        feedback: data.feedback ? {
+          summary: data.feedback.slice(0, 500),
+          truncated: data.feedback.length > 500,
+          evidenceRef: { runId, taskId: event.taskId, sections: ["error"] }
+        } : void 0
       }
     };
   }
@@ -30980,6 +31416,7 @@ var Orchestrator = class {
     return run.tasks.find((t) => t.id === id2) ?? fail("TASK_NOT_FOUND");
   }
   open(run, execution = false) {
+    if (this.closed || !this.owns(run)) fail("CONNECTION_CLOSED_OR_OWNER_CHANGED");
     if (run.status !== "open") fail("RUN_CLOSED");
     if (execution && Date.now() >= run.deadline) fail("RUN_DEADLINE");
   }
@@ -31020,18 +31457,19 @@ var Orchestrator = class {
     }
   }
   plan(input) {
+    if (this.closed) fail("CONNECTION_CLOSED");
     if (input.action === "create") {
       if (!input.cwd || !input.goal || !input.design || !input.tasks)
         fail("create requires cwd, goal, design, tasks");
-      const cwd = realpathSync2(input.cwd);
+      const cwd = realpathSync2.native(input.cwd);
       this.validateTasks(cwd, input.tasks);
-      if ([...this.runs.values()].some((r3) => r3.ownerPid === process.pid && r3.status === "open"))
+      if ([...this.runs.values()].some((r3) => this.owns(r3) && r3.status === "open"))
         fail("OPEN_RUN_EXISTS: finish or cancel the current run before creating another");
       for (const previous of this.runs.values())
-        if (previous.ownerPid === process.pid && previous.status === "awaiting_user_review")
+        if (this.owns(previous) && previous.status === "awaiting_user_review")
           this.closeSession(previous);
       const run2 = {
-        id: randomUUID2(),
+        id: randomUUID3(),
         goal: input.goal,
         design: input.design,
         cwd,
@@ -31054,7 +31492,10 @@ var Orchestrator = class {
         })),
         events: [],
         receipts: {},
-        ownerPid: process.pid
+        ownerPid: process.pid,
+        ownerId: this.ownerId,
+        ownerGeneration: 1,
+        executions: []
       };
       this.runs.set(run2.id, run2);
       this.emit(run2, "plan_created", { revision: 1 });
@@ -31075,9 +31516,7 @@ var Orchestrator = class {
       return run;
     }
     if (input.action === "reopen" || input.action === "append") {
-      if ([...this.runs.values()].some(
-        (r3) => r3.id !== run.id && r3.ownerPid === process.pid && r3.status === "open"
-      ))
+      if ([...this.runs.values()].some((r3) => r3.id !== run.id && this.owns(r3) && r3.status === "open"))
         fail("OPEN_RUN_EXISTS");
       if (input.action === "append") {
         const additions2 = input.tasks ?? fail("append requires new tasks");
@@ -31086,7 +31525,7 @@ var Orchestrator = class {
         this.validateTasks(run.cwd, [...run.tasks, ...additions2]);
       }
       for (const previous of this.runs.values())
-        if (previous.id !== run.id && previous.ownerPid === process.pid && previous.status === "awaiting_user_review")
+        if (previous.id !== run.id && this.owns(previous) && previous.status === "awaiting_user_review")
           this.closeSession(previous);
       if (run.status === "awaiting_user_review" || run.status === "completed") {
         run.status = "open";
@@ -31148,6 +31587,19 @@ var Orchestrator = class {
       if (run.activeTaskId || run.tasks.some((t) => t.state !== "accepted" && t.state !== "superseded"))
         fail("UNACCEPTED_TASKS");
       for (const task2 of run.tasks.filter((t) => t.state === "accepted")) {
+        if (this.inventory(run, task2).undeclaredChanges.length) {
+          task2.state = "awaiting_review";
+          this.emit(
+            run,
+            "acceptance_invalidated",
+            {
+              reason: "Undeclared workspace changes after acceptance",
+              nextActions: ["include_artifacts", "review"]
+            },
+            task2.id
+          );
+          return run;
+        }
         const hash2 = this.hash(run, task2);
         if (hash2 !== task2.artifactHash) {
           task2.state = "awaiting_review";
@@ -31244,9 +31696,7 @@ var Orchestrator = class {
     const run = this.get(runId), beforeCursor = this.cursor(runId);
     if ((run.status === "completed" || run.status === "cancelled") && action !== "close")
       fail("REOPEN_RUN_FIRST");
-    if (action !== "close" && [...this.runs.values()].some(
-      (r3) => r3.id !== run.id && r3.ownerPid === process.pid && r3.status === "open"
-    ))
+    if (action !== "close" && [...this.runs.values()].some((r3) => r3.id !== run.id && this.owns(r3) && r3.status === "open"))
       fail("OPEN_RUN_EXISTS");
     if (run.activeTaskId || this.reviewing.has(run.id) || run.sessionOperation)
       fail("SESSION_BUSY");
@@ -31333,28 +31783,27 @@ var Orchestrator = class {
     };
   }
   acquire(run) {
-    if (this.startups.size) fail("EXECUTOR_STARTUP_DRAINING");
-    const lock = path3.join(this.dataDir, "executor.lock");
-    if (existsSync3(lock)) {
-      const owner = JSON.parse(readFileSync3(lock, "utf8"));
-      if (alive(owner.pid)) fail("EXECUTOR_BUSY");
-      unlinkSync(lock);
-    }
-    writeFileSync(lock, JSON.stringify({ pid: process.pid, runId: run.id }), {
-      flag: "wx",
-      mode: 384
-    });
+    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
+    const lock = path5.join(this.dataDir, "executor.lock");
+    acquireJsonLease(
+      lock,
+      "token",
+      { pid: process.pid, runId: run.id, token: `${this.ownerId}:${run.id}` },
+      "EXECUTOR_BUSY"
+    );
   }
   release(run) {
     const timer = this.timers.get(run.id);
     if (timer) clearTimeout(timer);
     this.timers.delete(run.id);
     if (this.startups.has(run.id)) return;
-    const lock = path3.join(this.dataDir, "executor.lock");
-    if (existsSync3(lock)) {
-      const owner = JSON.parse(readFileSync3(lock, "utf8"));
-      if (owner.pid === process.pid && owner.runId === run.id) unlinkSync(lock);
-    }
+    const lock = path5.join(this.dataDir, "executor.lock");
+    if (existsSync5(lock))
+      releaseJsonLease(lock, "token", {
+        pid: process.pid,
+        runId: run.id,
+        token: `${this.ownerId}:${run.id}`
+      });
   }
   async dispatch(runId, taskId, requestId, signal, options = {}) {
     const run = this.get(runId);
@@ -31395,12 +31844,28 @@ var Orchestrator = class {
     const baseline = this.artifactSnapshot(run, task2);
     this.acquire(run);
     reserveGrant(run.turnBudget, nativeLimit);
+    const execution = {
+      id: randomUUID3(),
+      taskId,
+      attempt: task2.attempts + 1,
+      startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      requestedLimit: requested,
+      effectiveLimit: nativeLimit,
+      defaultLimit: run.maxTurns,
+      reservedTurns: nativeLimit + 1,
+      observedAssistantMessages: 0,
+      provisionalCharge: 0,
+      status: "reserved"
+    };
+    run.executions.push(execution);
+    run.activeExecutionId = execution.id;
     if (task2.state === "needs_revision") task2.repairs++;
     else if (task2.attempts > 0) task2.continuations++;
     if (options.feedback) task2.feedback = options.feedback;
     if (zeroProgress) task2.zeroProgressRetries = (task2.zeroProgressRetries ?? 0) + 1;
     else task2.zeroProgressRetries = 0;
     task2.baselineArtifacts = baseline;
+    task2.workspaceBaseline ??= workspaceSnapshot(run.cwd, task2.artifacts);
     task2.attempts++;
     task2.startedAt = Date.now();
     task2.state = "running";
@@ -31425,6 +31890,7 @@ var Orchestrator = class {
       taskId,
       false
     );
+    this.warnBudget(run, task2);
     const prompt = `Overall goal: ${run.goal}
 Design: ${run.design}
 Workspace: ${run.cwd}
@@ -31464,6 +31930,8 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
         return receipt;
       }
       run.sessionId = receipt.sessionId;
+      execution.sessionId = run.sessionId;
+      execution.epoch = this.worker.eventEpoch?.(run.sessionId) ?? 0;
       run.sessionState = "retained";
       receipt.startupMs = Date.now() - task2.startedAt;
       receipt.status = "started";
@@ -31505,12 +31973,15 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     }
   }
   hash(run, task2) {
-    const hash2 = createHash2("sha256");
-    for (const file2 of [...task2.artifacts].sort()) {
+    const hash2 = createHash3("sha256");
+    for (const file2 of this.artifactPaths(task2).sort()) {
       if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
       hash2.update(file2);
       hash2.update("\0");
-      hash2.update(readFileSync3(path3.resolve(run.cwd, file2)));
+      const absolute = path5.resolve(run.cwd, file2);
+      if (task2.additionalArtifacts?.includes(file2) && !existsSync5(absolute))
+        hash2.update("<deleted>");
+      else hash2.update(readFileSync5(absolute));
     }
     return hash2.digest("hex");
   }
@@ -31520,7 +31991,29 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       (r3) => r3.sessionId === sessionId && (r3.activeTaskId || r3.sessionOperation) && (r3.status === "open" || r3.status === "awaiting_user_review")
     );
     const prior = this.seen.get(sessionId);
-    if (!run || prior?.epoch === epoch && event.id <= prior.id) return;
+    const activeAccount = run?.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (!run || activeAccount?.epoch !== void 0 && activeAccount.epoch !== epoch) {
+      if (!["result", "error"].includes(event.type)) return;
+      for (const candidate of this.runs.values()) {
+        if (!this.owns(candidate)) continue;
+        const execution = candidate.executions?.find(
+          (e3) => e3.sessionId === sessionId && e3.epoch === epoch && e3.status === "provisional"
+        );
+        const result2 = event.data;
+        if (execution && result2?.sessionId === sessionId && (!result2.isError || result2.errorSubtype) && settleExecution(candidate.turnBudget, execution, result2.numTurns, "late_native_result")) {
+          this.emit(
+            candidate,
+            "accounting_corrected",
+            { executionId: execution.id, budget: budgetSummary(candidate.turnBudget) },
+            execution.taskId,
+            false
+          );
+          break;
+        }
+      }
+      return;
+    }
+    if (!this.owns(run) || prior?.epoch === epoch && event.id <= prior.id) return;
     this.seen.set(sessionId, { epoch, id: event.id });
     if (run.sessionOperation === "compact") {
       if (event.type === "progress" && event.data.type === "compact_boundary") {
@@ -31547,22 +32040,40 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       return;
     }
     const task2 = this.task(run, run.activeTaskId);
+    const account = run.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (account) {
+      account.sessionId = sessionId;
+      account.epoch = epoch;
+    }
+    if (account && event.type === "output" && event.data.message?.role === "assistant")
+      account.observedAssistantMessages++;
     if (event.type === "permission_request") {
+      const pending = event.data;
+      task2.decisions ??= [];
+      task2.decisions.push({
+        id: pending.requestId,
+        kind: "permission",
+        state: "pending",
+        expiresAt: pending.expiresAt,
+        text: pending.summary,
+        inputHash: createHash3("sha256").update(JSON.stringify(pending.input ?? {})).digest("hex"),
+        toolName: pending.toolName,
+        input: pending.input,
+        reason: pending.decisionReason
+      });
       this.emit(run, "permission_required", event.data, task2.id);
       return;
     }
     if (event.type === "permission_result") {
       const data2 = event.data;
+      const pending = task2.decisions?.find((d) => d.id === data2.requestId);
+      if (pending) pending.state = data2.source === "timeout" ? "expired" : "answered";
       this.emit(run, "permission_resolved", event.data, task2.id, data2.behavior === "deny");
       if (data2.behavior === "deny" && data2.source === "timeout") {
-        this.worker.stop(sessionId);
-        this.stoppedTask(
-          run,
-          task2,
-          "Permission timed out; explicitly dispatch to retry",
-          "permission",
-          "blocked",
-          "task_blocked"
+        void this.interruptGracefully(
+          run.id,
+          "Permission expired; continue explicitly to re-evaluate current tool input",
+          "permission"
         );
       }
       return;
@@ -31570,10 +32081,10 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     if (event.type === "result" || event.type === "error") {
       task2.result = this.worker.result(sessionId) ?? event.data;
       const accountingKnown = !task2.result.isError || !!task2.result.errorSubtype;
-      settleReservation(
-        run.turnBudget,
-        run.turnBudget.reserved,
-        accountingKnown ? task2.result.numTurns : void 0
+      this.settle(
+        run,
+        accountingKnown ? task2.result.numTurns : void 0,
+        task2.result.errorSubtype ?? event.type
       );
       const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
         task2.result.errorSubtype ?? ""
@@ -31585,6 +32096,13 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       if (budgetStop)
         run.turnBudget.stopReason = task2.result.errorSubtype === "error_max_turns" ? "native_max_turns" : "provider_budget_cap";
       task2.state = budgetStop ? "budget_exhausted" : task2.result.isError ? "failed" : /^BLOCKED:/m.test(task2.result.result) ? "blocked" : "awaiting_review";
+      const interruption = this.interruptions.get(run.id);
+      if (interruption) {
+        task2.state = interruption.kind === "permission" ? "blocked" : "interrupted";
+        task2.failure = { kind: interruption.kind };
+      }
+      for (const decision of task2.decisions ?? [])
+        if (decision.state === "pending") decision.state = "expired";
       if (task2.state === "awaiting_review") {
         try {
           task2.artifactHash = this.hash(run, task2);
@@ -31616,11 +32134,16 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
           failureClass: task2.failure?.kind,
           checkpointAvailable: !!task2.checkpoint,
           changedDeclaredArtifacts: task2.checkpoint?.changedDeclaredArtifacts,
-          nextActions: task2.state === "awaiting_review" ? ["review"] : Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0 ? ["continue", "reconcile", "cancel"] : ["reconcile", "cancel"],
+          changeSummary: task2.changeInventory ? {
+            undeclaredChanges: task2.changeInventory.undeclaredChanges,
+            outsideScopeObservations: task2.changeInventory.outsideScopeObservations
+          } : void 0,
+          nextActions: task2.state === "awaiting_review" ? task2.changeInventory?.undeclaredChanges.length ? ["inspect_changes", "include_artifacts", "review"] : ["review"] : Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0 ? ["continue", "reconcile", "cancel"] : ["reconcile", "cancel"],
           turnBudget: run.turnBudget
         },
         task2.id
       );
+      this.warnBudget(run, task2);
       if (run.lastContext && run.lastContext.inputTokens !== null && run.lastContext.inputTokens >= run.lastContext.softLimit)
         this.emit(run, "context_maintenance_recommended", run.lastContext, task2.id);
       return;
@@ -31630,12 +32153,14 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     if (tools?.length || data.tool_name)
       this.emit(run, "tool_activity", { tools: tools ?? [data.tool_name] }, task2.id, false);
   }
-  async wait(runId, afterSeq, timeoutMs = 45e3, signal) {
+  async wait(runId, afterSeq, timeoutMs = defaultWaitMs(), signal) {
     const run = this.get(runId);
     this.metrics.waits++;
     const snapshot = () => ({
       runId,
-      events: run.events.filter((e3) => e3.seq > afterSeq && e3.actionable).map((e3) => this.brief(e3, runId)),
+      events: run.events.filter((e3) => e3.seq > afterSeq && e3.actionable).map((e3) => this.brief(e3, runId)).sort(
+        (a3, b) => Number(["permission_required", "worker_question"].includes(b.type)) - Number(["permission_required", "worker_question"].includes(a3.type))
+      ),
       nextCursor: run.events.at(-1)?.seq ?? 0,
       status: run.status,
       timedOut: false
@@ -31676,7 +32201,7 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
         }
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(45e3, Math.max(1, timeoutMs)));
+      const timer = setTimeout(() => finish(true), Math.min(6e5, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -31696,6 +32221,54 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       turnBudget: run.turnBudget,
       nextCursor: this.cursor(runId)
     };
+  }
+  async interruptGracefully(runId, reason, kind = "interrupted") {
+    const run = this.get(runId);
+    this.open(run);
+    if (this.interruptions.has(runId)) fail("EXECUTOR_STARTUP_DRAINING");
+    if (!run.activeTaskId || !run.sessionId || !this.worker.interrupt) {
+      if (kind === "permission" && run.activeTaskId) {
+        this.worker.stop(run.sessionId);
+        this.stoppedTask(
+          run,
+          this.task(run, run.activeTaskId),
+          reason,
+          kind,
+          "blocked",
+          "task_blocked"
+        );
+        return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
+      }
+      return this.interrupt(runId, reason);
+    }
+    this.interruptions.set(runId, { reason, kind });
+    const sessionId = run.sessionId;
+    try {
+      await this.worker.interrupt(sessionId, 3e3);
+      if (this.closed || !this.owns(run)) return { runId, nextCursor: this.cursor(runId) };
+      for (const event of await this.worker.replay(sessionId))
+        this.consume({ sessionId, event, epoch: this.worker.eventEpoch?.(sessionId) });
+      if (run.activeTaskId) {
+        this.worker.stop(sessionId);
+        this.stoppedTask(
+          run,
+          this.task(run, run.activeTaskId),
+          reason,
+          kind,
+          kind === "permission" ? "blocked" : "interrupted",
+          "worker_finished"
+        );
+      } else {
+        this.worker.stop(sessionId);
+        run.sessionState = "closed";
+        this.save(run);
+      }
+      return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
+    } finally {
+      this.interruptions.delete(runId);
+      if (!this.closed && this.owns(run))
+        this.emit(run, "execution_drained", { automaticReplay: false }, void 0, false);
+    }
   }
   reconcile(input) {
     const run = this.get(input.runId);
@@ -31747,10 +32320,17 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     const task2 = this.task(run, input.taskId);
     if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
     if (task2.state !== "awaiting_review") fail("TASK_NOT_AWAITING_REVIEW");
+    if (this.inventory(run, task2).undeclaredChanges.length) {
+      this.save(run);
+      fail(
+        "UNDECLARED_CHANGES: inspect inventory and explicitly include_artifacts before acceptance"
+      );
+    }
     if (input.taskRevision !== task2.revision || input.artifactHash !== task2.artifactHash || this.hash(run, task2) !== input.artifactHash)
       fail("STALE_ARTIFACT_OR_CONTRACT");
     if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
-    if (this.reviewing.has(run.id) || run.activeTaskId) fail("EXECUTOR_BUSY");
+    if (this.reviewing.has(run.id) || this.interruptions.has(run.id) || run.activeTaskId)
+      fail("EXECUTOR_BUSY");
     this.acquire(run);
     this.reviewing.add(run.id);
     const abort = new AbortController();
@@ -31759,7 +32339,7 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       this.closeSession(run);
     };
     signal?.addEventListener("abort", hostCancel, { once: true });
-    const deadline = setTimeout(() => abort.abort(), 4e4);
+    const deadline = setTimeout(() => abort.abort(), checkTimeoutMs());
     const checks = [];
     try {
       if (signal?.aborted) hostCancel();
@@ -31807,6 +32387,10 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       this.release(run);
     }
     if (this.hash(run, task2) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
+    if (this.inventory(run, task2).undeclaredChanges.length) {
+      this.save(run);
+      fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
+    }
     const accepted = input.decision === "accept" && checks.every((c3) => c3.exitCode === 0 && !c3.error);
     task2.reviews.push({
       at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -31839,27 +32423,25 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
     const request = this.worker.permissions(run.sessionId).find((p3) => p3.requestId === requestId) ?? fail("PERMISSION_EXPIRED_OR_UNKNOWN");
     if (decision === "allow") {
       if (!request.toolName.trim()) fail("INVALID_PENDING_TOOL");
-      for (const key of ["file_path", "path", "notebook_path"]) {
-        const value = request.input[key];
-        if (typeof value === "string" && !inside(run.cwd, value))
-          fail("PERMISSION_OUTSIDE_WORKSPACE");
-      }
-      if (request.blockedPath && !inside(run.cwd, request.blockedPath))
-        fail("PERMISSION_OUTSIDE_WORKSPACE");
     }
     if (!this.worker.respond(run.sessionId, requestId, decision === "allow"))
       fail("PERMISSION_EXPIRED_OR_UNKNOWN");
     return { requestId, decision };
   }
   status(runId) {
-    this.metrics.statusReads++;
+    this.metrics.ledgerReads++;
     return runId ? this.get(runId, false) : [...this.runs.values()];
+  }
+  hasActiveExecutions() {
+    return this.startups.size > 0 || this.interruptions.size > 0 || [...this.runs.values()].some(
+      (run) => this.owns(run) && (run.activeTaskId || run.sessionOperation)
+    );
   }
   cancel(runId, reason = "Supervisor cancelled") {
     const run = this.get(runId);
     if (run.status !== "open" && run.status !== "awaiting_user_review")
       return { runId, status: run.status };
-    settleReservation(run.turnBudget, run.turnBudget.reserved, void 0);
+    this.settle(run, void 0, "cancelled");
     if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
@@ -31875,30 +32457,56 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
   }
   close() {
     if (this.closed) return;
+    this.closed = true;
+    let errors = 0;
+    for (const startup of this.startups.values()) startup.valid = false;
     for (const run of this.runs.values()) {
-      if (run.ownerPid === process.pid && (run.status === "open" || run.status === "awaiting_user_review")) {
-        if (run.activeTaskId || run.sessionOperation)
-          this.stopExecution(run, "MCP connection closed", "interrupted");
-        else {
-          this.closeSession(run);
-          this.emit(run, "connection_closed", { automaticReplay: false }, void 0, false);
+      if (!this.owns(run)) continue;
+      try {
+        if (run.status === "open" || run.status === "awaiting_user_review") {
+          if (run.activeTaskId || run.sessionOperation)
+            this.stopExecution(run, "MCP connection closed", "interrupted");
+          else {
+            this.closeSession(run);
+            this.emit(run, "connection_closed", { automaticReplay: false }, void 0, false);
+          }
+        }
+      } catch {
+        errors++;
+      } finally {
+        if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
+        this.settle(run, void 0, "connection_closed");
+        run.activeTaskId = void 0;
+        run.sessionOperation = void 0;
+        run.sessionState = "closed";
+        run.ownerReleased = true;
+        try {
+          this.save(run);
+        } catch {
+          errors++;
         }
       }
     }
-    this.closed = true;
     for (const timer of this.idleTimers.values()) clearTimeout(timer);
     this.idleTimers.clear();
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
     this.unsubscribe();
     this.unsubscribeMessages?.();
     this.pendingMessages.clear();
-    this.worker.destroy();
+    try {
+      this.worker.destroy();
+    } catch {
+      errors++;
+    }
     this.listeners.clear();
     this.eventSubscribers.clear();
+    if (errors) console.error(`Orchestrator cleanup completed with ${errors} resource errors`);
   }
 };
 
 // src/utils/normalize-windows-path.ts
-import path4 from "node:path";
+import path6 from "node:path";
 import os3 from "node:os";
 var TOOL_INPUT_PATH_FIELDS = [
   "file_path",
@@ -31914,7 +32522,7 @@ var TOOL_INPUT_PATH_FIELDS = [
 function maybeAddWindowsLongPathPrefix(value) {
   if (value.startsWith("\\\\?\\") || value.startsWith("\\\\.\\") || value.length < 240)
     return value;
-  return path4.win32.toNamespacedPath(value);
+  return path6.win32.toNamespacedPath(value);
 }
 function expandTilde(value, platform) {
   if (value === "~") return os3.homedir();
@@ -31922,7 +32530,7 @@ function expandTilde(value, platform) {
   const next = value[1];
   if (next !== "/" && next !== "\\") return value;
   const rest = value.slice(2);
-  const join2 = platform === "win32" ? path4.win32.join : path4.posix.join;
+  const join2 = platform === "win32" ? path6.win32.join : path6.posix.join;
   return join2(os3.homedir(), rest);
 }
 function convertMsysToWindowsPath(rawPath) {
@@ -31950,7 +32558,7 @@ function convertMsysToWindowsPath(rawPath) {
 function normalizeMsysToWindowsPath(rawPath) {
   const converted = convertMsysToWindowsPath(rawPath);
   if (!converted) return void 0;
-  return path4.win32.normalize(converted);
+  return path6.win32.normalize(converted);
 }
 function isUnsupportedPosixAbsolutePath(value, platform = process.platform) {
   if (platform !== "win32") return false;
@@ -31979,7 +32587,7 @@ function normalizeWindowsPathLike(value, platform = process.platform) {
   if (platform !== "win32") return expanded;
   const converted = normalizeMsysToWindowsPath(expanded);
   if (!converted && expanded.startsWith("/")) return expanded;
-  const normalized = path4.win32.normalize(converted ?? expanded);
+  const normalized = path6.win32.normalize(converted ?? expanded);
   return maybeAddWindowsLongPathPrefix(normalized);
 }
 function normalizeWindowsPathArray(values, platform = process.platform) {
@@ -32039,6 +32647,7 @@ var SessionManager = class _SessionManager {
   sessionTtlMs = DEFAULT_SESSION_TTL_MS;
   runningSessionMaxMs = DEFAULT_RUNNING_SESSION_MAX_MS;
   platform;
+  nativeToolHandling;
   maxSessions;
   maxPendingPermissionsPerSession;
   eventBufferMaxSize;
@@ -32046,6 +32655,7 @@ var SessionManager = class _SessionManager {
   destroyed = false;
   constructor(opts) {
     this.platform = opts?.platform ?? process.platform;
+    this.nativeToolHandling = opts?.nativeToolHandling ?? false;
     this.sessionTtlMs = opts?.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     const envRaw = process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
     const envParsed = typeof envRaw === "string" && envRaw.trim() !== "" ? Number.parseInt(envRaw, 10) : NaN;
@@ -32514,15 +33124,13 @@ var SessionManager = class _SessionManager {
     if (finalResult.behavior === "allow") {
       const updatedInput = finalResult.updatedInput;
       const validRecord = updatedInput !== null && updatedInput !== void 0 && typeof updatedInput === "object" && !Array.isArray(updatedInput);
-      const normalizedUpdatedInput = validRecord ? normalizeToolInput(
+      const original = validRecord ? updatedInput : pending.record.input;
+      const normalizedUpdatedInput = this.nativeToolHandling ? original : validRecord ? normalizeToolInput(
         pending.record.toolName,
         updatedInput,
         this.platform
       ) : normalizeToolInput(pending.record.toolName, pending.record.input, this.platform);
-      const unsupportedPath = findUnsupportedPosixPathInToolInput(
-        normalizedUpdatedInput,
-        this.platform
-      );
+      const unsupportedPath = !this.nativeToolHandling && findUnsupportedPosixPathInToolInput(normalizedUpdatedInput, this.platform);
       if (unsupportedPath) {
         finalResult = {
           behavior: "deny",
@@ -50361,8 +50969,8 @@ async function Bs($, X) {
 var DEFAULT_SETTING_SOURCES = ["user", "project", "local"];
 
 // src/utils/windows.ts
-import path5 from "node:path";
-var { join, dirname, normalize: normalize2, isAbsolute } = path5.win32;
+import path7 from "node:path";
+var { join, dirname, normalize: normalize2, isAbsolute } = path7.win32;
 function isWindows() {
   return process.platform === "win32";
 }
@@ -50389,7 +50997,7 @@ function normalizePermissionUpdatedInput(input) {
 var MAX_TRANSIENT_RETRIES = 3;
 var INITIAL_RETRY_DELAY_MS = 1e3;
 var DEFAULT_PERMISSION_REQUEST_TIMEOUT_MS = 6e4;
-var MAX_PERMISSION_REQUEST_TIMEOUT_MS = 5 * 6e4;
+var MAX_PERMISSION_REQUEST_TIMEOUT_MS = 30 * 6e4;
 var MAX_PREINIT_BUFFER_MESSAGES = 200;
 function clampPermissionRequestTimeoutMs(ms) {
   if (!Number.isFinite(ms) || ms <= 0) return DEFAULT_PERMISSION_REQUEST_TIMEOUT_MS;
@@ -50695,46 +51303,48 @@ function consumeQuery(params) {
   const canUseTool = async (toolName, input, options2) => {
     const sessionId = await getSessionId();
     const normalizedToolName = toolName.trim();
-    const normalizedInput = normalizeToolInput(toolName, input, params.platform);
-    const scopedDecision = params.permissionPolicy?.(toolName, normalizedInput);
-    if (scopedDecision) return scopedDecision;
-    const unsupportedPath = findUnsupportedPosixPathInToolInput(normalizedInput, params.platform);
-    if (unsupportedPath) {
-      return {
-        behavior: "deny",
-        message: `Tool '${normalizedToolName || toolName}' requested unsupported POSIX path '${unsupportedPath}' on Windows.`,
-        interrupt: false
-      };
-    }
-    if (typeof options2.blockedPath === "string" && isUnsupportedPosixAbsolutePath(options2.blockedPath, params.platform)) {
-      return {
-        behavior: "deny",
-        message: `Tool '${normalizedToolName || toolName}' requested blocked path '${options2.blockedPath}' that is unsupported on Windows.`,
-        interrupt: false
-      };
-    }
-    const sessionInfo = params.sessionManager.get(sessionId);
-    if (sessionInfo) {
-      const disallowedTools = normalizePolicyToolNames(sessionInfo.disallowedTools);
-      const allowedTools = normalizePolicyToolNames(sessionInfo.allowedTools);
-      if (normalizedToolName !== "" && disallowedTools.includes(normalizedToolName)) {
+    const normalizedInput = params.nativeToolHandling ? input : normalizeToolInput(toolName, input, params.platform);
+    if (!params.nativeToolHandling) {
+      const scopedDecision = params.permissionPolicy?.(toolName, normalizedInput);
+      if (scopedDecision) return scopedDecision;
+      const unsupportedPath = findUnsupportedPosixPathInToolInput(normalizedInput, params.platform);
+      if (unsupportedPath) {
         return {
           behavior: "deny",
-          message: `Tool '${normalizedToolName}' is disallowed by session policy.`
-        };
-      }
-      if (sessionInfo.strictAllowedTools === true && normalizedToolName !== "" && allowedTools.length > 0 && !allowedTools.includes(normalizedToolName)) {
-        return {
-          behavior: "deny",
-          message: `Tool '${normalizedToolName}' is not in allowedTools under strictAllowedTools policy.`,
+          message: `Tool '${normalizedToolName || toolName}' requested unsupported POSIX path '${unsupportedPath}' on Windows.`,
           interrupt: false
         };
       }
-      if (!options2.blockedPath && normalizedToolName !== "" && allowedTools.includes(normalizedToolName)) {
+      if (typeof options2.blockedPath === "string" && isUnsupportedPosixAbsolutePath(options2.blockedPath, params.platform)) {
         return {
-          behavior: "allow",
-          updatedInput: normalizePermissionUpdatedInput(normalizedInput)
+          behavior: "deny",
+          message: `Tool '${normalizedToolName || toolName}' requested blocked path '${options2.blockedPath}' that is unsupported on Windows.`,
+          interrupt: false
         };
+      }
+      const sessionInfo = params.sessionManager.get(sessionId);
+      if (sessionInfo) {
+        const disallowedTools = normalizePolicyToolNames(sessionInfo.disallowedTools);
+        const allowedTools = normalizePolicyToolNames(sessionInfo.allowedTools);
+        if (normalizedToolName !== "" && disallowedTools.includes(normalizedToolName)) {
+          return {
+            behavior: "deny",
+            message: `Tool '${normalizedToolName}' is disallowed by session policy.`
+          };
+        }
+        if (sessionInfo.strictAllowedTools === true && normalizedToolName !== "" && allowedTools.length > 0 && !allowedTools.includes(normalizedToolName)) {
+          return {
+            behavior: "deny",
+            message: `Tool '${normalizedToolName}' is not in allowedTools under strictAllowedTools policy.`,
+            interrupt: false
+          };
+        }
+        if (!options2.blockedPath && normalizedToolName !== "" && allowedTools.includes(normalizedToolName)) {
+          return {
+            behavior: "allow",
+            updatedInput: normalizePermissionUpdatedInput(normalizedInput)
+          };
+        }
       }
     }
     const requestId = `${options2.toolUseID}:${toolName}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
@@ -50798,7 +51408,7 @@ function consumeQuery(params) {
     ...params.options,
     spawnClaudeCodeProcess: params.options.spawnClaudeCodeProcess ?? processSpawner(),
     abortController: params.abortController,
-    permissionMode: "default",
+    permissionMode: params.options.permissionMode ?? "default",
     canUseTool
   };
   let lastQueryCostUsd = 0;
@@ -51254,7 +51864,7 @@ var InputQueue = class {
 };
 
 // src/orchestrator/messaging.ts
-import { randomUUID as randomUUID3 } from "node:crypto";
+import { randomUUID as randomUUID4 } from "node:crypto";
 var MAX_TEXT = 16e3;
 var MAX_MESSAGES = 128;
 var MAX_QUESTIONS = 16;
@@ -51267,7 +51877,7 @@ function result(value, isError = false) {
   };
 }
 var SupervisorMailbox = class {
-  constructor(timeoutMs = 6e4) {
+  constructor(timeoutMs = 3e5) {
     this.timeoutMs = timeoutMs;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647)
       throw new Error("INVALID_SUPERVISOR_QUESTION_TIMEOUT");
@@ -51291,7 +51901,7 @@ var SupervisorMailbox = class {
         ),
         Tx(
           "ask_supervisor",
-          "Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. Timeout default 60000ms; interruption or timeout returns an explicit unanswered error. Question max 16000 characters; optional messageId deduplicates within this attempt.",
+          `Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. Timeout ${this.timeoutMs}ms; interruption or timeout returns an explicit unanswered error. Question max 16000 characters; optional messageId deduplicates within this attempt.`,
           { messageId, question: text },
           async (args) => this.send("question", args.question, args.messageId)
         )
@@ -51337,7 +51947,7 @@ var SupervisorMailbox = class {
     );
   }
   send(kind, value, suppliedId) {
-    const id2 = randomUUID3();
+    const id2 = randomUUID4();
     if (this.closedReason !== void 0)
       return Promise.resolve(this.error("SUPERVISOR_MAILBOX_CLOSED", id2, this.closedReason));
     const prior = suppliedId === void 0 ? void 0 : this.deduplicated.get(suppliedId);
@@ -51347,7 +51957,12 @@ var SupervisorMailbox = class {
       return Promise.resolve(this.error("SUPERVISOR_MESSAGE_LIMIT", id2));
     if (kind === "question" && this.pendingQuestions >= MAX_QUESTIONS)
       return Promise.resolve(this.error("SUPERVISOR_QUESTION_LIMIT", id2));
-    const event = { id: id2, kind, text: value };
+    const event = {
+      id: id2,
+      kind,
+      text: value,
+      ...kind === "question" ? { expiresAt: new Date(Date.now() + this.timeoutMs).toISOString() } : {}
+    };
     const record2 = {
       ...event,
       clientMessageId: suppliedId,
@@ -51384,7 +51999,11 @@ var SupervisorMailbox = class {
 
 // src/orchestrator/worker.ts
 var ClaudeWorker = class {
-  manager = new SessionManager({ maxSessions: 1, sessionTtlMs: Infinity });
+  manager = new SessionManager({
+    maxSessions: 1,
+    sessionTtlMs: Infinity,
+    nativeToolHandling: true
+  });
   input;
   handle;
   abort;
@@ -51401,6 +52020,9 @@ var ClaudeWorker = class {
   writeScope;
   setWriteScope(cwd, paths) {
     this.writeScope = paths?.length ? { cwd, paths: [...paths] } : void 0;
+  }
+  permitsArtifact(cwd, file2) {
+    return inside(cwd, file2) && (!this.writeScope || this.writeScope.paths.some((scope) => withinScope(this.writeScope.cwd, scope, file2)));
   }
   mailbox;
   messageListeners = /* @__PURE__ */ new Set();
@@ -51479,32 +52101,6 @@ var ClaudeWorker = class {
       off();
     };
   }
-  scopedPermission(cwd, tool, input) {
-    if ([
-      "mcp__codex_supervisor__notify_supervisor",
-      "mcp__codex_supervisor__ask_supervisor"
-    ].includes(tool))
-      return { behavior: "allow", updatedInput: input };
-    if (!["Read", "Write", "Edit", "Glob", "Grep"].includes(tool)) return void 0;
-    const file2 = input.file_path ?? input.path ?? ".";
-    if (typeof file2 !== "string" || !inside(cwd, file2))
-      return {
-        behavior: "deny",
-        message: "File operation outside the task workspace",
-        interrupt: false
-      };
-    if (["Write", "Edit"].includes(tool) && this.writeScope && !this.writeScope.paths.some(
-      (scope) => inside(this.writeScope.cwd, scope) && withinScope(this.writeScope.cwd, scope, file2)
-    ))
-      return {
-        behavior: "deny",
-        message: "File mutation outside this worker's reserved write scope",
-        interrupt: false
-      };
-    if (typeof input.pattern === "string" && (input.pattern.includes("..") || /^[a-zA-Z]:[\\/]|^[/\\]/.test(input.pattern)))
-      return void 0;
-    return { behavior: "allow", updatedInput: input };
-  }
   async start(cwd, prompt, maxTurns, signal, resumeId) {
     if (this.live) throw new Error("SESSION_BUSY");
     const startupGeneration = this.generation;
@@ -51518,7 +52114,7 @@ var ClaudeWorker = class {
     this.generation++;
     this.eventFloor = -1;
     this.mailbox?.close("Native query replaced");
-    const mailbox = new SupervisorMailbox();
+    const mailbox = new SupervisorMailbox(decisionTimeoutMs());
     this.mailbox = mailbox;
     mailbox.subscribe((message) => {
       if (this.mailbox === mailbox && this.currentId)
@@ -51527,6 +52123,7 @@ var ClaudeWorker = class {
     });
     this.hydrated.clear();
     const config2 = localConfig();
+    const permission = permissionSettings(cwd);
     if (resumeId && this.manager.get(resumeId)) this.manager.delete(resumeId);
     const model = config2.model;
     this.configurationSignature = nativeMcpSignature(cwd);
@@ -51548,11 +52145,10 @@ var ClaudeWorker = class {
       disallowedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
       persistSession: true,
       strictMcpConfig: false,
-      settings: { model, disableAllHooks: true },
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: "You execute scoped tasks for Codex. Do exactly the requested implementation. Do not run acceptance checks unless asked; the supervisor independently runs them. Report changed paths, important findings and blockers concisely; never omit information needed for acceptance. Use codex_supervisor notify_supervisor only for meaningful milestones and ask_supervisor for scoped questions requiring Codex decisions; an answer is guidance, not human permission or acceptance. If unanswered, stop and report BLOCKED:. Do not spawn subagents/teammates; Codex schedules up to3 workers. Use actually available built-in and enabled MCP tools; supervisor tools are not necessarily yours. Choose suitable command tools yourself. Use absolute file paths on Windows."
+        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Do not spawn subagents/teammates; Codex schedules up to3 managed sessions. Supervisor tools are not necessarily yours; select from your actually available tools."
       }
     };
     if (resumeId)
@@ -51560,7 +52156,7 @@ var ClaudeWorker = class {
         toSessionCreateParams({
           sessionId: resumeId,
           source,
-          permissionMode: "default",
+          permissionMode: permission.mode,
           abortController: this.abort
         })
       );
@@ -51570,12 +52166,14 @@ var ClaudeWorker = class {
       abortController: this.abort,
       options: {
         ...buildOptions(source),
+        permissionMode: permission.mode,
+        allowDangerouslySkipPermissions: permission.mode === "bypassPermissions",
         spawnClaudeCodeProcess: processSpawner(this.processStoppers),
         mcpServers: { codex_supervisor: mailbox.createServer() }
       },
-      permissionPolicy: (tool, input) => this.scopedPermission(cwd, tool, input),
-      permissionRequestTimeoutMs: 6e4,
-      sessionInitTimeoutMs: 45e3,
+      nativeToolHandling: true,
+      permissionRequestTimeoutMs: decisionTimeoutMs(),
+      sessionInitTimeoutMs: startupTimeoutMs(),
       sessionManager: this.manager,
       onInit: (init) => {
         this.capabilitySnapshot = capabilitiesFromInit(init);
@@ -51585,7 +52183,7 @@ var ClaudeWorker = class {
             toSessionCreateParams({
               sessionId: init.session_id,
               source,
-              permissionMode: "default",
+              permissionMode: permission.mode,
               abortController
             })
           );
@@ -51702,58 +52300,82 @@ var ClaudeWorker = class {
       return;
     }
     this.generation++;
-    this.mailbox?.close("Worker stopped");
-    this.input?.close();
-    this.handle?.close();
-    this.live = false;
-    if (sessionId) {
-      this.manager.cancel(sessionId, { source: "orchestrator" });
-      this.manager.delete(sessionId);
+    let errors = 0;
+    try {
+      this.mailbox?.close("Worker stopped");
+      this.input?.close();
+      this.handle?.close();
+      if (sessionId) {
+        this.manager.cancel(sessionId, { source: "orchestrator" });
+        this.manager.delete(sessionId);
+      }
+    } catch {
+      errors++;
+    } finally {
+      this.live = false;
+      for (const stop of [...this.processStoppers]) {
+        try {
+          stop();
+        } catch {
+          errors++;
+        }
+      }
+      this.processStoppers.clear();
+      this.currentId = void 0;
     }
-    for (const stop of [...this.processStoppers]) stop();
-    this.processStoppers.clear();
-    this.currentId = void 0;
+    if (errors) console.error(`Worker cleanup completed with ${errors} resource errors`);
+  }
+  async interrupt(sessionId, timeoutMs = 3e3) {
+    if (sessionId !== this.currentId || !this.handle) return;
+    const started = this.manager.getLastEventId(sessionId) ?? -1;
+    await new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        off();
+        resolve();
+      };
+      const off = this.manager.subscribe((id2, event) => {
+        if (id2 === sessionId && event && event.id > started && ["result", "error"].includes(event.type))
+          finish();
+      });
+      const timer = setTimeout(finish, timeoutMs);
+      this.handle.interrupt();
+    });
   }
   destroy() {
-    this.stop();
-    this.manager.destroy();
+    try {
+      this.stop();
+    } finally {
+      this.manager.destroy();
+    }
   }
 };
 
 // src/orchestrator/team.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 import {
-  existsSync as existsSync5,
+  existsSync as existsSync7,
   mkdirSync as mkdirSync3,
-  readFileSync as readFileSync5,
-  readdirSync as readdirSync3,
+  readFileSync as readFileSync7,
+  readdirSync as readdirSync4,
   realpathSync as realpathSync4,
   renameSync as renameSync3,
-  unlinkSync as unlinkSync3,
   writeFileSync as writeFileSync2
 } from "node:fs";
-import path6 from "node:path";
+import path8 from "node:path";
 function fail2(message) {
   throw new Error(message);
 }
-function alive2(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 function canonical(file2) {
-  let existing = path6.resolve(file2);
+  let existing = path8.resolve(file2);
   const suffix = [];
-  while (!existsSync5(existing)) {
-    const parent = path6.dirname(existing);
+  while (!existsSync7(existing)) {
+    const parent = path8.dirname(existing);
     if (parent === existing) fail2("WORKSPACE_PATH_UNRESOLVED");
-    suffix.unshift(path6.basename(existing));
+    suffix.unshift(path8.basename(existing));
     existing = parent;
   }
-  const result2 = path6.join(realpathSync4(existing), ...suffix).replaceAll("\\", "/").replace(/\/$/, "");
+  const result2 = path8.join(realpathSync4.native(existing), ...suffix).replaceAll("\\", "/").replace(/\/$/, "");
   return process.platform === "win32" ? result2.toLowerCase() : result2;
 }
 function overlaps(a3, b) {
@@ -51764,7 +52386,7 @@ function scopes(task2) {
   if (!task2.writeScope?.length) return [root];
   return task2.writeScope.map((file2) => {
     if (!file2.trim() || /[*?]/.test(file2)) fail2("WRITE_SCOPE_REQUIRES_LITERAL_PATH");
-    const resolved = canonical(path6.resolve(task2.cwd, file2));
+    const resolved = canonical(path8.resolve(task2.cwd, file2));
     if (resolved !== root && !resolved.startsWith(root + "/"))
       fail2("WRITE_SCOPE_OUTSIDE_WORKSPACE");
     return resolved;
@@ -51775,28 +52397,9 @@ var TeamCoordinator = class {
     this.dataDir = dataDir;
     this.factory = factory;
     mkdirSync3(dataDir, { recursive: true });
-    const ownerFile = path6.join(dataDir, "team-owner.lock");
-    const owner = existsSync5(ownerFile) ? JSON.parse(readFileSync5(ownerFile, "utf8")) : void 0;
-    const foreignOwner = owner && alive2(owner.pid);
-    for (const file2 of readdirSync3(dataDir).filter((file3) => /^team-[\w-]+\.json$/.test(file3))) {
-      const team = JSON.parse(readFileSync5(path6.join(dataDir, file2), "utf8"));
+    for (const file2 of readdirSync4(dataDir).filter((file3) => /^team-[\w-]+\.json$/.test(file3))) {
+      const team = JSON.parse(readFileSync7(path8.join(dataDir, file2), "utf8"));
       this.teams.set(team.id, team);
-      if (foreignOwner || team.ownerPid !== process.pid && alive2(team.ownerPid)) continue;
-      team.ownerPid = process.pid;
-      for (const task2 of team.tasks) {
-        if (task2.reservation) {
-          const held = task2.reservation.held;
-          settleReservation(team.budget, held, void 0);
-          team.budget.recovered = (team.budget.recovered ?? 0) + held;
-          task2.reservation = void 0;
-        }
-        task2.starting = false;
-        this.attach(team, task2);
-        task2.state = this.run(task2).tasks[0].state;
-      }
-      for (const receipt of Object.values(team.receipts))
-        if (receipt.status === "starting") receipt.status = "interrupted";
-      this.save(team);
     }
   }
   teams = /* @__PURE__ */ new Map();
@@ -51806,9 +52409,24 @@ var TeamCoordinator = class {
   pending = /* @__PURE__ */ new Map();
   starts = /* @__PURE__ */ new Map();
   closed = false;
-  ownerId = randomUUID4();
+  ownerId = randomUUID5();
+  activityListeners = /* @__PURE__ */ new Set();
+  subscribeActivity(listener) {
+    this.activityListeners.add(listener);
+    return () => this.activityListeners.delete(listener);
+  }
+  hasActiveExecutions() {
+    return this.ownedTasks().some(
+      (task2) => task2.starting || this.controllers.get(task2.childRunId)?.hasActiveExecutions()
+    );
+  }
   save(team) {
-    const dest = path6.join(this.dataDir, `team-${team.id}.json`);
+    const dest = path8.join(this.dataDir, `team-${team.id}.json`);
+    if (existsSync7(dest)) {
+      const disk = JSON.parse(readFileSync7(dest, "utf8"));
+      if ((disk.generation ?? 0) > (team.generation ?? 0) || disk.ownerId && disk.ownerId !== team.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
+        fail2("STALE_TEAM_OWNER");
+    }
     const tmp = `${dest}.${process.pid}.tmp`;
     writeFileSync2(tmp, JSON.stringify(team, null, 2), { mode: 384 });
     renameSync3(tmp, dest);
@@ -51828,12 +52446,99 @@ var TeamCoordinator = class {
     });
     this.save(team);
     if (actionable) for (const listener of [...this.listeners]) listener(team.id);
+    for (const listener of this.activityListeners) listener();
   }
   get(teamId, writable = true) {
     const team = this.teams.get(teamId) ?? fail2("TEAM_NOT_FOUND");
-    if (writable && (this.closed || team.ownerPid !== process.pid || team.tasks.some((task2) => !this.controllers.has(task2.childRunId))))
+    if (writable && (this.closed || team.ownerPid !== process.pid || team.ownerReleased || team.ownerId && team.ownerId !== this.ownerId || team.tasks.some((task2) => !this.controllers.has(task2.childRunId))))
       fail2("TEAM_NOT_OWNED");
     return team;
+  }
+  syncBudget(team) {
+    if (team.tasks.every((t) => this.controllers.has(t.childRunId))) {
+      team.budget.used = team.tasks.reduce((n3, t) => n3 + this.run(t).turnBudget.used, 0);
+      team.budget.estimated = team.tasks.reduce(
+        (n3, t) => n3 + (this.run(t).turnBudget.estimated ?? 0),
+        0
+      );
+      team.budget.overrun = Math.max(0, team.budget.used - team.budget.limit) || void 0;
+    }
+  }
+  warnBudget(team, current) {
+    const committed = team.budget.used + team.budget.reserved;
+    const pendingTasks = team.tasks.filter((t) => t !== current && t.state === "pending" && !t.starting).map((t) => t.contract.id);
+    if (team.budgetWarningAt || committed < team.budget.limit * 0.7 || !pendingTasks.length) return;
+    team.budgetWarningAt = committed;
+    this.emit(
+      team,
+      "budget_risk",
+      {
+        budget: budgetSummary(team.budget),
+        pendingTasks,
+        nextActions: ["review_checkpoint", "plan_remaining_stages"],
+        warning: "Charged or reserved allowance leaves limited room for pending stages"
+      },
+      true,
+      current
+    );
+  }
+  syncPeerArtifacts(team) {
+    for (const task2 of team.tasks) {
+      const files = team.tasks.filter((peer) => peer !== task2).flatMap((peer) => {
+        const contract = this.run(peer).tasks[0];
+        return [...contract.artifacts, ...contract.additionalArtifacts ?? []].map((file2) => path8.resolve(peer.cwd, file2)).filter((file2) => inside(task2.cwd, file2)).map((file2) => path8.relative(realpathSync4.native(task2.cwd), canonical(file2)));
+      });
+      this.controllers.get(task2.childRunId).setPeerArtifacts(task2.childRunId, files);
+    }
+  }
+  recover(teamId) {
+    if (this.closed) fail2("TEAM_COORDINATOR_CLOSED");
+    const file2 = path8.join(this.dataDir, `team-${teamId}.json`);
+    if (!existsSync7(file2)) fail2("TEAM_NOT_FOUND");
+    const releaseClaim = claimFile(`${file2}.claim`);
+    try {
+      const team = JSON.parse(readFileSync7(file2, "utf8"));
+      if (team.ownerId === this.ownerId && !team.ownerReleased)
+        return this.summary(this.get(teamId));
+      if (!team.ownerReleased && processAlive(team.ownerPid)) fail2("OWNER_STILL_ACTIVE");
+      if (this.hasActiveExecutions()) fail2("EXECUTOR_BUSY");
+      this.acquireExecutor();
+      try {
+        const orphaned = team.budget.reserved;
+        team.ownerPid = process.pid;
+        team.ownerId = this.ownerId;
+        team.ownerReleased = false;
+        team.generation = (team.generation ?? 0) + 1;
+        this.teams.set(teamId, team);
+        for (const task2 of team.tasks) {
+          this.controllers.get(task2.childRunId)?.close();
+          this.controllers.delete(task2.childRunId);
+          const controller = this.factory(task2.directory);
+          controller.attach(task2.childRunId);
+          task2.starting = false;
+          task2.reservation = void 0;
+          this.attach(team, task2, controller);
+          task2.state = this.run(task2).tasks[0].state;
+        }
+        team.budget.reserved = 0;
+        this.syncBudget(team);
+        this.syncPeerArtifacts(team);
+        if (orphaned) team.budget.recovered = (team.budget.recovered ?? 0) + orphaned;
+        for (const receipt of Object.values(team.receipts))
+          if (receipt.status === "starting") receipt.status = "interrupted";
+        this.emit(
+          team,
+          "team_attached",
+          { automaticReplay: false, generation: team.generation },
+          false
+        );
+        return this.summary(team);
+      } finally {
+        this.releaseExecutor();
+      }
+    } finally {
+      releaseClaim();
+    }
   }
   task(team, taskId) {
     return team.tasks.find((task2) => task2.contract.id === taskId) ?? fail2("TASK_NOT_FOUND");
@@ -51846,7 +52551,8 @@ var TeamCoordinator = class {
     this.controllers.set(task2.childRunId, controller);
     this.subscriptions.push(
       controller.subscribeEvents((run, event) => {
-        if (run.id !== task2.childRunId || this.closed || !this.teams.has(team.id)) return;
+        if (run.id !== task2.childRunId || this.closed || !this.teams.has(team.id) || team.ownerId !== this.ownerId || team.ownerReleased)
+          return;
         task2.state = run.tasks[0].state;
         if (task2.reservation && run.tasks[0].attempts > task2.reservation.attemptsBefore && !run.activeTaskId && !run.sessionOperation) {
           settleReservation(
@@ -51855,7 +52561,9 @@ var TeamCoordinator = class {
             Math.max(0, run.turnBudget.used - task2.reservation.usedBefore)
           );
           task2.reservation = void 0;
+          this.syncBudget(team);
         }
+        if (event.type === "accounting_corrected") this.syncBudget(team);
         this.emit(
           team,
           event.type,
@@ -51863,6 +52571,7 @@ var TeamCoordinator = class {
           event.actionable,
           task2
         );
+        this.warnBudget(team, task2);
         this.releaseExecutor();
       })
     );
@@ -51897,8 +52606,10 @@ var TeamCoordinator = class {
     };
     ids.forEach(visit);
     const team = {
-      id: randomUUID4(),
+      id: randomUUID5(),
       ownerPid: process.pid,
+      ownerId: this.ownerId,
+      generation: 1,
       cwd: realpathSync4(input.cwd),
       goal: input.goal,
       design: input.design,
@@ -51919,7 +52630,7 @@ var TeamCoordinator = class {
         writeScope: writeScope ? [...writeScope] : void 0,
         state: "pending",
         childRunId: "",
-        directory: path6.join(this.dataDir, team.id, contract.id)
+        directory: path8.join(this.dataDir, team.id, contract.id)
       };
       scopes(task2);
       return task2;
@@ -51971,53 +52682,50 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       throw error48;
     }
     this.teams.set(team.id, team);
+    this.syncPeerArtifacts(team);
     this.emit(team, "team_created", { maxWorkers, turnBudget: team.budget }, false);
     return this.summary(team);
   }
   active(task2) {
     const run = this.run(task2);
-    return !!(task2.starting || task2.reservation || run.activeTaskId || run.sessionOperation);
+    return !!(task2.starting || task2.reservation || run.activeTaskId || run.sessionOperation || this.controllers.get(task2.childRunId)?.hasActiveExecutions());
   }
   occupied(task2) {
     return this.active(task2) || this.run(task2).sessionState === "retained";
   }
   ownedTasks() {
-    return [...this.teams.values()].filter((team) => team.ownerPid === process.pid).flatMap((team) => team.tasks).filter((task2) => this.controllers.has(task2.childRunId));
+    return [...this.teams.values()].filter(
+      (team) => team.ownerPid === process.pid && !team.ownerReleased && (!team.ownerId || team.ownerId === this.ownerId)
+    ).flatMap((team) => team.tasks).filter((task2) => this.controllers.has(task2.childRunId));
   }
   hasOccupied() {
-    const file2 = path6.join(this.dataDir, "team-owner.lock");
-    if (existsSync5(file2)) {
-      const owner = JSON.parse(readFileSync5(file2, "utf8"));
-      if (owner.id !== this.ownerId && alive2(owner.pid)) return true;
+    const file2 = path8.join(this.dataDir, "team-owner.lock");
+    if (existsSync7(file2)) {
+      const owner = JSON.parse(readFileSync7(file2, "utf8"));
+      if (owner.id !== this.ownerId && processAlive(owner.pid)) return true;
     }
     return this.ownedTasks().some((task2) => this.occupied(task2));
   }
   acquireExecutor() {
-    const file2 = path6.join(this.dataDir, "team-owner.lock");
-    if (existsSync5(file2)) {
-      const owner = JSON.parse(readFileSync5(file2, "utf8"));
-      if (owner.id === this.ownerId) return;
-      if (alive2(owner.pid)) fail2("TEAM_EXECUTOR_BUSY");
-      unlinkSync3(file2);
-    }
-    writeFileSync2(file2, JSON.stringify({ pid: process.pid, id: this.ownerId }), {
-      flag: "wx",
-      mode: 384
-    });
+    const file2 = path8.join(this.dataDir, "team-owner.lock");
+    acquireJsonLease(
+      file2,
+      "id",
+      { pid: process.pid, id: this.ownerId },
+      "TEAM_EXECUTOR_BUSY",
+      true
+    );
   }
   releaseExecutor() {
-    if (!this.closed) return;
-    if (this.ownedTasks().some((task2) => this.occupied(task2))) return;
-    const file2 = path6.join(this.dataDir, "team-owner.lock");
-    if (existsSync5(file2)) {
-      const owner = JSON.parse(readFileSync5(file2, "utf8"));
-      if (owner.id === this.ownerId) unlinkSync3(file2);
-    }
+    if (this.pending.size || this.starts.size || this.hasActiveExecutions()) return;
+    const file2 = path8.join(this.dataDir, "team-owner.lock");
+    if (existsSync7(file2)) releaseJsonLease(file2, "id", { pid: process.pid, id: this.ownerId });
   }
   canReview(childRunId) {
     const own = this.ownedTasks().find((task2) => task2.childRunId === childRunId);
     if (!own) fail2("CHILD_RUN_NOT_FOUND");
     const team = [...this.teams.values()].find((team2) => team2.tasks.includes(own));
+    this.syncPeerArtifacts(team);
     if (own.contract.dependsOn.some(
       (id2) => this.run(this.task(team, id2)).tasks[0].state !== "accepted"
     ))
@@ -52075,6 +52783,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
     const receipt = { taskId, childRunId: task2.childRunId, status: "starting" };
     team.receipts[requestId] = receipt;
     this.save(team);
+    this.warnBudget(team, task2);
     const execution = (async () => {
       try {
         for (const candidates of [team.tasks, all]) {
@@ -52108,6 +52817,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
             delta > 0 || run.tasks[0].attempts === attemptsBefore ? delta : void 0
           );
           task2.reservation = void 0;
+          this.syncBudget(team);
         }
         this.pending.delete(key);
         this.save(team);
@@ -52124,6 +52834,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       deadline: team.deadline,
       maxWorkers: team.maxWorkers,
       turnBudget: { ...team.budget },
+      accounting: budgetSummary(team.budget),
       nextCursor: team.events.at(-1)?.seq ?? 0,
       tasks: team.tasks.map((task2) => ({
         id: task2.contract.id,
@@ -52138,13 +52849,15 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
   status(teamId) {
     return teamId ? this.summary(this.get(teamId, false)) : [...this.teams.values()].map((team) => this.summary(team));
   }
-  async wait(teamId, afterSeq, timeoutMs = 45e3, signal) {
+  async wait(teamId, afterSeq, timeoutMs = defaultWaitMs(), signal) {
     const team = this.get(teamId);
     const snapshot = (timedOut = false) => ({
       teamId,
       status: team.status,
       timedOut,
-      events: team.events.filter((event) => event.seq > afterSeq && event.actionable),
+      events: team.events.filter((event) => event.seq > afterSeq && event.actionable).sort(
+        (a3, b) => Number(["permission_required", "worker_question"].includes(b.type)) - Number(["permission_required", "worker_question"].includes(a3.type))
+      ),
       nextCursor: team.events.at(-1)?.seq ?? 0
     });
     if (!Number.isSafeInteger(afterSeq) || afterSeq < 0 || afterSeq > (team.events.at(-1)?.seq ?? 0))
@@ -52171,7 +52884,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
         this.interrupt(teamId, "Host cancelled team wait");
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(45e3, Math.max(1, timeoutMs)));
+      const timer = setTimeout(() => finish(true), Math.min(6e5, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -52243,30 +52956,81 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
     this.emit(team, "team_interrupted", { reason, taskId });
     return this.summary(team);
   }
+  async interruptGracefully(teamId, reason = "Supervisor interrupted team", taskId) {
+    const team = this.get(teamId);
+    await Promise.all(
+      (taskId ? [this.task(team, taskId)] : team.tasks).map(async (task2) => {
+        const startup = this.starts.get(task2.childRunId);
+        if (startup) startup.valid = false;
+        const run = this.run(task2);
+        if (run.activeTaskId || run.sessionOperation)
+          await this.controllers.get(task2.childRunId).interruptGracefully(task2.childRunId, reason);
+      })
+    );
+    this.emit(team, "team_interrupted", { reason, taskId });
+    return this.summary(team);
+  }
   cancel(teamId, reason = "Supervisor cancelled team", taskId) {
     const team = this.get(teamId);
+    let cleanupErrors = 0;
     for (const task2 of taskId ? [this.task(team, taskId)] : team.tasks) {
       const startup = this.starts.get(task2.childRunId);
       if (startup) startup.valid = false;
-      this.controllers.get(task2.childRunId).cancel(task2.childRunId, reason);
+      try {
+        this.controllers.get(task2.childRunId).cancel(task2.childRunId, reason);
+      } catch {
+        cleanupErrors++;
+      }
     }
     if (!taskId) team.status = "cancelled";
-    this.emit(team, "team_cancelled", { reason, taskId });
+    this.emit(team, "team_cancelled", { reason, taskId, cleanupErrors });
     return this.summary(team);
   }
   close() {
     if (this.closed) return;
-    for (const startup of this.starts.values()) startup.valid = false;
-    for (const controller of this.controllers.values()) controller.close();
     this.closed = true;
-    this.releaseExecutor();
+    let errors = 0;
+    for (const startup of this.starts.values()) startup.valid = false;
+    for (const controller of this.controllers.values()) {
+      try {
+        controller.close();
+      } catch {
+        errors++;
+      }
+    }
     for (const unsubscribe of this.subscriptions) unsubscribe();
     for (const team of this.teams.values())
-      if (team.ownerPid === process.pid && team.tasks.every((task2) => this.controllers.has(task2.childRunId)))
-        this.save(team);
+      if (team.ownerPid === process.pid && team.tasks.every((task2) => this.controllers.has(task2.childRunId))) {
+        for (const task2 of team.tasks) {
+          const run = this.run(task2);
+          task2.state = run.tasks[0].state;
+          if (task2.reservation && !run.activeTaskId) {
+            settleReservation(
+              team.budget,
+              task2.reservation.held,
+              Math.max(0, run.turnBudget.used - task2.reservation.usedBefore)
+            );
+            task2.reservation = void 0;
+          }
+        }
+        this.syncBudget(team);
+        team.ownerReleased = true;
+        try {
+          this.save(team);
+        } catch {
+          errors++;
+        }
+      }
+    try {
+      this.releaseExecutor();
+    } catch {
+      errors++;
+    }
     for (const listener of [...this.listeners])
       for (const team of this.teams.values()) listener(team.id);
     this.listeners.clear();
+    this.activityListeners.clear();
+    if (errors) console.error(`Team cleanup completed with ${errors} resource errors`);
   }
 };
 
@@ -52280,7 +53044,10 @@ var EVIDENCE_SECTIONS = [
   "checkpoint",
   "capabilities",
   "contract",
-  "usage"
+  "usage",
+  "executions",
+  "changes",
+  "decisions"
 ];
 function selectTaskEvidence(run, task2, sections, capabilities) {
   const selected2 = {
@@ -52318,6 +53085,7 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
       case "artifacts":
         selected2.artifacts = {
           paths: task2.artifacts,
+          additionalArtifacts: task2.additionalArtifacts,
           hash: task2.artifactHash,
           provenance: extended.provenance
         };
@@ -52325,7 +53093,9 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
       case "budget":
         selected2.budget = {
           run: run.turnBudget,
-          nativeSegmentLimit: run.maxTurns,
+          summary: budgetSummary(run.turnBudget),
+          defaultSegmentLimit: run.maxTurns,
+          lastExecution: run.executions?.filter((e3) => e3.taskId === task2.id).at(-1),
           attempts: task2.attempts,
           repairs: extended.repairs,
           continuations: extended.continuations
@@ -52333,6 +53103,25 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
         break;
       case "checkpoint":
         selected2.checkpoint = extended.checkpoint;
+        break;
+      case "executions":
+        selected2.executions = run.executions?.filter((e3) => e3.taskId === task2.id);
+        break;
+      case "changes":
+        selected2.changes = {
+          declaredArtifacts: task2.artifacts,
+          additionalArtifacts: task2.additionalArtifacts ?? [],
+          peerArtifacts: run.peerArtifacts ?? [],
+          ...task2.changeInventory
+        };
+        break;
+      case "decisions":
+        selected2.decisions = (task2.decisions ?? []).map((d) => ({
+          ...d,
+          state: d.state === "pending" && d.expiresAt && Date.parse(d.expiresAt) <= Date.now() ? "expired" : d.state,
+          nextActions: d.state === "pending" && d.expiresAt && Date.parse(d.expiresAt) > Date.now() ? [d.kind === "permission" ? "respond_permission" : "respond_message"] : ["continue_with_feedback", "reconcile"],
+          automaticReplay: false
+        }));
         break;
       case "capabilities":
         selected2.workerCapabilities = capabilities;
@@ -52363,8 +53152,8 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
 }
 
 // src/orchestrator/server.ts
-import { existsSync as existsSync6, readFileSync as readFileSync6, writeFileSync as writeFileSync3, unlinkSync as unlinkSync4 } from "node:fs";
-import { fileURLToPath as fileURLToPath2 } from "node:url";
+import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
+import { randomUUID as randomUUID6 } from "node:crypto";
 async function doctor() {
   const config2 = localConfig();
   let gatewayStatus = null;
@@ -52392,32 +53181,44 @@ async function doctor() {
     }
   }
   let terminalAvailable = true, dotnet10Available = true;
-  const nativeHelperPresent = process.platform !== "win32" || existsSync6(fileURLToPath2(new URL("./native/CodexClaudeTerminal.dll", import.meta.url)));
+  const nativeHelperPresent = process.platform !== "win32" || existsSync8(nativeHelperFile());
   if (process.platform === "win32") {
     try {
-      execFileSync3("where.exe", ["wt.exe"], { windowsHide: true, stdio: "ignore" });
+      execFileSync5("where.exe", ["wt.exe"], { windowsHide: true, stdio: "ignore" });
     } catch {
       terminalAvailable = false;
     }
     try {
       dotnet10Available = /^Microsoft\.NETCore\.App 10\./m.test(
-        execFileSync3("dotnet.exe", ["--list-runtimes"], { encoding: "utf8", windowsHide: true })
+        execFileSync5("dotnet.exe", ["--list-runtimes"], { encoding: "utf8", windowsHide: true })
       );
     } catch {
       dotnet10Available = false;
     }
   }
   return {
-    pluginVersion: false ? "0.0.0-dev" : "0.5.0",
+    pluginVersion: false ? "0.0.0-dev" : "0.6.1",
     node: process.version,
     platform: process.platform,
-    claude: execFileSync3(config2.executable, ["--version"], {
+    claude: execFileSync5(config2.executable, ["--version"], {
       encoding: "utf8",
       windowsHide: true
     }).trim(),
     executable: config2.executable,
     endpoint: config2.endpoint,
     model: config2.model ?? "Claude Code default",
+    configuredPermissionMode: permissionSettings().mode,
+    decisionTimeoutMs: decisionTimeoutMs(),
+    defaultWaitMs: defaultWaitMs(),
+    startupTimeoutMs: startupTimeoutMs(),
+    checkTimeoutMs: checkTimeoutMs(),
+    workerPolicy: {
+      hooks: "native_untouched",
+      ordinaryTools: "native_permission_evaluation",
+      blockedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
+      fileInterception: false,
+      pathRewriting: false
+    },
     gatewayStatus,
     modelListed,
     actualInferenceVerified: false,
@@ -52444,11 +53245,34 @@ var task = external_exports.object({
   artifacts: external_exports.array(external_exports.string().min(1)).min(1).max(100),
   checks: external_exports.array(check2).min(1).max(20)
 });
-function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path7.join(os4.homedir(), ".local", "share", "codex-controls-claude")) {
-  const controller = new Orchestrator(dataDir, new ClaudeWorker());
+function taskSummary(run, task2) {
+  const executable = Date.now() < run.deadline && run.turnBudget.limit - run.turnBudget.used - run.turnBudget.reserved > 1;
+  const actions = task2.state === "awaiting_review" ? ["review"] : task2.state === "accepted" ? ["dispatch_ready_downstream"] : task2.state === "running" ? ["wait"] : task2.state === "pending" ? executable ? ["dispatch_if_dependencies_accepted"] : ["budget_exhausted"] : executable ? ["continue_with_feedback", "reconcile"] : ["reconcile"];
+  return {
+    id: task2.id,
+    state: task2.state,
+    revision: task2.revision,
+    blocker: task2.failure,
+    attempts: task2.attempts,
+    repairs: task2.repairs,
+    continuations: task2.continuations,
+    artifactHash: task2.artifactHash,
+    undeclaredChanges: task2.changeInventory?.undeclaredChanges,
+    outsideScopeObservations: task2.changeInventory?.outsideScopeObservations,
+    missingArtifacts: task2.checkpoint ? Object.entries(task2.checkpoint.artifacts).filter(([, hash2]) => hash2 === null).map(([file2]) => file2) : void 0,
+    nextActions: actions,
+    evidenceRef: {
+      runId: run.id,
+      taskId: task2.id,
+      sections: ["result", "checks", "changes", "executions", "decisions"]
+    }
+  };
+}
+function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path9.join(os4.homedir(), ".local", "share", "codex-controls-claude"), makeWorker = () => new ClaudeWorker()) {
+  const controller = new Orchestrator(dataDir, makeWorker());
   const teams = new TeamCoordinator(
-    path7.join(dataDir, "teams"),
-    (directory) => new Orchestrator(directory, new ClaudeWorker())
+    path9.join(dataDir, "teams"),
+    (directory) => new Orchestrator(directory, makeWorker())
   );
   const route = (runId) => runId && teams.controllerFor(runId) || controller;
   let reviewInProgress = false;
@@ -52460,28 +53284,35 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       if (other.activeTaskId || other.sessionOperation)
         throw new Error("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
   };
-  const leasePath = path7.join(dataDir, "supervisor.lock");
+  const leasePath = path9.join(dataDir, "supervisor.lock");
+  const connectionId = randomUUID6();
   let leaseOwned = false;
   const acquireLease = () => {
-    if (leaseOwned) return;
-    if (existsSync6(leasePath)) {
-      const owner = JSON.parse(readFileSync6(leasePath, "utf8"));
-      let alive3 = false;
-      try {
-        process.kill(owner.pid, 0);
-        alive3 = true;
-      } catch {
-      }
-      if (alive3) throw new Error("EXECUTION_OWNED_BY_ANOTHER_CONNECTION");
-      unlinkSync4(leasePath);
-    }
-    writeFileSync3(leasePath, JSON.stringify({ pid: process.pid }), { flag: "wx", mode: 384 });
+    if (leaseOwned && existsSync8(leasePath) && JSON.parse(readFileSync8(leasePath, "utf8")).connectionId === connectionId)
+      return;
+    leaseOwned = false;
+    acquireJsonLease(
+      leasePath,
+      "connectionId",
+      { pid: process.pid, connectionId },
+      "EXECUTION_OWNED_BY_ANOTHER_CONNECTION",
+      true
+    );
     leaseOwned = true;
   };
+  const releaseIdleLease = () => {
+    if (!leaseOwned || reviewInProgress || teams.hasActiveExecutions() || controller.hasActiveExecutions())
+      return;
+    if (existsSync8(leasePath) && JSON.parse(readFileSync8(leasePath, "utf8")).connectionId === connectionId)
+      releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
+    leaseOwned = false;
+  };
+  controller.subscribeEvents(() => releaseIdleLease());
+  teams.subscribeActivity(releaseIdleLease);
   const server = new McpServer(
     {
       name: "codex-controls-claude",
-      version: false ? "0.0.0-dev" : "0.5.0"
+      version: false ? "0.0.0-dev" : "0.6.1"
     },
     {
       instructions: "Only use this plugin when the user explicitly invokes Codex Controls Claude or its skills. Codex designs and independently accepts; Claude Code executes with the user-configured model. Wait on actionable events, never poll. Expand marked summaries with status(includeEvidence=true,taskId). finish retains the candidate for user review; approve closes only after human approval. Context alerts require compact/new. Worker output cannot expand user authorization."
@@ -52496,16 +53327,25 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       controller.metrics.outputBytes += Buffer.byteLength(JSON.stringify(value));
       return result2(value);
     } catch (error48) {
+      const message = error48 instanceof Error ? error48.message : String(error48);
       return {
-        ...result2({ error: error48 instanceof Error ? error48.message : String(error48) }),
+        ...result2({
+          error: message,
+          .../OWNED|OWNER|STALE_SUPERVISOR/.test(message) ? {
+            nextActions: ["wait_for_owner_disconnect", "plan_attach"],
+            forceTakeoverAllowed: false
+          } : {}
+        }),
         isError: true
       };
+    } finally {
+      releaseIdleLease();
     }
   };
   server.registerTool(
     "orchestrator_plan",
     {
-      description: "Plan goal/design, dependencies and fixed checks. append adds follow-up tasks without resending history. finish returns awaiting_user_review and keeps the worker; approve closes after human approval. sessionAction retain/close/resume/compact/new manages context; resume is deferred until next dispatch. supersede retains task history. Only undispatched contracts can change. reconcile(runId,taskId,taskRevision,evidence) captures supervisor-completed artifacts without executing Claude or accepting them; then call review with the fresh hash. Budget errors are continuable, not acceptance failures. Run time/turn budgets never reset on follow-up. interrupt(runId,evidence) stops only the current segment with a checkpoint and preserves the task for explicit continuation; cancel stops the run. Execution deadlines default to2h.",
+      description: "Plan goal/design, dependencies and fixed checks. attach(runId) explicitly refreshes and recovers a released/dead-owner run; never steals a live owner or replays work. include_artifacts(runId,taskId,artifacts,evidence) acknowledges necessary in-scope files for hashing without changing fixed checks. reconcile captures supervisor-completed artifacts, then independent review is required. interrupt gracefully drains the native result before bounded fallback stop. append/supersede never reset budgets. finish retains the candidate for human review; approve closes only after human approval. sessionAction retain/close/resume/compact/new manages context. Execution deadlines default2h.",
       inputSchema: {
         action: external_exports.enum([
           "create",
@@ -52517,7 +53357,9 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
           "append",
           "session",
           "reconcile",
-          "interrupt"
+          "interrupt",
+          "attach",
+          "include_artifacts"
         ]),
         sessionAction: external_exports.enum(["retain", "close", "resume", "compact", "new"]).optional(),
         runId: id.optional(),
@@ -52541,6 +53383,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         ).optional(),
         taskRevision: external_exports.number().int().positive().optional(),
         evidence: external_exports.string().min(1).max(16e3).optional(),
+        artifacts: external_exports.array(external_exports.string().min(1)).min(1).max(100).optional(),
         maxRepairs: external_exports.number().int().min(0).max(2).describe(
           "Acceptance-rework executions, 0..2; Default: 2. Budget continuation and explicit interruption recovery do not consume this count."
         ).optional()
@@ -52548,8 +53391,23 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
     },
     (input) => guard(async () => {
       const { action, sessionAction, taskRevision, evidence, ...rest } = input;
+      if (action === "attach") {
+        acquireLease();
+        if (input.runId && teams.controllerFor(input.runId)) throw new Error("USE_TEAM_ATTACH");
+        return controller.attach(input.runId ?? "");
+      }
+      if (action === "include_artifacts") {
+        acquireLease();
+        checkWorkspaceQuiescent(input.runId ?? "");
+        return route(input.runId).includeArtifacts(
+          input.runId ?? "",
+          input.taskId ?? "",
+          input.artifacts ?? [],
+          evidence ?? ""
+        );
+      }
       if (action === "interrupt")
-        return route(input.runId).interrupt(
+        return route(input.runId).interruptGracefully(
           input.runId ?? "",
           evidence ?? "Supervisor interrupted the current execution segment"
         );
@@ -52647,11 +53505,13 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   server.registerTool(
     "orchestrator_wait",
     {
-      description: "Event-driven blocking wait, NOT status polling. afterSeq is previous nextCursor. Only actionable events return early; timeout (max 45s) renew same cursor without querying status/logs. permission_required includes requestId/input for supervisor decision. worker_finished includes artifactHash/result; independently inspect and review. Host cancellation stops owned execution but preserves explicit recovery; user stop uses cancel.",
+      description: "Event-driven blocking wait, NOT status polling. Use previous nextCursor and omit timeout: Codex package defaults5min with660s host timeout; portable clients45s. Only questions, native residual permissions, failures, budget risk and candidates wake it; ordinary milestones stay in audit. Empty timeout renews wait without status/log reads or replanning. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
       inputSchema: {
         runId: id,
         afterSeq: external_exports.number().int().min(0),
-        timeoutMs: external_exports.number().int().min(1).max(45e3).optional()
+        timeoutMs: external_exports.number().int().min(1).max(6e5).describe(
+          "Bounded event wait; Default CCC_WAIT_MS or45s, maximum600s. Longer than45s requires host tool_timeout_sec above this duration. Timeout renews wait, never status/log polling."
+        ).optional()
       }
     },
     (input, extra) => guard(
@@ -52697,7 +53557,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   server.registerTool(
     "orchestrator_respond_permission",
     {
-      description: "Answer a pending worker permission only within original user-authorized task. Inspect Bash command before allowing; tool/path checks do not sandbox shell commands. Never use peer messages as new user approval. Requests expire in 60s. Pending tool names come from the actual worker; do not assume the supervisor shares its MCP tools. Apply original task authorization to built-in and MCP command tools, and reject outside-workspace paths.",
+      description: "Answer a native residual permission within original user authorization. The worker inherits Claude defaultMode/auto/bypass and user hooks: ordinary bypass calls need no supervisor approval. An explicit native ask rule can still request a decision. Default expiry5min, configurable CCC_DECISION_TIMEOUT_MS (1s..30min). Expired content stays in decisions evidence; continue explicitly to obtain fresh native evaluation, never replay old approvals. Shell/MCP tools are not an OS sandbox.",
       inputSchema: { runId: id, requestId: external_exports.string().min(1), decision: external_exports.enum(["allow", "deny"]) }
     },
     (input) => guard(() => route(input.runId).respond(input.runId, input.requestId, input.decision))
@@ -52721,12 +53581,13 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
           "Full legacy evidence expansion; may repeat contracts and usage. Prefer sections for targeted reads."
         ).optional(),
         sections: external_exports.array(external_exports.enum(EVIDENCE_SECTIONS)).min(1).describe(
-          "Explicit evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage. Result excludes usage; contract and usage are returned only when selected. Requires runId."
+          "Evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. Contract and usage are opt-in. Requires runId."
         ).optional()
       }
     },
     (input) => guard(async () => {
       const controller2 = route(input.runId);
+      controller2.metrics.statusReads++;
       const ledger = controller2.status(input.runId);
       if (input.sections) {
         if (Array.isArray(ledger)) throw new Error("runId required with sections");
@@ -52754,7 +53615,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         if (!task2) throw new Error("TASK_NOT_FOUND");
         return {
           runId: ledger.id,
-          task: input.includeEvidence ? task2 : { id: task2.id, state: task2.state, artifactHash: task2.artifactHash },
+          task: input.includeEvidence ? task2 : taskSummary(ledger, task2),
           nextCursor: controller2.cursor(ledger.id)
         };
       }
@@ -52764,19 +53625,11 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         sessionId: r3.sessionId,
         sessionState: r3.sessionState,
         context: r3.lastContext,
-        turnBudget: r3.turnBudget,
+        budget: budgetSummary(r3.turnBudget),
         workerCapabilities: compactCapabilities(
           r3.workerCapabilities
         ),
-        tasks: r3.tasks.map((t) => ({
-          id: t.id,
-          state: t.state,
-          attempts: t.attempts,
-          repairs: t.repairs,
-          continuations: t.continuations,
-          revision: t.revision,
-          artifactHash: t.artifactHash
-        })),
+        tasks: r3.tasks.map((t) => taskSummary(r3, t)),
         nextCursor: r3.events.at(-1)?.seq ?? 0
       });
       return {
@@ -52819,7 +53672,8 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
           "cancel",
           "interrupt",
           "approve",
-          "close"
+          "close",
+          "attach"
         ]),
         teamId: id.optional(),
         taskId: id.optional(),
@@ -52841,7 +53695,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         mode: external_exports.enum(["start", "continue"]).optional(),
         feedback: external_exports.string().max(16e3).optional(),
         afterSeq: external_exports.number().int().min(0).optional(),
-        timeoutMs: external_exports.number().int().min(1).max(45e3).optional(),
+        timeoutMs: external_exports.number().int().min(1).max(6e5).optional(),
         reason: external_exports.string().max(16e3).optional()
       }
     },
@@ -52857,8 +53711,15 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
           tasks: input.tasks
         });
       }
-      if (input.action === "status") return teams.status(input.teamId);
+      if (input.action === "status") {
+        controller.metrics.statusReads++;
+        return teams.status(input.teamId);
+      }
       const teamId = input.teamId ?? "";
+      if (input.action === "attach") {
+        acquireLease();
+        return teams.recover(teamId);
+      }
       if (input.action === "dispatch") {
         if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
         acquireLease();
@@ -52885,7 +53746,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       if (input.action === "approve") return teams.approve(teamId, input.reason ?? "");
       if (input.action === "close") return teams.closeSessions(teamId);
       if (input.action === "interrupt")
-        return teams.interrupt(teamId, input.reason, input.taskId);
+        return teams.interruptGracefully(teamId, input.reason, input.taskId);
       return teams.cancel(teamId, input.reason, input.taskId);
     })
   );
@@ -52894,11 +53755,20 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
     controller,
     teams,
     close: () => {
-      teams.close();
-      controller.close();
-      if (leaseOwned && existsSync6(leasePath) && JSON.parse(readFileSync6(leasePath, "utf8")).pid === process.pid)
-        unlinkSync4(leasePath);
-      leaseOwned = false;
+      try {
+        teams.close();
+      } finally {
+        try {
+          controller.close();
+        } finally {
+          try {
+            if (leaseOwned && existsSync8(leasePath))
+              releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
+          } finally {
+            leaseOwned = false;
+          }
+        }
+      }
     }
   };
 }
@@ -52918,10 +53788,13 @@ if (process.argv.includes("--doctor")) {
   const shutdown = async () => {
     if (closing) return;
     closing = true;
-    close();
-    stopOwnedProcesses();
-    await server.close().catch(() => {
-    });
+    await shutdownWithFallback(close, stopOwnedProcesses, () => server.close()).catch(
+      (error48) => {
+        console.error(
+          "Plugin shutdown completed with cleanup errors: " + (error48 instanceof Error ? error48.name : "unknown")
+        );
+      }
+    );
   };
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
     process.on(signal, () => void shutdown());

@@ -6,7 +6,12 @@
       "args": [
         "${PLUGIN_ROOT}/server/index.mjs"
       ],
-      "cwd": "${PLUGIN_ROOT}"
+      "cwd": "${PLUGIN_ROOT}",
+      "tool_timeout_sec": 660,
+      "startup_timeout_sec": 120,
+      "env": {
+        "CCC_WAIT_MS": "300000"
+      }
     }
   }
 }

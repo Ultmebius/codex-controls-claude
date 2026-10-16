@@ -1,4 +1,5 @@
 import type { Task, Run } from "./controller.js";
+import { budgetSummary } from "./execution.js";
 export const EVIDENCE_SECTIONS = [
   "result",
   "error",
@@ -9,6 +10,9 @@ export const EVIDENCE_SECTIONS = [
   "capabilities",
   "contract",
   "usage",
+  "executions",
+  "changes",
+  "decisions",
 ] as const;
 export type EvidenceSection = (typeof EVIDENCE_SECTIONS)[number];
 export function selectTaskEvidence(
@@ -54,6 +58,7 @@ export function selectTaskEvidence(
       case "artifacts":
         selected.artifacts = {
           paths: task.artifacts,
+          additionalArtifacts: task.additionalArtifacts,
           hash: task.artifactHash,
           provenance: extended.provenance,
         };
@@ -61,7 +66,9 @@ export function selectTaskEvidence(
       case "budget":
         selected.budget = {
           run: run.turnBudget,
-          nativeSegmentLimit: run.maxTurns,
+          summary: budgetSummary(run.turnBudget),
+          defaultSegmentLimit: run.maxTurns,
+          lastExecution: run.executions?.filter((e) => e.taskId === task.id).at(-1),
           attempts: task.attempts,
           repairs: extended.repairs,
           continuations: extended.continuations,
@@ -69,6 +76,31 @@ export function selectTaskEvidence(
         break;
       case "checkpoint":
         selected.checkpoint = extended.checkpoint;
+        break;
+      case "executions":
+        selected.executions = run.executions?.filter((e) => e.taskId === task.id);
+        break;
+      case "changes":
+        selected.changes = {
+          declaredArtifacts: task.artifacts,
+          additionalArtifacts: task.additionalArtifacts ?? [],
+          peerArtifacts: run.peerArtifacts ?? [],
+          ...task.changeInventory,
+        };
+        break;
+      case "decisions":
+        selected.decisions = (task.decisions ?? []).map((d) => ({
+          ...d,
+          state:
+            d.state === "pending" && d.expiresAt && Date.parse(d.expiresAt) <= Date.now()
+              ? "expired"
+              : d.state,
+          nextActions:
+            d.state === "pending" && d.expiresAt && Date.parse(d.expiresAt) > Date.now()
+              ? [d.kind === "permission" ? "respond_permission" : "respond_message"]
+              : ["continue_with_feedback", "reconcile"],
+          automaticReplay: false,
+        }));
         break;
       case "capabilities":
         selected.workerCapabilities = capabilities;

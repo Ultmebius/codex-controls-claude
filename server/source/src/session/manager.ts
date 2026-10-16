@@ -84,6 +84,7 @@ export class SessionManager {
   private sessionTtlMs = DEFAULT_SESSION_TTL_MS;
   private runningSessionMaxMs = DEFAULT_RUNNING_SESSION_MAX_MS;
   private platform: NodeJS.Platform;
+  private nativeToolHandling: boolean;
   private maxSessions: number;
   private maxPendingPermissionsPerSession: number;
   private eventBufferMaxSize: number;
@@ -97,8 +98,10 @@ export class SessionManager {
     eventBufferMaxSize?: number;
     eventBufferHardMaxSize?: number;
     sessionTtlMs?: number;
+    nativeToolHandling?: boolean;
   }) {
     this.platform = opts?.platform ?? process.platform;
+    this.nativeToolHandling = opts?.nativeToolHandling ?? false;
     this.sessionTtlMs = opts?.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
     const envRaw = process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
     const envParsed =
@@ -725,18 +728,22 @@ export class SessionManager {
         updatedInput !== undefined &&
         typeof updatedInput === "object" &&
         !Array.isArray(updatedInput);
-      const normalizedUpdatedInput = validRecord
-        ? normalizeToolInput(
-            pending.record.toolName,
-            updatedInput as Record<string, unknown>,
-            this.platform
-          )
-        : normalizeToolInput(pending.record.toolName, pending.record.input, this.platform);
+      const original = validRecord
+        ? (updatedInput as Record<string, unknown>)
+        : pending.record.input;
+      const normalizedUpdatedInput = this.nativeToolHandling
+        ? original
+        : validRecord
+          ? normalizeToolInput(
+              pending.record.toolName,
+              updatedInput as Record<string, unknown>,
+              this.platform
+            )
+          : normalizeToolInput(pending.record.toolName, pending.record.input, this.platform);
 
-      const unsupportedPath = findUnsupportedPosixPathInToolInput(
-        normalizedUpdatedInput,
-        this.platform
-      );
+      const unsupportedPath =
+        !this.nativeToolHandling &&
+        findUnsupportedPosixPathInToolInput(normalizedUpdatedInput, this.platform);
       if (unsupportedPath) {
         finalResult = {
           behavior: "deny",

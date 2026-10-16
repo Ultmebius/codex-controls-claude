@@ -11,6 +11,7 @@ export interface SupervisorMessage {
   id: string;
   kind: "update" | "question";
   text: string;
+  expiresAt?: string;
 }
 
 interface MessageRecord extends SupervisorMessage {
@@ -44,7 +45,7 @@ export class SupervisorMailbox {
   private pendingQuestions = 0;
   private closedReason?: string;
 
-  constructor(private readonly timeoutMs = 60000) {
+  constructor(private readonly timeoutMs = 300000) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647)
       throw new Error("INVALID_SUPERVISOR_QUESTION_TIMEOUT");
   }
@@ -63,7 +64,7 @@ export class SupervisorMailbox {
         ),
         tool(
           "ask_supervisor",
-          "Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. Timeout default 60000ms; interruption or timeout returns an explicit unanswered error. Question max 16000 characters; optional messageId deduplicates within this attempt.",
+          `Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. Timeout ${this.timeoutMs}ms; interruption or timeout returns an explicit unanswered error. Question max 16000 characters; optional messageId deduplicates within this attempt.`,
           { messageId, question: text },
           async (args) => this.send("question", args.question, args.messageId)
         ),
@@ -133,7 +134,14 @@ export class SupervisorMailbox {
     if (kind === "question" && this.pendingQuestions >= MAX_QUESTIONS)
       return Promise.resolve(this.error("SUPERVISOR_QUESTION_LIMIT", id));
 
-    const event: SupervisorMessage = { id, kind, text: value };
+    const event: SupervisorMessage = {
+      id,
+      kind,
+      text: value,
+      ...(kind === "question"
+        ? { expiresAt: new Date(Date.now() + this.timeoutMs).toISOString() }
+        : {}),
+    };
     const record: MessageRecord = {
       ...event,
       clientMessageId: suppliedId,

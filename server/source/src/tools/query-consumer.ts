@@ -34,7 +34,7 @@ const MAX_TRANSIENT_RETRIES = 3;
 const INITIAL_RETRY_DELAY_MS = 1000;
 
 const DEFAULT_PERMISSION_REQUEST_TIMEOUT_MS = 60_000;
-export const MAX_PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60_000;
+export const MAX_PERMISSION_REQUEST_TIMEOUT_MS = 30 * 60_000;
 
 export const MAX_PREINIT_BUFFER_MESSAGES = 200;
 
@@ -81,6 +81,7 @@ export type ConsumeQueryParams =
         toolName: string,
         input: Record<string, unknown>
       ) => PermissionResult | undefined;
+      nativeToolHandling?: boolean;
       abortController: AbortController;
       /** For tests only: override platform-dependent behavior. */
       platform?: NodeJS.Platform;
@@ -100,6 +101,7 @@ export type ConsumeQueryParams =
         toolName: string,
         input: Record<string, unknown>
       ) => PermissionResult | undefined;
+      nativeToolHandling?: boolean;
       abortController: AbortController;
       /** For tests only: override platform-dependent behavior. */
       platform?: NodeJS.Platform;
@@ -453,71 +455,74 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
   const canUseTool: CanUseTool = async (toolName, input, options) => {
     const sessionId = await getSessionId();
     const normalizedToolName = toolName.trim();
-    const normalizedInput = normalizeToolInput(toolName, input, params.platform);
-    const scopedDecision = params.permissionPolicy?.(toolName, normalizedInput);
-    if (scopedDecision) return scopedDecision;
-    const unsupportedPath = findUnsupportedPosixPathInToolInput(normalizedInput, params.platform);
-    if (unsupportedPath) {
-      return {
-        behavior: "deny",
-        message: `Tool '${normalizedToolName || toolName}' requested unsupported POSIX path '${
-          unsupportedPath
-        }' on Windows.`,
-        interrupt: false,
-      };
-    }
-    if (
-      typeof options.blockedPath === "string" &&
-      isUnsupportedPosixAbsolutePath(options.blockedPath, params.platform)
-    ) {
-      return {
-        behavior: "deny",
-        message: `Tool '${normalizedToolName || toolName}' requested blocked path '${options.blockedPath}' that is unsupported on Windows.`,
-        interrupt: false,
-      };
-    }
-
-    // Keep MCP permission behavior consistent with the SDK options semantics:
-    // - disallowedTools: hard deny
-    // - allowedTools: auto-allow (but still prompt if the SDK provides a blockedPath)
-    // Note: we still pass allowedTools/disallowedTools to the SDK via options; this is a
-    // defensive fast-path in case the SDK calls canUseTool for all tool uses.
-    const sessionInfo = params.sessionManager.get(sessionId);
-    if (sessionInfo) {
-      const disallowedTools = normalizePolicyToolNames(sessionInfo.disallowedTools);
-      const allowedTools = normalizePolicyToolNames(sessionInfo.allowedTools);
-      if (normalizedToolName !== "" && disallowedTools.includes(normalizedToolName)) {
+    const normalizedInput = params.nativeToolHandling
+      ? input
+      : normalizeToolInput(toolName, input, params.platform);
+    if (!params.nativeToolHandling) {
+      const scopedDecision = params.permissionPolicy?.(toolName, normalizedInput);
+      if (scopedDecision) return scopedDecision;
+      const unsupportedPath = findUnsupportedPosixPathInToolInput(normalizedInput, params.platform);
+      if (unsupportedPath) {
         return {
           behavior: "deny",
-          message: `Tool '${normalizedToolName}' is disallowed by session policy.`,
+          message: `Tool '${normalizedToolName || toolName}' requested unsupported POSIX path '${
+            unsupportedPath
+          }' on Windows.`,
+          interrupt: false,
         };
       }
-
       if (
-        sessionInfo.strictAllowedTools === true &&
-        normalizedToolName !== "" &&
-        allowedTools.length > 0 &&
-        !allowedTools.includes(normalizedToolName)
+        typeof options.blockedPath === "string" &&
+        isUnsupportedPosixAbsolutePath(options.blockedPath, params.platform)
       ) {
         return {
           behavior: "deny",
-          message: `Tool '${normalizedToolName}' is not in allowedTools under strictAllowedTools policy.`,
+          message: `Tool '${normalizedToolName || toolName}' requested blocked path '${options.blockedPath}' that is unsupported on Windows.`,
           interrupt: false,
         };
       }
 
-      if (
-        !options.blockedPath &&
-        normalizedToolName !== "" &&
-        allowedTools.includes(normalizedToolName)
-      ) {
-        return {
-          behavior: "allow",
-          updatedInput: normalizePermissionUpdatedInput(normalizedInput),
-        };
+      // Keep MCP permission behavior consistent with the SDK options semantics:
+      // - disallowedTools: hard deny
+      // - allowedTools: auto-allow (but still prompt if the SDK provides a blockedPath)
+      // Note: we still pass allowedTools/disallowedTools to the SDK via options; this is a
+      // defensive fast-path in case the SDK calls canUseTool for all tool uses.
+      const sessionInfo = params.sessionManager.get(sessionId);
+      if (sessionInfo) {
+        const disallowedTools = normalizePolicyToolNames(sessionInfo.disallowedTools);
+        const allowedTools = normalizePolicyToolNames(sessionInfo.allowedTools);
+        if (normalizedToolName !== "" && disallowedTools.includes(normalizedToolName)) {
+          return {
+            behavior: "deny",
+            message: `Tool '${normalizedToolName}' is disallowed by session policy.`,
+          };
+        }
+
+        if (
+          sessionInfo.strictAllowedTools === true &&
+          normalizedToolName !== "" &&
+          allowedTools.length > 0 &&
+          !allowedTools.includes(normalizedToolName)
+        ) {
+          return {
+            behavior: "deny",
+            message: `Tool '${normalizedToolName}' is not in allowedTools under strictAllowedTools policy.`,
+            interrupt: false,
+          };
+        }
+
+        if (
+          !options.blockedPath &&
+          normalizedToolName !== "" &&
+          allowedTools.includes(normalizedToolName)
+        ) {
+          return {
+            behavior: "allow",
+            updatedInput: normalizePermissionUpdatedInput(normalizedInput),
+          };
+        }
       }
     }
-
     const requestId = `${options.toolUseID}:${toolName}:${Date.now()}:${Math.random()
       .toString(16)
       .slice(2)}`;
@@ -592,7 +597,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
     ...params.options,
     spawnClaudeCodeProcess: params.options.spawnClaudeCodeProcess ?? processSpawner(),
     abortController: params.abortController,
-    permissionMode: "default",
+    permissionMode: params.options.permissionMode ?? "default",
     canUseTool,
   };
 

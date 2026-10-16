@@ -7,12 +7,19 @@ import {
   realpathSync,
   renameSync,
   writeFileSync,
-  unlinkSync,
 } from "node:fs";
 import path from "node:path";
 import type { AgentResult } from "../types.js";
 import type { Worker, WorkerEvent, ContextInfo } from "./worker.js";
-import { inside, executeCheck } from "./runtime.js";
+import { inside, executeCheck, defaultWaitMs, checkTimeoutMs } from "./runtime.js";
+import { workspaceSnapshot, changedSince, type WorkspaceSnapshot } from "./changes.js";
+import { settleExecution, budgetSummary, type ExecutionAccount } from "./execution.js";
+import {
+  claimFile,
+  acquireJsonLease,
+  releaseJsonLease,
+  processAlive as alive,
+} from "./ownership.js";
 import { compactCapabilities, type WorkerCapabilities } from "./capabilities.js";
 import {
   DEFAULT_SEGMENT_TURNS,
@@ -74,6 +81,25 @@ export interface Task extends TaskSpec {
   reviews: unknown[];
   startedAt?: number;
   supersededBy?: string;
+  additionalArtifacts?: string[];
+  workspaceBaseline?: WorkspaceSnapshot;
+  changeInventory?: {
+    source: "git" | "unavailable";
+    changedFiles: string[];
+    undeclaredChanges: string[];
+    outsideScopeObservations: string[];
+  };
+  decisions?: {
+    id: string;
+    kind: "permission" | "question";
+    state: "pending" | "answered" | "expired" | "interrupted";
+    expiresAt?: string;
+    text?: string;
+    inputHash?: string;
+    toolName?: string;
+    input?: Record<string, unknown>;
+    reason?: string;
+  }[];
 }
 export interface RunEvent {
   seq: number;
@@ -122,6 +148,13 @@ export interface Run {
   sessionId?: string;
   activeTaskId?: string;
   ownerPid: number;
+  ownerId?: string;
+  ownerGeneration?: number;
+  ownerReleased?: boolean;
+  executions?: ExecutionAccount[];
+  activeExecutionId?: string;
+  budgetWarningAt?: number;
+  peerArtifacts?: string[];
 }
 
 function taskContract(task: TaskSpec): TaskSpec {
@@ -132,15 +165,6 @@ function taskContract(task: TaskSpec): TaskSpec {
 function fail(message: string): never {
   throw new Error(message);
 }
-function alive(pid: number) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export class Orchestrator {
   private runs = new Map<string, Run>();
   private listeners = new Set<(runId: string) => void>();
@@ -151,6 +175,8 @@ export class Orchestrator {
   private unsubscribeMessages?: () => void;
   private pendingMessages = new Map<string, { runId: string; taskId: string; sessionId: string }>();
   private closed = false;
+  private readonly ownerId = randomUUID();
+  private interruptions = new Map<string, { reason: string; kind: string }>();
   private reviewing = new Set<string>();
   private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private eventSubscribers = new Set<(run: Run, event: RunEvent) => void>();
@@ -166,6 +192,7 @@ export class Orchestrator {
     wakeups: 0,
     waitTimeouts: 0,
     statusReads: 0,
+    ledgerReads: 0,
     logPolls: 0,
     outputBytes: 0,
   };
@@ -178,45 +205,8 @@ export class Orchestrator {
     for (const file of readdirSync(dataDir).filter((f) => /^run-[\w-]+\.json$/.test(f))) {
       const run = JSON.parse(readFileSync(path.join(dataDir, file), "utf8")) as Run;
       this.migrate(run);
-      const last = run.events.at(-1);
-      if (
-        !alive(run.ownerPid) &&
-        run.status === "cancelled" &&
-        last?.type === "run_cancelled" &&
-        [
-          "Execution deadline exceeded",
-          "MCP connection closed",
-          "Host cancelled wait",
-          "Host cancelled acceptance",
-        ].includes((last.data as { reason?: string }).reason ?? "")
-      )
-        run.status = "open";
-      if (
-        (run.status === "open" || run.status === "awaiting_user_review") &&
-        !alive(run.ownerPid)
-      ) {
-        if (run.turnBudget.reserved) {
-          const orphaned = run.turnBudget.reserved;
-          settleReservation(run.turnBudget, orphaned, undefined);
-          run.turnBudget.recovered = (run.turnBudget.recovered ?? 0) + orphaned;
-        }
-        run.ownerPid = process.pid;
-        run.activeTaskId = undefined;
-        run.sessionState = "closed";
-        run.sessionOperation = undefined;
-        for (const task of run.tasks)
-          if (task.state === "running") {
-            task.state = "interrupted";
-            task.failure = { kind: "interrupted" };
-            try {
-              this.captureCheckpoint(run, task, "Owner process was lost", false);
-            } catch {
-              /* Workspace may no longer exist. */
-            }
-          }
-        this.runs.set(run.id, run);
-        this.emit(run, "recovered", { automaticReplay: false });
-      } else this.runs.set(run.id, run);
+      // Loading diagnostics never acquires another supervisor's recoverable runs.
+      this.runs.set(run.id, run);
     }
     this.unsubscribe = worker.subscribe((event) => this.consume(event));
     this.unsubscribeMessages = worker.subscribeMessages?.(({ sessionId, message }) => {
@@ -227,14 +217,23 @@ export class Orchestrator {
         [...this.runs.values()].find(
           (r) => r.activeTaskId && r.status === "open" && this.startups.get(r.id)?.valid
         );
-      if (!run || this.closed) return;
+      if (!run || this.closed || !this.owns(run)) return;
       run.sessionId = sessionId;
-      if (message.kind === "question")
+      if (message.kind === "question") {
         this.pendingMessages.set(message.id, {
           runId: run.id,
           taskId: run.activeTaskId!,
           sessionId,
         });
+        this.task(run, run.activeTaskId!).decisions ??= [];
+        this.task(run, run.activeTaskId!).decisions!.push({
+          id: message.id,
+          kind: "question",
+          state: "pending",
+          text: message.text,
+          expiresAt: message.expiresAt,
+        });
+      }
       this.emit(
         run,
         message.kind === "question" ? "worker_question" : "worker_message",
@@ -246,7 +245,8 @@ export class Orchestrator {
           requiresResponse: message.kind === "question",
           nextActions: message.kind === "question" ? ["respond_message"] : ["continue_wait"],
         },
-        run.activeTaskId
+        run.activeTaskId,
+        message.kind === "question"
       );
     });
   }
@@ -263,6 +263,8 @@ export class Orchestrator {
     )
       fail("MESSAGE_NOT_PENDING_OR_STALE");
     this.pendingMessages.delete(messageId);
+    const decision = this.task(run, pending.taskId).decisions?.find((d) => d.id === messageId);
+    if (decision) decision.state = "answered";
     this.emit(
       run,
       "supervisor_answered",
@@ -284,6 +286,7 @@ export class Orchestrator {
   }
 
   private migrate(run: Run) {
+    run.executions ??= [];
     if (!run.turnBudget) {
       let used = 0,
         observed = 0;
@@ -322,7 +325,7 @@ export class Orchestrator {
 
   private artifactSnapshot(run: Run, task: Task) {
     return Object.fromEntries(
-      task.artifacts.map((file) => {
+      this.artifactPaths(task).map((file) => {
         if (!inside(run.cwd, file)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
         const absolute = path.resolve(run.cwd, file);
         return [
@@ -335,6 +338,7 @@ export class Orchestrator {
     );
   }
   private captureCheckpoint(run: Run, task: Task, reason: string, accountingKnown: boolean) {
+    this.inventory(run, task);
     const artifacts = this.artifactSnapshot(run, task);
     task.checkpoint = {
       at: new Date().toISOString(),
@@ -349,6 +353,101 @@ export class Orchestrator {
       accountingKnown,
     };
     return task.checkpoint;
+  }
+  private artifactPaths(task: Task) {
+    return [...new Set([...task.artifacts, ...(task.additionalArtifacts ?? [])])];
+  }
+  private inventory(run: Run, task: Task) {
+    const changes = changedSince(
+      task.workspaceBaseline,
+      workspaceSnapshot(run.cwd, task.artifacts, task.workspaceBaseline?.heads)
+    );
+    const owned = changes.changedFiles.filter(
+      (file) => this.worker.permitsArtifact?.(run.cwd, file) !== false
+    );
+    const included = new Set(
+      this.artifactPaths(task).map((file) => path.resolve(run.cwd, file).toLowerCase())
+    );
+    // Later accepted tasks own their declared outputs; finish rehashes each of them.
+    for (const peer of run.tasks.filter((peer) => peer.id !== task.id && peer.state === "accepted"))
+      for (const file of this.artifactPaths(peer))
+        included.add(path.resolve(run.cwd, file).toLowerCase());
+    for (const file of run.peerArtifacts ?? [])
+      included.add(path.resolve(run.cwd, file).toLowerCase());
+    task.changeInventory = {
+      ...changes,
+      changedFiles: changes.changedFiles,
+      outsideScopeObservations: changes.changedFiles.filter((file) => !owned.includes(file)),
+      undeclaredChanges: changes.changedFiles.filter(
+        (file) => !included.has(path.resolve(run.cwd, file).toLowerCase())
+      ),
+    };
+    return task.changeInventory;
+  }
+  /** Coordinator-only coverage links. Every linked peer must pass review before team finish. */
+  setPeerArtifacts(runId: string, files: string[]) {
+    const run = this.get(runId);
+    const paths = [...new Set(files)].sort();
+    for (const file of paths) if (!inside(run.cwd, file)) fail("PEER_ARTIFACT_OUTSIDE_WORKSPACE");
+    if (JSON.stringify(paths) !== JSON.stringify(run.peerArtifacts ?? [])) {
+      run.peerArtifacts = paths;
+      this.save(run);
+    }
+  }
+  includeArtifacts(runId: string, taskId: string, files: string[], evidence: string) {
+    const run = this.get(runId),
+      task = this.task(run, taskId);
+    this.open(run);
+    if (run.activeTaskId || run.sessionOperation || this.reviewing.has(run.id))
+      fail("EXECUTOR_BUSY");
+    if (!evidence.trim() || !files.length) fail("ARTIFACT_INCLUSION_EVIDENCE_REQUIRED");
+    if (task.state === "accepted" || task.state === "superseded") fail("TASK_NOT_RECONCILABLE");
+    for (const file of files) if (!inside(run.cwd, file)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
+    task.additionalArtifacts = [...new Set([...(task.additionalArtifacts ?? []), ...files])];
+    this.inventory(run, task);
+    if (task.state === "awaiting_review") task.artifactHash = this.hash(run, task);
+    this.emit(
+      run,
+      "artifacts_included",
+      { files, evidence, artifactHash: task.artifactHash },
+      taskId,
+      false
+    );
+    return {
+      runId,
+      taskId,
+      artifactHash: task.artifactHash,
+      changeInventory: task.changeInventory,
+      nextActions: ["reconcile", "review"],
+    };
+  }
+  private settle(run: Run, reported: number | undefined, reason: string) {
+    const execution = run.executions?.find((e) => e.id === run.activeExecutionId);
+    if (execution) settleExecution(run.turnBudget, execution, reported, reason);
+    else if (run.turnBudget.reserved)
+      settleReservation(run.turnBudget, run.turnBudget.reserved, reported);
+    run.activeExecutionId = undefined;
+  }
+  private warnBudget(run: Run, task: Task) {
+    const committed = run.turnBudget.used + run.turnBudget.reserved;
+    const pendingTasks = run.tasks
+      .filter((t) => t.id !== task.id && t.state === "pending")
+      .map((t) => t.id);
+    if (run.budgetWarningAt || committed < run.turnBudget.limit * 0.7 || !pendingTasks.length)
+      return;
+    run.budgetWarningAt = committed;
+    this.emit(
+      run,
+      "budget_risk",
+      {
+        budget: budgetSummary(run.turnBudget),
+        pendingTasks,
+        nextActions: ["review_checkpoint", "plan_remaining_stages"],
+        warning:
+          "Charged or reserved allowance leaves limited room for pending stages; reservations are not observed use and no allowance is added",
+      },
+      task.id
+    );
   }
   private dependenciesAccepted(run: Run, task: Task) {
     return task.dependsOn.every((id) => {
@@ -375,7 +474,7 @@ export class Orchestrator {
   ) {
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
-    settleReservation(run.turnBudget, run.turnBudget.reserved, undefined);
+    this.settle(run, undefined, kind);
     run.activeTaskId = undefined;
     run.sessionOperation = undefined;
     run.sessionState = "closed";
@@ -392,6 +491,8 @@ export class Orchestrator {
       totalCostUsd: 0,
     };
     task.checkpoint = undefined;
+    for (const decision of task.decisions ?? [])
+      if (decision.state === "pending") decision.state = "interrupted";
     let checkpoint: Task["checkpoint"];
     try {
       checkpoint = this.captureCheckpoint(run, task, reason, false);
@@ -408,6 +509,12 @@ export class Orchestrator {
         failureClass: kind,
         checkpointAvailable: !!checkpoint,
         changedDeclaredArtifacts: checkpoint?.changedDeclaredArtifacts,
+        changeSummary: task.changeInventory
+          ? {
+              undeclaredChanges: task.changeInventory.undeclaredChanges,
+              outsideScopeObservations: task.changeInventory.outsideScopeObservations,
+            }
+          : undefined,
         nextActions:
           Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0
             ? ["continue", "reconcile", "cancel"]
@@ -416,6 +523,7 @@ export class Orchestrator {
       },
       task.id
     );
+    this.warnBudget(run, task);
   }
   private stopExecution(run: Run, reason: string, kind: "interrupted" | "time_budget") {
     const startup = this.startups.get(run.id);
@@ -432,7 +540,7 @@ export class Orchestrator {
         "worker_finished"
       );
     else {
-      settleReservation(run.turnBudget, run.turnBudget.reserved, undefined);
+      this.settle(run, undefined, kind);
       run.sessionOperation = undefined;
       run.sessionState = "closed";
       this.release(run);
@@ -442,6 +550,17 @@ export class Orchestrator {
 
   private save(run: Run) {
     const dest = path.join(this.dataDir, `run-${run.id}.json`);
+    if (existsSync(dest)) {
+      const disk = JSON.parse(readFileSync(dest, "utf8")) as Run;
+      if (
+        disk.ownerId &&
+        disk.ownerId !== run.ownerId &&
+        !disk.ownerReleased &&
+        alive(disk.ownerPid)
+      )
+        fail("STALE_SUPERVISOR_OWNER");
+      if ((disk.ownerGeneration ?? 0) > (run.ownerGeneration ?? 0)) fail("STALE_SUPERVISOR_OWNER");
+    }
     const tmp = `${dest}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(run, null, 2), { mode: 0o600 });
     renameSync(tmp, dest);
@@ -479,8 +598,98 @@ export class Orchestrator {
 
   private get(id: string, writable = true) {
     const run = this.runs.get(id) ?? fail("RUN_NOT_FOUND");
-    if (writable && run.ownerPid !== process.pid) fail("RUN_OWNED_BY_ANOTHER_CONNECTION");
+    if (writable && (this.closed || !this.owns(run)))
+      fail("RUN_OWNED_BY_ANOTHER_CONNECTION: use plan attach after the owner disconnects");
     return run;
+  }
+  private owns(run: Run) {
+    if (
+      run.ownerPid !== process.pid ||
+      run.ownerReleased ||
+      (run.ownerId && run.ownerId !== this.ownerId)
+    )
+      return false;
+    const file = path.join(this.dataDir, `run-${run.id}.json`);
+    if (!existsSync(file)) return true;
+    const disk = JSON.parse(readFileSync(file, "utf8")) as Run;
+    return (
+      !disk.ownerReleased &&
+      disk.ownerPid === process.pid &&
+      disk.ownerId === run.ownerId &&
+      disk.ownerGeneration === run.ownerGeneration
+    );
+  }
+  attach(runId: string) {
+    if (this.closed) fail("CONNECTION_CLOSED");
+    const file = path.join(this.dataDir, `run-${runId}.json`);
+    if (!existsSync(file)) fail("RUN_NOT_FOUND");
+    const claim = `${file}.claim`;
+    const releaseClaim = claimFile(claim);
+    try {
+      const run = JSON.parse(readFileSync(file, "utf8")) as Run;
+      if (
+        !run.ownerReleased &&
+        alive(run.ownerPid) &&
+        (run.ownerPid !== process.pid || (run.ownerId && run.ownerId !== this.ownerId))
+      )
+        fail("OWNER_STILL_ACTIVE: no takeover of a live supervisor");
+      if (
+        this.startups.size ||
+        [...this.runs.values()].some((r) => this.owns(r) && (r.activeTaskId || r.sessionOperation))
+      )
+        fail("EXECUTOR_BUSY");
+      if (run.ownerId === this.ownerId && !run.ownerReleased)
+        return {
+          runId,
+          attached: true,
+          generation: run.ownerGeneration,
+          nextCursor: this.cursor(runId),
+        };
+      this.migrate(run);
+      run.ownerPid = process.pid;
+      run.ownerId = this.ownerId;
+      run.ownerReleased = false;
+      run.ownerGeneration = (run.ownerGeneration ?? 0) + 1;
+      if (run.turnBudget.reserved) {
+        const orphaned = run.turnBudget.reserved;
+        this.settle(run, undefined, "owner_lost");
+        run.turnBudget.recovered = (run.turnBudget.recovered ?? 0) + orphaned;
+      }
+      run.activeTaskId = undefined;
+      run.sessionOperation = undefined;
+      run.sessionState = "closed";
+      for (const task of run.tasks) {
+        if (task.state === "running") {
+          task.state = "interrupted";
+          task.failure = { kind: "interrupted" };
+          try {
+            this.captureCheckpoint(run, task, "Owner was lost", false);
+          } catch {
+            /* Workspace may be offline. */
+          }
+        }
+        for (const decision of task.decisions ?? [])
+          if (decision.state === "pending") decision.state = "interrupted";
+      }
+      this.runs.set(runId, run);
+      this.emit(
+        run,
+        "supervisor_attached",
+        { generation: run.ownerGeneration, automaticReplay: false },
+        undefined,
+        false
+      );
+      return {
+        runId,
+        attached: true,
+        generation: run.ownerGeneration,
+        budget: budgetSummary(run.turnBudget),
+        nextCursor: this.cursor(runId),
+        nextActions: ["reconcile", "continue", "review"],
+      };
+    } finally {
+      releaseClaim();
+    }
   }
 
   cursor(runId: string) {
@@ -506,6 +715,7 @@ export class Orchestrator {
       changedDeclaredArtifacts?: string[];
       nextActions?: string[];
       turnBudget?: TurnBudget;
+      changeSummary?: { undeclaredChanges: string[]; outsideScopeObservations: string[] };
     };
     return {
       ...event,
@@ -520,22 +730,21 @@ export class Orchestrator {
         changedDeclaredArtifacts: data.changedDeclaredArtifacts,
         nextActions: data.nextActions,
         turnBudget: data.turnBudget,
+        changeSummary: data.changeSummary,
         checkpointRef: data.checkpointAvailable
           ? { tool: "orchestrator_status", runId, taskId: event.taskId, sections: ["checkpoint"] }
           : undefined,
         result: data.result
           ? {
               sessionId: data.result.sessionId,
-              summary: ["failed", "blocked"].includes(data.state)
-                ? data.result.result
-                : data.result.result.slice(0, 1000),
-              truncated:
-                !["failed", "blocked"].includes(data.state) && data.result.result.length > 1000,
+              summary:
+                data.state === "blocked" ? data.result.result : data.result.result.slice(0, 1000),
+              truncated: data.state !== "blocked" && data.result.result.length > 1000,
               detailRef: {
                 runId,
                 taskId: event.taskId,
                 tool: "orchestrator_status",
-                includeEvidence: true,
+                sections: ["result"],
               },
               isError: data.result.isError,
               numTurns: data.result.numTurns,
@@ -545,7 +754,13 @@ export class Orchestrator {
               permissionDenials: data.result.permissionDenials,
             }
           : undefined,
-        feedback: data.feedback,
+        feedback: data.feedback
+          ? {
+              summary: data.feedback.slice(0, 500),
+              truncated: data.feedback.length > 500,
+              evidenceRef: { runId, taskId: event.taskId, sections: ["error"] },
+            }
+          : undefined,
       },
     };
   }
@@ -554,6 +769,7 @@ export class Orchestrator {
     return run.tasks.find((t) => t.id === id) ?? fail("TASK_NOT_FOUND");
   }
   private open(run: Run, execution = false) {
+    if (this.closed || !this.owns(run)) fail("CONNECTION_CLOSED_OR_OWNER_CHANGED");
     if (run.status !== "open") fail("RUN_CLOSED");
     if (execution && Date.now() >= run.deadline) fail("RUN_DEADLINE");
   }
@@ -612,15 +828,16 @@ export class Orchestrator {
     maxTotalTurns?: number;
     maxRepairs?: number;
   }): Run {
+    if (this.closed) fail("CONNECTION_CLOSED");
     if (input.action === "create") {
       if (!input.cwd || !input.goal || !input.design || !input.tasks)
         fail("create requires cwd, goal, design, tasks");
-      const cwd = realpathSync(input.cwd);
+      const cwd = realpathSync.native(input.cwd);
       this.validateTasks(cwd, input.tasks);
-      if ([...this.runs.values()].some((r) => r.ownerPid === process.pid && r.status === "open"))
+      if ([...this.runs.values()].some((r) => this.owns(r) && r.status === "open"))
         fail("OPEN_RUN_EXISTS: finish or cancel the current run before creating another");
       for (const previous of this.runs.values())
-        if (previous.ownerPid === process.pid && previous.status === "awaiting_user_review")
+        if (this.owns(previous) && previous.status === "awaiting_user_review")
           this.closeSession(previous);
       const run: Run = {
         id: randomUUID(),
@@ -647,6 +864,9 @@ export class Orchestrator {
         events: [],
         receipts: {},
         ownerPid: process.pid,
+        ownerId: this.ownerId,
+        ownerGeneration: 1,
+        executions: [],
       };
       this.runs.set(run.id, run);
       this.emit(run, "plan_created", { revision: 1 });
@@ -668,9 +888,7 @@ export class Orchestrator {
     }
     if (input.action === "reopen" || input.action === "append") {
       if (
-        [...this.runs.values()].some(
-          (r) => r.id !== run.id && r.ownerPid === process.pid && r.status === "open"
-        )
+        [...this.runs.values()].some((r) => r.id !== run.id && this.owns(r) && r.status === "open")
       )
         fail("OPEN_RUN_EXISTS");
       if (input.action === "append") {
@@ -682,7 +900,7 @@ export class Orchestrator {
       for (const previous of this.runs.values())
         if (
           previous.id !== run.id &&
-          previous.ownerPid === process.pid &&
+          this.owns(previous) &&
           previous.status === "awaiting_user_review"
         )
           this.closeSession(previous);
@@ -756,6 +974,19 @@ export class Orchestrator {
       )
         fail("UNACCEPTED_TASKS");
       for (const task of run.tasks.filter((t) => t.state === "accepted")) {
+        if (this.inventory(run, task).undeclaredChanges.length) {
+          task.state = "awaiting_review";
+          this.emit(
+            run,
+            "acceptance_invalidated",
+            {
+              reason: "Undeclared workspace changes after acceptance",
+              nextActions: ["include_artifacts", "review"],
+            },
+            task.id
+          );
+          return run;
+        }
         const hash = this.hash(run, task);
         if (hash !== task.artifactHash) {
           task.state = "awaiting_review";
@@ -865,9 +1096,7 @@ export class Orchestrator {
       fail("REOPEN_RUN_FIRST");
     if (
       action !== "close" &&
-      [...this.runs.values()].some(
-        (r) => r.id !== run.id && r.ownerPid === process.pid && r.status === "open"
-      )
+      [...this.runs.values()].some((r) => r.id !== run.id && this.owns(r) && r.status === "open")
     )
       fail("OPEN_RUN_EXISTS");
     if (run.activeTaskId || this.reviewing.has(run.id) || run.sessionOperation)
@@ -960,17 +1189,14 @@ export class Orchestrator {
 
   private acquire(run: Run) {
     // Stopped startup promises must drain before a shared worker can be reused.
-    if (this.startups.size) fail("EXECUTOR_STARTUP_DRAINING");
+    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
     const lock = path.join(this.dataDir, "executor.lock");
-    if (existsSync(lock)) {
-      const owner = JSON.parse(readFileSync(lock, "utf8")) as { pid: number; runId: string };
-      if (alive(owner.pid)) fail("EXECUTOR_BUSY");
-      unlinkSync(lock);
-    }
-    writeFileSync(lock, JSON.stringify({ pid: process.pid, runId: run.id }), {
-      flag: "wx",
-      mode: 0o600,
-    });
+    acquireJsonLease(
+      lock,
+      "token",
+      { pid: process.pid, runId: run.id, token: `${this.ownerId}:${run.id}` },
+      "EXECUTOR_BUSY"
+    );
   }
   private release(run: Run) {
     const timer = this.timers.get(run.id);
@@ -978,10 +1204,12 @@ export class Orchestrator {
     this.timers.delete(run.id);
     if (this.startups.has(run.id)) return;
     const lock = path.join(this.dataDir, "executor.lock");
-    if (existsSync(lock)) {
-      const owner = JSON.parse(readFileSync(lock, "utf8")) as { pid: number; runId: string };
-      if (owner.pid === process.pid && owner.runId === run.id) unlinkSync(lock);
-    }
+    if (existsSync(lock))
+      releaseJsonLease(lock, "token", {
+        pid: process.pid,
+        runId: run.id,
+        token: `${this.ownerId}:${run.id}`,
+      });
   }
 
   async dispatch(
@@ -1044,12 +1272,28 @@ export class Orchestrator {
     const baseline = this.artifactSnapshot(run, task);
     this.acquire(run);
     reserveGrant(run.turnBudget, nativeLimit);
+    const execution: ExecutionAccount = {
+      id: randomUUID(),
+      taskId,
+      attempt: task.attempts + 1,
+      startedAt: new Date().toISOString(),
+      requestedLimit: requested,
+      effectiveLimit: nativeLimit,
+      defaultLimit: run.maxTurns,
+      reservedTurns: nativeLimit + 1,
+      observedAssistantMessages: 0,
+      provisionalCharge: 0,
+      status: "reserved",
+    };
+    run.executions!.push(execution);
+    run.activeExecutionId = execution.id;
     if (task.state === "needs_revision") task.repairs++;
     else if (task.attempts > 0) task.continuations++;
     if (options.feedback) task.feedback = options.feedback;
     if (zeroProgress) task.zeroProgressRetries = (task.zeroProgressRetries ?? 0) + 1;
     else task.zeroProgressRetries = 0;
     task.baselineArtifacts = baseline;
+    task.workspaceBaseline ??= workspaceSnapshot(run.cwd, task.artifacts);
     task.attempts++;
     task.startedAt = Date.now();
     task.state = "running";
@@ -1074,6 +1318,7 @@ export class Orchestrator {
       taskId,
       false
     );
+    this.warnBudget(run, task);
     const prompt = `Overall goal: ${run.goal}\nDesign: ${run.design}\nWorkspace: ${run.cwd}\nTask ${task.id} (contract revision ${task.revision}): ${task.title}\n${task.instructions}\nAcceptance: ${task.acceptance}\nExpected artifacts: ${task.artifacts.join(", ")}\nSupervisor feedback: ${task.feedback ?? "none"}\nExecute only this task. Do not run downstream tasks. If blocked return BLOCKED: and a concrete question. Report changed paths and checks; supervisor independently decides acceptance.`;
     const timer = setTimeout(
       () => {
@@ -1112,6 +1357,8 @@ export class Orchestrator {
         return receipt;
       }
       run.sessionId = receipt.sessionId;
+      execution.sessionId = run.sessionId;
+      execution.epoch = this.worker.eventEpoch?.(run.sessionId) ?? 0;
       run.sessionState = "retained";
       receipt.startupMs = Date.now() - task.startedAt;
       receipt.status = "started";
@@ -1158,11 +1405,14 @@ export class Orchestrator {
 
   private hash(run: Run, task: Task) {
     const hash = createHash("sha256");
-    for (const file of [...task.artifacts].sort()) {
+    for (const file of this.artifactPaths(task).sort()) {
       if (!inside(run.cwd, file)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
       hash.update(file);
       hash.update("\0");
-      hash.update(readFileSync(path.resolve(run.cwd, file)));
+      const absolute = path.resolve(run.cwd, file);
+      if (task.additionalArtifacts?.includes(file) && !existsSync(absolute))
+        hash.update("<deleted>");
+      else hash.update(readFileSync(absolute));
     }
     return hash.digest("hex");
   }
@@ -1176,7 +1426,34 @@ export class Orchestrator {
         (r.status === "open" || r.status === "awaiting_user_review")
     );
     const prior = this.seen.get(sessionId);
-    if (!run || (prior?.epoch === epoch && event.id <= prior.id)) return;
+    const activeAccount = run?.executions?.find((e) => e.id === run.activeExecutionId);
+    if (!run || (activeAccount?.epoch !== undefined && activeAccount.epoch !== epoch)) {
+      if (!["result", "error"].includes(event.type)) return;
+      for (const candidate of this.runs.values()) {
+        if (!this.owns(candidate)) continue;
+        const execution = candidate.executions?.find(
+          (e) => e.sessionId === sessionId && e.epoch === epoch && e.status === "provisional"
+        );
+        const result = event.data as AgentResult;
+        if (
+          execution &&
+          result?.sessionId === sessionId &&
+          (!result.isError || result.errorSubtype) &&
+          settleExecution(candidate.turnBudget, execution, result.numTurns, "late_native_result")
+        ) {
+          this.emit(
+            candidate,
+            "accounting_corrected",
+            { executionId: execution.id, budget: budgetSummary(candidate.turnBudget) },
+            execution.taskId,
+            false
+          );
+          break;
+        }
+      }
+      return;
+    }
+    if (!this.owns(run) || (prior?.epoch === epoch && event.id <= prior.id)) return;
     this.seen.set(sessionId, { epoch, id: event.id });
     if (run.sessionOperation === "compact") {
       if (
@@ -1210,22 +1487,53 @@ export class Orchestrator {
       return;
     }
     const task = this.task(run, run.activeTaskId!);
+    const account = run.executions?.find((e) => e.id === run.activeExecutionId);
+    if (account) {
+      account.sessionId = sessionId;
+      account.epoch = epoch;
+    }
+    if (
+      account &&
+      event.type === "output" &&
+      (event.data as { message?: { role?: string } }).message?.role === "assistant"
+    )
+      account.observedAssistantMessages++;
     if (event.type === "permission_request") {
+      const pending = event.data as {
+        requestId: string;
+        expiresAt?: string;
+        input?: Record<string, unknown>;
+        summary?: string;
+        toolName?: string;
+        decisionReason?: string;
+      };
+      task.decisions ??= [];
+      task.decisions.push({
+        id: pending.requestId,
+        kind: "permission",
+        state: "pending",
+        expiresAt: pending.expiresAt,
+        text: pending.summary,
+        inputHash: createHash("sha256")
+          .update(JSON.stringify(pending.input ?? {}))
+          .digest("hex"),
+        toolName: pending.toolName,
+        input: pending.input,
+        reason: pending.decisionReason,
+      });
       this.emit(run, "permission_required", event.data, task.id);
       return;
     }
     if (event.type === "permission_result") {
-      const data = event.data as { behavior?: string; source?: string };
+      const data = event.data as { behavior?: string; source?: string; requestId?: string };
+      const pending = task.decisions?.find((d) => d.id === data.requestId);
+      if (pending) pending.state = data.source === "timeout" ? "expired" : "answered";
       this.emit(run, "permission_resolved", event.data, task.id, data.behavior === "deny");
       if (data.behavior === "deny" && data.source === "timeout") {
-        this.worker.stop(sessionId);
-        this.stoppedTask(
-          run,
-          task,
-          "Permission timed out; explicitly dispatch to retry",
-          "permission",
-          "blocked",
-          "task_blocked"
+        void this.interruptGracefully(
+          run.id,
+          "Permission expired; continue explicitly to re-evaluate current tool input",
+          "permission"
         );
       }
       return;
@@ -1233,10 +1541,10 @@ export class Orchestrator {
     if (event.type === "result" || event.type === "error") {
       task.result = this.worker.result(sessionId) ?? (event.data as AgentResult);
       const accountingKnown = !task.result.isError || !!task.result.errorSubtype;
-      settleReservation(
-        run.turnBudget,
-        run.turnBudget.reserved,
-        accountingKnown ? task.result.numTurns : undefined
+      this.settle(
+        run,
+        accountingKnown ? task.result.numTurns : undefined,
+        task.result.errorSubtype ?? event.type
       );
       const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
         task.result.errorSubtype ?? ""
@@ -1262,6 +1570,13 @@ export class Orchestrator {
           : /^BLOCKED:/m.test(task.result.result)
             ? "blocked"
             : "awaiting_review";
+      const interruption = this.interruptions.get(run.id);
+      if (interruption) {
+        task.state = interruption.kind === "permission" ? "blocked" : "interrupted";
+        task.failure = { kind: interruption.kind };
+      }
+      for (const decision of task.decisions ?? [])
+        if (decision.state === "pending") decision.state = "expired";
       if (task.state === "awaiting_review") {
         try {
           task.artifactHash = this.hash(run, task);
@@ -1293,9 +1608,17 @@ export class Orchestrator {
           failureClass: task.failure?.kind,
           checkpointAvailable: !!task.checkpoint,
           changedDeclaredArtifacts: task.checkpoint?.changedDeclaredArtifacts,
+          changeSummary: task.changeInventory
+            ? {
+                undeclaredChanges: task.changeInventory.undeclaredChanges,
+                outsideScopeObservations: task.changeInventory.outsideScopeObservations,
+              }
+            : undefined,
           nextActions:
             task.state === "awaiting_review"
-              ? ["review"]
+              ? task.changeInventory?.undeclaredChanges.length
+                ? ["inspect_changes", "include_artifacts", "review"]
+                : ["review"]
               : Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0
                 ? ["continue", "reconcile", "cancel"]
                 : ["reconcile", "cancel"],
@@ -1303,6 +1626,7 @@ export class Orchestrator {
         },
         task.id
       );
+      this.warnBudget(run, task);
       if (
         run.lastContext &&
         run.lastContext.inputTokens !== null &&
@@ -1322,14 +1646,19 @@ export class Orchestrator {
       this.emit(run, "tool_activity", { tools: tools ?? [data.tool_name] }, task.id, false);
   }
 
-  async wait(runId: string, afterSeq: number, timeoutMs = 45000, signal?: AbortSignal) {
+  async wait(runId: string, afterSeq: number, timeoutMs = defaultWaitMs(), signal?: AbortSignal) {
     const run = this.get(runId);
     this.metrics.waits++;
     const snapshot = () => ({
       runId,
       events: run.events
         .filter((e) => e.seq > afterSeq && e.actionable)
-        .map((e) => this.brief(e, runId)),
+        .map((e) => this.brief(e, runId))
+        .sort(
+          (a, b) =>
+            Number(["permission_required", "worker_question"].includes(b.type)) -
+            Number(["permission_required", "worker_question"].includes(a.type))
+        ),
       nextCursor: run.events.at(-1)?.seq ?? 0,
       status: run.status,
       timedOut: false,
@@ -1370,7 +1699,7 @@ export class Orchestrator {
         }
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(45000, Math.max(1, timeoutMs)));
+      const timer = setTimeout(() => finish(true), Math.min(600000, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -1391,6 +1720,54 @@ export class Orchestrator {
       turnBudget: run.turnBudget,
       nextCursor: this.cursor(runId),
     };
+  }
+  async interruptGracefully(runId: string, reason: string, kind = "interrupted") {
+    const run = this.get(runId);
+    this.open(run);
+    if (this.interruptions.has(runId)) fail("EXECUTOR_STARTUP_DRAINING");
+    if (!run.activeTaskId || !run.sessionId || !this.worker.interrupt) {
+      if (kind === "permission" && run.activeTaskId) {
+        this.worker.stop(run.sessionId);
+        this.stoppedTask(
+          run,
+          this.task(run, run.activeTaskId),
+          reason,
+          kind,
+          "blocked",
+          "task_blocked"
+        );
+        return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
+      }
+      return this.interrupt(runId, reason);
+    }
+    this.interruptions.set(runId, { reason, kind });
+    const sessionId = run.sessionId;
+    try {
+      await this.worker.interrupt(sessionId, 3000);
+      if (this.closed || !this.owns(run)) return { runId, nextCursor: this.cursor(runId) };
+      for (const event of await this.worker.replay(sessionId))
+        this.consume({ sessionId, event, epoch: this.worker.eventEpoch?.(sessionId) });
+      if (run.activeTaskId) {
+        this.worker.stop(sessionId);
+        this.stoppedTask(
+          run,
+          this.task(run, run.activeTaskId),
+          reason,
+          kind,
+          kind === "permission" ? "blocked" : "interrupted",
+          "worker_finished"
+        );
+      } else {
+        this.worker.stop(sessionId);
+        run.sessionState = "closed";
+        this.save(run);
+      }
+      return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
+    } finally {
+      this.interruptions.delete(runId);
+      if (!this.closed && this.owns(run))
+        this.emit(run, "execution_drained", { automaticReplay: false }, undefined, false);
+    }
   }
 
   reconcile(input: {
@@ -1461,6 +1838,12 @@ export class Orchestrator {
     const task = this.task(run, input.taskId);
     if (!this.dependenciesAccepted(run, task)) fail("DEPENDENCY_NOT_ACCEPTED");
     if (task.state !== "awaiting_review") fail("TASK_NOT_AWAITING_REVIEW");
+    if (this.inventory(run, task).undeclaredChanges.length) {
+      this.save(run);
+      fail(
+        "UNDECLARED_CHANGES: inspect inventory and explicitly include_artifacts before acceptance"
+      );
+    }
     if (
       input.taskRevision !== task.revision ||
       input.artifactHash !== task.artifactHash ||
@@ -1468,7 +1851,8 @@ export class Orchestrator {
     )
       fail("STALE_ARTIFACT_OR_CONTRACT");
     if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
-    if (this.reviewing.has(run.id) || run.activeTaskId) fail("EXECUTOR_BUSY");
+    if (this.reviewing.has(run.id) || this.interruptions.has(run.id) || run.activeTaskId)
+      fail("EXECUTOR_BUSY");
     this.acquire(run);
     this.reviewing.add(run.id);
     const abort = new AbortController();
@@ -1477,7 +1861,7 @@ export class Orchestrator {
       this.closeSession(run);
     };
     signal?.addEventListener("abort", hostCancel, { once: true });
-    const deadline = setTimeout(() => abort.abort(), 40000);
+    const deadline = setTimeout(() => abort.abort(), checkTimeoutMs());
     const checks: Array<
       Check & { exitCode: number | null; stdout: string; stderr: string; error?: string }
     > = [];
@@ -1528,6 +1912,10 @@ export class Orchestrator {
     }
     // Checks must not alter reviewed outputs while generating evidence.
     if (this.hash(run, task) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
+    if (this.inventory(run, task).undeclaredChanges.length) {
+      this.save(run);
+      fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
+    }
     const accepted =
       input.decision === "accept" && checks.every((c) => c.exitCode === 0 && !c.error);
     task.reviews.push({
@@ -1565,13 +1953,6 @@ export class Orchestrator {
       fail("PERMISSION_EXPIRED_OR_UNKNOWN");
     if (decision === "allow") {
       if (!request.toolName.trim()) fail("INVALID_PENDING_TOOL");
-      for (const key of ["file_path", "path", "notebook_path"]) {
-        const value = request.input[key];
-        if (typeof value === "string" && !inside(run.cwd, value))
-          fail("PERMISSION_OUTSIDE_WORKSPACE");
-      }
-      if (request.blockedPath && !inside(run.cwd, request.blockedPath))
-        fail("PERMISSION_OUTSIDE_WORKSPACE");
     }
     if (!this.worker.respond(run.sessionId, requestId, decision === "allow"))
       fail("PERMISSION_EXPIRED_OR_UNKNOWN");
@@ -1579,15 +1960,24 @@ export class Orchestrator {
   }
 
   status(runId?: string) {
-    this.metrics.statusReads++;
+    this.metrics.ledgerReads++;
     return runId ? this.get(runId, false) : [...this.runs.values()];
+  }
+  hasActiveExecutions() {
+    return (
+      this.startups.size > 0 ||
+      this.interruptions.size > 0 ||
+      [...this.runs.values()].some(
+        (run) => this.owns(run) && (run.activeTaskId || run.sessionOperation)
+      )
+    );
   }
 
   cancel(runId: string, reason = "Supervisor cancelled") {
     const run = this.get(runId);
     if (run.status !== "open" && run.status !== "awaiting_user_review")
       return { runId, status: run.status };
-    settleReservation(run.turnBudget, run.turnBudget.reserved, undefined);
+    this.settle(run, undefined, "cancelled");
     if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
@@ -1604,27 +1994,50 @@ export class Orchestrator {
 
   close() {
     if (this.closed) return;
+    this.closed = true;
+    let errors = 0;
+    for (const startup of this.startups.values()) startup.valid = false;
     for (const run of this.runs.values()) {
-      if (
-        run.ownerPid === process.pid &&
-        (run.status === "open" || run.status === "awaiting_user_review")
-      ) {
-        if (run.activeTaskId || run.sessionOperation)
-          this.stopExecution(run, "MCP connection closed", "interrupted");
-        else {
-          this.closeSession(run);
-          this.emit(run, "connection_closed", { automaticReplay: false }, undefined, false);
+      if (!this.owns(run)) continue;
+      try {
+        if (run.status === "open" || run.status === "awaiting_user_review") {
+          if (run.activeTaskId || run.sessionOperation)
+            this.stopExecution(run, "MCP connection closed", "interrupted");
+          else {
+            this.closeSession(run);
+            this.emit(run, "connection_closed", { automaticReplay: false }, undefined, false);
+          }
+        }
+      } catch {
+        errors++;
+      } finally {
+        if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
+        this.settle(run, undefined, "connection_closed");
+        run.activeTaskId = undefined;
+        run.sessionOperation = undefined;
+        run.sessionState = "closed";
+        run.ownerReleased = true;
+        try {
+          this.save(run);
+        } catch {
+          errors++;
         }
       }
     }
-    this.closed = true;
     for (const timer of this.idleTimers.values()) clearTimeout(timer);
     this.idleTimers.clear();
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
     this.unsubscribe();
     this.unsubscribeMessages?.();
     this.pendingMessages.clear();
-    this.worker.destroy();
+    try {
+      this.worker.destroy();
+    } catch {
+      errors++;
+    }
     this.listeners.clear();
     this.eventSubscribers.clear();
+    if (errors) console.error(`Orchestrator cleanup completed with ${errors} resource errors`);
   }
 }

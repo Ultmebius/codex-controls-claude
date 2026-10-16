@@ -10,7 +10,13 @@ export interface WorkerCapabilities {
   permissionMode: string;
   builtInTools: string[];
   mcpServers: { name: string; status: string; toolCount?: number; tools?: string[] }[];
-  policy: { builtIns: "claude_code_default"; mcp: "native_enabled_configuration" };
+  policy: {
+    builtIns: "claude_code_default";
+    mcp: "native_enabled_configuration";
+    permissions: "native_configuration";
+    hooks: "native_configuration";
+    blockedTools: string[];
+  };
   statusRefresh?: "unavailable";
 }
 export function capabilitiesFromInit(init: SDKSystemMessage): WorkerCapabilities {
@@ -23,7 +29,13 @@ export function capabilitiesFromInit(init: SDKSystemMessage): WorkerCapabilities
       name: server.name,
       status: server.status,
     })),
-    policy: { builtIns: "claude_code_default", mcp: "native_enabled_configuration" },
+    policy: {
+      builtIns: "claude_code_default",
+      mcp: "native_enabled_configuration",
+      permissions: "native_configuration",
+      hooks: "native_configuration",
+      blockedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
+    },
   };
 }
 export function capabilitiesFromStatus(
@@ -64,7 +76,7 @@ function json(file: string): Record<string, unknown> {
 }
 function selected(value: Record<string, unknown>) {
   return Object.fromEntries(
-    ["mcpServers", "enabledPlugins", ...switches]
+    ["mcpServers", "enabledPlugins", "permissions", "hooks", "disableAllHooks", ...switches]
       .filter((key) => value[key] !== undefined)
       .map((key) => [
         key,

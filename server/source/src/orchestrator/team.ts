@@ -6,10 +6,17 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
-  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import { defaultWaitMs, inside } from "./runtime.js";
+import { budgetSummary } from "./execution.js";
+import {
+  claimFile,
+  acquireJsonLease,
+  releaseJsonLease,
+  processAlive as alive,
+} from "./ownership.js";
 import type { Orchestrator, Run, TaskSpec } from "./controller.js";
 import {
   availableGrant,
@@ -63,6 +70,10 @@ interface TeamReceipt {
 interface Team {
   id: string;
   ownerPid: number;
+  ownerId?: string;
+  generation?: number;
+  ownerReleased?: boolean;
+  budgetWarningAt?: number;
   cwd: string;
   goal: string;
   design: string;
@@ -81,14 +92,6 @@ type DispatchOptions = NonNullable<Parameters<Orchestrator["dispatch"]>[4]>;
 function fail(message: string): never {
   throw new Error(message);
 }
-function alive(pid: number) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 /** Canonicalize even not-yet-created files through their nearest existing ancestor. */
 function canonical(file: string): string {
   let existing = path.resolve(file);
@@ -100,7 +103,7 @@ function canonical(file: string): string {
     existing = parent;
   }
   const result = path
-    .join(realpathSync(existing), ...suffix)
+    .join(realpathSync.native(existing), ...suffix)
     .replaceAll("\\", "/")
     .replace(/\/$/, "");
   return process.platform === "win32" ? result.toLowerCase() : result;
@@ -130,41 +133,41 @@ export class TeamCoordinator {
   private starts = new Map<string, { valid: boolean }>();
   private closed = false;
   private ownerId = randomUUID();
+  private activityListeners = new Set<() => void>();
+  subscribeActivity(listener: () => void) {
+    this.activityListeners.add(listener);
+    return () => this.activityListeners.delete(listener);
+  }
+  hasActiveExecutions() {
+    return this.ownedTasks().some(
+      (task) => task.starting || this.controllers.get(task.childRunId)?.hasActiveExecutions()
+    );
+  }
 
   constructor(
     readonly dataDir: string,
     private factory: (dataDir: string) => Orchestrator
   ) {
     mkdirSync(dataDir, { recursive: true });
-    const ownerFile = path.join(dataDir, "team-owner.lock");
-    const owner = existsSync(ownerFile)
-      ? (JSON.parse(readFileSync(ownerFile, "utf8")) as { pid: number })
-      : undefined;
-    const foreignOwner = owner && alive(owner.pid);
     for (const file of readdirSync(dataDir).filter((file) => /^team-[\w-]+\.json$/.test(file))) {
       const team = JSON.parse(readFileSync(path.join(dataDir, file), "utf8")) as Team;
       this.teams.set(team.id, team);
-      if (foreignOwner || (team.ownerPid !== process.pid && alive(team.ownerPid))) continue;
-      team.ownerPid = process.pid;
-      for (const task of team.tasks) {
-        if (task.reservation) {
-          const held = task.reservation.held;
-          settleReservation(team.budget, held, undefined);
-          team.budget.recovered = (team.budget.recovered ?? 0) + held;
-          task.reservation = undefined;
-        }
-        task.starting = false;
-        this.attach(team, task);
-        task.state = this.run(task).tasks[0].state;
-      }
-      for (const receipt of Object.values(team.receipts))
-        if (receipt.status === "starting") receipt.status = "interrupted";
-      this.save(team);
     }
   }
 
   private save(team: Team) {
     const dest = path.join(this.dataDir, `team-${team.id}.json`);
+    if (existsSync(dest)) {
+      const disk = JSON.parse(readFileSync(dest, "utf8")) as Team;
+      if (
+        (disk.generation ?? 0) > (team.generation ?? 0) ||
+        (disk.ownerId &&
+          disk.ownerId !== team.ownerId &&
+          !disk.ownerReleased &&
+          alive(disk.ownerPid))
+      )
+        fail("STALE_TEAM_OWNER");
+    }
     const tmp = `${dest}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(team, null, 2), { mode: 0o600 });
     renameSync(tmp, dest);
@@ -184,6 +187,7 @@ export class TeamCoordinator {
     });
     this.save(team);
     if (actionable) for (const listener of [...this.listeners]) listener(team.id);
+    for (const listener of this.activityListeners) listener();
   }
   private get(teamId: string, writable = true) {
     const team = this.teams.get(teamId) ?? fail("TEAM_NOT_FOUND");
@@ -191,10 +195,105 @@ export class TeamCoordinator {
       writable &&
       (this.closed ||
         team.ownerPid !== process.pid ||
+        team.ownerReleased ||
+        (team.ownerId && team.ownerId !== this.ownerId) ||
         team.tasks.some((task) => !this.controllers.has(task.childRunId)))
     )
       fail("TEAM_NOT_OWNED");
     return team;
+  }
+  private syncBudget(team: Team) {
+    if (team.tasks.every((t) => this.controllers.has(t.childRunId))) {
+      team.budget.used = team.tasks.reduce((n, t) => n + this.run(t).turnBudget.used, 0);
+      team.budget.estimated = team.tasks.reduce(
+        (n, t) => n + (this.run(t).turnBudget.estimated ?? 0),
+        0
+      );
+      team.budget.overrun = Math.max(0, team.budget.used - team.budget.limit) || undefined;
+    }
+  }
+  private warnBudget(team: Team, current?: TeamTask) {
+    const committed = team.budget.used + team.budget.reserved;
+    const pendingTasks = team.tasks
+      .filter((t) => t !== current && t.state === "pending" && !t.starting)
+      .map((t) => t.contract.id);
+    if (team.budgetWarningAt || committed < team.budget.limit * 0.7 || !pendingTasks.length) return;
+    team.budgetWarningAt = committed;
+    this.emit(
+      team,
+      "budget_risk",
+      {
+        budget: budgetSummary(team.budget),
+        pendingTasks,
+        nextActions: ["review_checkpoint", "plan_remaining_stages"],
+        warning: "Charged or reserved allowance leaves limited room for pending stages",
+      },
+      true,
+      current
+    );
+  }
+  private syncPeerArtifacts(team: Team) {
+    for (const task of team.tasks) {
+      const files = team.tasks
+        .filter((peer) => peer !== task)
+        .flatMap((peer) => {
+          const contract = this.run(peer).tasks[0];
+          return [...contract.artifacts, ...(contract.additionalArtifacts ?? [])]
+            .map((file) => path.resolve(peer.cwd, file))
+            .filter((file) => inside(task.cwd, file))
+            .map((file) => path.relative(realpathSync.native(task.cwd), canonical(file)));
+        });
+      this.controllers.get(task.childRunId)!.setPeerArtifacts(task.childRunId, files);
+    }
+  }
+  recover(teamId: string) {
+    if (this.closed) fail("TEAM_COORDINATOR_CLOSED");
+    const file = path.join(this.dataDir, `team-${teamId}.json`);
+    if (!existsSync(file)) fail("TEAM_NOT_FOUND");
+    const releaseClaim = claimFile(`${file}.claim`);
+    try {
+      const team = JSON.parse(readFileSync(file, "utf8")) as Team;
+      if (team.ownerId === this.ownerId && !team.ownerReleased)
+        return this.summary(this.get(teamId));
+      if (!team.ownerReleased && alive(team.ownerPid)) fail("OWNER_STILL_ACTIVE");
+      if (this.hasActiveExecutions()) fail("EXECUTOR_BUSY");
+      this.acquireExecutor();
+      try {
+        const orphaned = team.budget.reserved;
+        team.ownerPid = process.pid;
+        team.ownerId = this.ownerId;
+        team.ownerReleased = false;
+        team.generation = (team.generation ?? 0) + 1;
+        this.teams.set(teamId, team);
+        for (const task of team.tasks) {
+          this.controllers.get(task.childRunId)?.close();
+          this.controllers.delete(task.childRunId);
+          const controller = this.factory(task.directory);
+          controller.attach(task.childRunId);
+          task.starting = false;
+          task.reservation = undefined;
+          this.attach(team, task, controller);
+          task.state = this.run(task).tasks[0].state;
+        }
+        team.budget.reserved = 0;
+        this.syncBudget(team);
+        this.syncPeerArtifacts(team);
+        if (orphaned) team.budget.recovered = (team.budget.recovered ?? 0) + orphaned;
+        for (const receipt of Object.values(team.receipts))
+          if (receipt.status === "starting") receipt.status = "interrupted";
+        this.emit(
+          team,
+          "team_attached",
+          { automaticReplay: false, generation: team.generation },
+          false
+        );
+        return this.summary(team);
+      } finally {
+        this.releaseExecutor();
+      }
+    } finally {
+      releaseClaim();
+    }
   }
   private task(team: Team, taskId: string) {
     return team.tasks.find((task) => task.contract.id === taskId) ?? fail("TASK_NOT_FOUND");
@@ -207,7 +306,14 @@ export class TeamCoordinator {
     this.controllers.set(task.childRunId, controller);
     this.subscriptions.push(
       controller.subscribeEvents((run, event) => {
-        if (run.id !== task.childRunId || this.closed || !this.teams.has(team.id)) return;
+        if (
+          run.id !== task.childRunId ||
+          this.closed ||
+          !this.teams.has(team.id) ||
+          team.ownerId !== this.ownerId ||
+          team.ownerReleased
+        )
+          return;
         task.state = run.tasks[0].state;
         if (
           task.reservation &&
@@ -221,7 +327,9 @@ export class TeamCoordinator {
             Math.max(0, run.turnBudget.used - task.reservation.usedBefore)
           );
           task.reservation = undefined;
+          this.syncBudget(team);
         }
+        if (event.type === "accounting_corrected") this.syncBudget(team);
         this.emit(
           team,
           event.type,
@@ -229,6 +337,7 @@ export class TeamCoordinator {
           event.actionable,
           task
         );
+        this.warnBudget(team, task);
         this.releaseExecutor();
       })
     );
@@ -268,6 +377,8 @@ export class TeamCoordinator {
     const team: Team = {
       id: randomUUID(),
       ownerPid: process.pid,
+      ownerId: this.ownerId,
+      generation: 1,
       cwd: realpathSync(input.cwd),
       goal: input.goal,
       design: input.design,
@@ -342,20 +453,32 @@ export class TeamCoordinator {
       throw error;
     }
     this.teams.set(team.id, team);
+    this.syncPeerArtifacts(team);
     this.emit(team, "team_created", { maxWorkers, turnBudget: team.budget }, false);
     return this.summary(team);
   }
 
   private active(task: TeamTask) {
     const run = this.run(task);
-    return !!(task.starting || task.reservation || run.activeTaskId || run.sessionOperation);
+    return !!(
+      task.starting ||
+      task.reservation ||
+      run.activeTaskId ||
+      run.sessionOperation ||
+      this.controllers.get(task.childRunId)?.hasActiveExecutions()
+    );
   }
   private occupied(task: TeamTask) {
     return this.active(task) || this.run(task).sessionState === "retained";
   }
   private ownedTasks() {
     return [...this.teams.values()]
-      .filter((team) => team.ownerPid === process.pid)
+      .filter(
+        (team) =>
+          team.ownerPid === process.pid &&
+          !team.ownerReleased &&
+          (!team.ownerId || team.ownerId === this.ownerId)
+      )
       .flatMap((team) => team.tasks)
       .filter((task) => this.controllers.has(task.childRunId));
   }
@@ -369,30 +492,24 @@ export class TeamCoordinator {
   }
   private acquireExecutor() {
     const file = path.join(this.dataDir, "team-owner.lock");
-    if (existsSync(file)) {
-      const owner = JSON.parse(readFileSync(file, "utf8")) as { pid: number; id: string };
-      if (owner.id === this.ownerId) return;
-      if (alive(owner.pid)) fail("TEAM_EXECUTOR_BUSY");
-      unlinkSync(file);
-    }
-    writeFileSync(file, JSON.stringify({ pid: process.pid, id: this.ownerId }), {
-      flag: "wx",
-      mode: 0o600,
-    });
+    acquireJsonLease(
+      file,
+      "id",
+      { pid: process.pid, id: this.ownerId },
+      "TEAM_EXECUTOR_BUSY",
+      true
+    );
   }
   private releaseExecutor() {
-    if (!this.closed) return;
-    if (this.ownedTasks().some((task) => this.occupied(task))) return;
+    if (this.pending.size || this.starts.size || this.hasActiveExecutions()) return;
     const file = path.join(this.dataDir, "team-owner.lock");
-    if (existsSync(file)) {
-      const owner = JSON.parse(readFileSync(file, "utf8")) as { id: string };
-      if (owner.id === this.ownerId) unlinkSync(file);
-    }
+    if (existsSync(file)) releaseJsonLease(file, "id", { pid: process.pid, id: this.ownerId });
   }
   canReview(childRunId: string): void {
     const own = this.ownedTasks().find((task) => task.childRunId === childRunId);
     if (!own) fail("CHILD_RUN_NOT_FOUND");
     const team = [...this.teams.values()].find((team) => team.tasks.includes(own))!;
+    this.syncPeerArtifacts(team);
     if (
       own.contract.dependsOn.some(
         (id) => this.run(this.task(team, id)).tasks[0].state !== "accepted"
@@ -474,6 +591,7 @@ export class TeamCoordinator {
     const receipt: TeamReceipt = { taskId, childRunId: task.childRunId, status: "starting" };
     team.receipts[requestId] = receipt;
     this.save(team);
+    this.warnBudget(team, task);
     const execution = (async () => {
       try {
         for (const candidates of [team.tasks, all]) {
@@ -513,6 +631,7 @@ export class TeamCoordinator {
             delta > 0 || run.tasks[0].attempts === attemptsBefore ? delta : undefined
           );
           task.reservation = undefined;
+          this.syncBudget(team);
         }
         this.pending.delete(key);
         this.save(team);
@@ -530,6 +649,7 @@ export class TeamCoordinator {
       deadline: team.deadline,
       maxWorkers: team.maxWorkers,
       turnBudget: { ...team.budget },
+      accounting: budgetSummary(team.budget),
       nextCursor: team.events.at(-1)?.seq ?? 0,
       tasks: team.tasks.map((task) => ({
         id: task.contract.id,
@@ -546,13 +666,19 @@ export class TeamCoordinator {
       ? this.summary(this.get(teamId, false))
       : [...this.teams.values()].map((team) => this.summary(team));
   }
-  async wait(teamId: string, afterSeq: number, timeoutMs = 45000, signal?: AbortSignal) {
+  async wait(teamId: string, afterSeq: number, timeoutMs = defaultWaitMs(), signal?: AbortSignal) {
     const team = this.get(teamId);
     const snapshot = (timedOut = false) => ({
       teamId,
       status: team.status,
       timedOut,
-      events: team.events.filter((event) => event.seq > afterSeq && event.actionable),
+      events: team.events
+        .filter((event) => event.seq > afterSeq && event.actionable)
+        .sort(
+          (a, b) =>
+            Number(["permission_required", "worker_question"].includes(b.type)) -
+            Number(["permission_required", "worker_question"].includes(a.type))
+        ),
       nextCursor: team.events.at(-1)?.seq ?? 0,
     });
     if (
@@ -583,7 +709,7 @@ export class TeamCoordinator {
         this.interrupt(teamId, "Host cancelled team wait");
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(45000, Math.max(1, timeoutMs)));
+      const timer = setTimeout(() => finish(true), Math.min(600000, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -662,32 +788,87 @@ export class TeamCoordinator {
     this.emit(team, "team_interrupted", { reason, taskId });
     return this.summary(team);
   }
+  async interruptGracefully(
+    teamId: string,
+    reason = "Supervisor interrupted team",
+    taskId?: string
+  ) {
+    const team = this.get(teamId);
+    await Promise.all(
+      (taskId ? [this.task(team, taskId)] : team.tasks).map(async (task) => {
+        const startup = this.starts.get(task.childRunId);
+        if (startup) startup.valid = false;
+        const run = this.run(task);
+        if (run.activeTaskId || run.sessionOperation)
+          await this.controllers.get(task.childRunId)!.interruptGracefully(task.childRunId, reason);
+      })
+    );
+    this.emit(team, "team_interrupted", { reason, taskId });
+    return this.summary(team);
+  }
   cancel(teamId: string, reason = "Supervisor cancelled team", taskId?: string) {
     const team = this.get(teamId);
+    let cleanupErrors = 0;
     for (const task of taskId ? [this.task(team, taskId)] : team.tasks) {
       const startup = this.starts.get(task.childRunId);
       if (startup) startup.valid = false;
-      this.controllers.get(task.childRunId)!.cancel(task.childRunId, reason);
+      try {
+        this.controllers.get(task.childRunId)!.cancel(task.childRunId, reason);
+      } catch {
+        cleanupErrors++;
+      }
     }
     if (!taskId) team.status = "cancelled";
-    this.emit(team, "team_cancelled", { reason, taskId });
+    this.emit(team, "team_cancelled", { reason, taskId, cleanupErrors });
     return this.summary(team);
   }
   close() {
     if (this.closed) return;
-    for (const startup of this.starts.values()) startup.valid = false;
-    for (const controller of this.controllers.values()) controller.close();
     this.closed = true;
-    this.releaseExecutor();
+    let errors = 0;
+    for (const startup of this.starts.values()) startup.valid = false;
+    for (const controller of this.controllers.values()) {
+      try {
+        controller.close();
+      } catch {
+        errors++;
+      }
+    }
     for (const unsubscribe of this.subscriptions) unsubscribe();
     for (const team of this.teams.values())
       if (
         team.ownerPid === process.pid &&
         team.tasks.every((task) => this.controllers.has(task.childRunId))
-      )
-        this.save(team);
+      ) {
+        for (const task of team.tasks) {
+          const run = this.run(task);
+          task.state = run.tasks[0].state;
+          if (task.reservation && !run.activeTaskId) {
+            settleReservation(
+              team.budget,
+              task.reservation.held,
+              Math.max(0, run.turnBudget.used - task.reservation.usedBefore)
+            );
+            task.reservation = undefined;
+          }
+        }
+        this.syncBudget(team);
+        team.ownerReleased = true;
+        try {
+          this.save(team);
+        } catch {
+          errors++;
+        }
+      }
+    try {
+      this.releaseExecutor();
+    } catch {
+      errors++;
+    }
     for (const listener of [...this.listeners])
       for (const team of this.teams.values()) listener(team.id);
     this.listeners.clear();
+    this.activityListeners.clear();
+    if (errors) console.error(`Team cleanup completed with ${errors} resource errors`);
   }
 }

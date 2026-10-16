@@ -1,6 +1,10 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createOrchestratorServer, doctor } from "./orchestrator/server.js";
-import { enableOwnedProcesses, stopOwnedProcesses } from "./orchestrator/runtime.js";
+import {
+  enableOwnedProcesses,
+  stopOwnedProcesses,
+  shutdownWithFallback,
+} from "./orchestrator/runtime.js";
 
 enableOwnedProcesses();
 if (process.argv.includes("--doctor")) {
@@ -16,9 +20,14 @@ if (process.argv.includes("--doctor")) {
   const shutdown = async () => {
     if (closing) return;
     closing = true;
-    close();
-    stopOwnedProcesses();
-    await server.close().catch(() => {});
+    await shutdownWithFallback(close, stopOwnedProcesses, () => server.close()).catch(
+      (error: unknown) => {
+        console.error(
+          "Plugin shutdown completed with cleanup errors: " +
+            (error instanceof Error ? error.name : "unknown")
+        );
+      }
+    );
   };
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
     process.on(signal, () => void shutdown());

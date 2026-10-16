@@ -4,7 +4,7 @@ import { createServer, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 import { spawn, execFileSync } from "node:child_process";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
+import { nativeHelperFile } from "./ownership.js";
 import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 
 export interface TerminalInfo {
@@ -42,7 +42,13 @@ export function terminalInfo() {
   return [...active].map((process) => ({ ...process.info }));
 }
 export function stopTerminalProcesses() {
-  for (const process of [...active]) process.kill("SIGTERM");
+  for (const process of [...active]) {
+    try {
+      process.kill("SIGTERM");
+    } catch {
+      /* Continue stopping other owned workers. */
+    }
+  }
 }
 
 function killTree(pid?: number) {
@@ -56,8 +62,7 @@ function killTree(pid?: number) {
     /* Already exited. */
   }
 }
-const nativeHelper = () =>
-  fileURLToPath(new URL("./native/CodexClaudeTerminal.dll", import.meta.url));
+const nativeHelper = nativeHelperFile;
 function closeWindow(info: TerminalInfo) {
   if (!info.windowHandle || info.windowHandle === "0") return;
   const closer = spawn(
