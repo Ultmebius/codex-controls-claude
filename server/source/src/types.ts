@@ -1,0 +1,400 @@
+/**
+ * Type definitions for claude-code-mcp
+ *
+ * Shared constants are defined as tuples so both Zod schemas and
+ * TypeScript types can derive from the same source of truth.
+ */
+
+import type {
+  FastModeState as SDKFastModeState,
+  PermissionMode as SDKPermissionMode,
+  PermissionResult as SDKPermissionResult,
+  PermissionUpdate as SDKPermissionUpdate,
+  Settings as SDKSettings,
+  ToolConfig as SDKToolConfig,
+} from "@anthropic-ai/claude-agent-sdk";
+
+/** Permission modes supported by Claude Agent SDK */
+export const PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "plan",
+  "dontAsk",
+] as const satisfies readonly SDKPermissionMode[];
+export type PermissionMode = SDKPermissionMode;
+
+/** Effort levels */
+export const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
+/** Subagent model identifier (alias or full model ID) */
+export type AgentModel = string;
+
+/** Session management actions */
+export const SESSION_ACTIONS = ["list", "get", "cancel", "interrupt"] as const;
+export type SessionAction = (typeof SESSION_ACTIONS)[number];
+
+/** Session status */
+export type SessionStatus = "idle" | "running" | "waiting_permission" | "cancelled" | "error";
+
+export type SystemPrompt = string | { type: "preset"; preset: "claude_code"; append?: string };
+
+export type OutputFormat = { type: "json_schema"; schema: Record<string, unknown> };
+
+export type ThinkingConfig =
+  | { type: "adaptive" }
+  | { type: "enabled"; budgetTokens?: number }
+  | { type: "disabled" };
+
+export type ToolsConfig = string[] | { type: "preset"; preset: "claude_code" };
+export type ToolConfig = SDKToolConfig;
+export type Settings = SDKSettings;
+export type FastModeState = SDKFastModeState;
+
+/** Subagent definition (mirrors the Zod schema in server.ts) */
+export interface AgentDefinition {
+  description: string;
+  prompt: string;
+  tools?: string[];
+  disallowedTools?: string[];
+  model?: AgentModel;
+  maxTurns?: number;
+  mcpServers?: (string | Record<string, unknown>)[];
+  skills?: string[];
+  criticalSystemReminder_EXPERIMENTAL?: string;
+}
+
+/** MCP server configuration for the SDK */
+export type McpServerConfig = Record<string, unknown>;
+
+/** Sandbox configuration for isolating shell command execution */
+export type SandboxSettings = Record<string, unknown>;
+
+/** Setting source for controlling which filesystem settings are loaded */
+export type SettingSource = "user" | "project" | "local";
+
+/** Default setting sources — load all filesystem settings for ease of use */
+export const DEFAULT_SETTING_SOURCES: SettingSource[] = ["user", "project", "local"];
+
+/** Session metadata stored by the session manager */
+export interface SessionInfo {
+  sessionId: string;
+  status: SessionStatus;
+  createdAt: string;
+  lastActiveAt: string;
+  cancelledAt?: string;
+  cancelledReason?: string;
+  cancelledSource?: string;
+  totalTurns: number;
+  totalCostUsd: number;
+  cwd: string;
+  model?: string;
+  pathToClaudeCodeExecutable?: string;
+  permissionMode: PermissionMode;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  strictAllowedTools?: boolean;
+  tools?: ToolsConfig;
+  maxTurns?: number;
+  systemPrompt?: SystemPrompt;
+  agents?: Record<string, AgentDefinition>;
+  maxBudgetUsd?: number;
+  effort?: EffortLevel;
+  betas?: string[];
+  additionalDirectories?: string[];
+  outputFormat?: OutputFormat;
+  thinking?: ThinkingConfig;
+  persistSession?: boolean;
+  /** Primary agent name (from 'agents' definitions) */
+  agent?: string;
+  /** MCP server configurations (key: server name, value: server config) */
+  mcpServers?: Record<string, McpServerConfig>;
+  /** Sandbox configuration for isolating shell command execution */
+  sandbox?: SandboxSettings;
+  /** Fallback model if the primary model fails or is unavailable */
+  fallbackModel?: string;
+  /** Enable file checkpointing to track file changes */
+  enableFileCheckpointing?: boolean;
+  /** Per-tool configuration for built-in tools */
+  toolConfig?: ToolConfig;
+  /** When true, includes intermediate streaming messages in the response */
+  includePartialMessages?: boolean;
+  /** When true, emits prompt_suggestion messages after turns */
+  promptSuggestions?: boolean;
+  /** When true, emits AI-generated subagent progress summaries */
+  agentProgressSummaries?: boolean;
+  /** Enforce strict validation of MCP server configurations */
+  strictMcpConfig?: boolean;
+  /** Flag settings override or path to a settings file */
+  settings?: string | Settings;
+  /** Control which filesystem settings are loaded */
+  settingSources?: SettingSource[];
+  /** Enable debug mode */
+  debug?: boolean;
+  /** Write debug logs to a specific file path */
+  debugFile?: string;
+  /** Effective fast-mode state reported by the SDK */
+  fastModeState?: FastModeState;
+  /** Environment variables passed to the Claude Code process */
+  env?: Record<string, string | undefined>;
+  /** Last seen tool use id (best-effort) */
+  lastToolUseId?: string;
+  abortController?: AbortController;
+  /** Runtime-only handle used to interrupt the active query turn. */
+  queryInterrupt?: () => void;
+}
+
+/** Session metadata safe to return by default (redacts paths and prompts) */
+export interface PublicSessionInfo {
+  sessionId: string;
+  status: SessionStatus;
+  createdAt: string;
+  lastActiveAt: string;
+  cancelledAt?: string;
+  cancelledReason?: string;
+  cancelledSource?: string;
+  totalTurns: number;
+  totalCostUsd: number;
+  model?: string;
+  permissionMode: PermissionMode;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  strictAllowedTools?: boolean;
+  tools?: ToolsConfig;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  effort?: EffortLevel;
+  betas?: string[];
+  outputFormat?: OutputFormat;
+  thinking?: ThinkingConfig;
+  persistSession?: boolean;
+  agent?: string;
+  fallbackModel?: string;
+  enableFileCheckpointing?: boolean;
+  includePartialMessages?: boolean;
+  promptSuggestions?: boolean;
+  agentProgressSummaries?: boolean;
+  strictMcpConfig?: boolean;
+  fastModeState?: FastModeState;
+  debug?: boolean;
+  lastToolUseId?: string;
+  pendingPermissionCount?: number;
+  eventCount?: number;
+  currentCursor?: number;
+  lastEventId?: number;
+  ttlMs?: number;
+  lastError?: string;
+  lastErrorAt?: string;
+  redactions?: Array<{
+    field: string;
+    reason: string;
+  }>;
+}
+
+/** Session metadata returned when includeSensitive=true (still excludes secrets like env) */
+export interface SensitiveSessionInfo extends PublicSessionInfo {
+  cwd: string;
+  systemPrompt?: SystemPrompt;
+  agents?: Record<string, AgentDefinition>;
+  additionalDirectories?: string[];
+  toolConfig?: ToolConfig;
+}
+
+/** Result returned from a claude_code or claude_code_reply call */
+export interface AgentResult {
+  sessionId: string;
+  result: string;
+  isError: boolean;
+  durationMs: number;
+  durationApiMs?: number;
+  numTurns: number;
+  totalCostUsd: number;
+  sessionTotalTurns?: number;
+  sessionTotalCostUsd?: number;
+  structuredOutput?: unknown;
+  stopReason?: string | null;
+  errorSubtype?: string;
+  fastModeState?: FastModeState;
+  usage?: Record<string, unknown>;
+  modelUsage?: Record<string, unknown>;
+  permissionDenials?: Array<{
+    tool_name: string;
+    tool_use_id: string;
+    tool_input: Record<string, unknown>;
+  }>;
+}
+
+/**
+ * Minimum recommended polling interval (ms) when session status is "running".
+ * MCP callers should treat this as a floor and can wait longer for complex tasks.
+ * Do NOT poll faster — it wastes tokens and provides no benefit.
+ */
+export const DEFAULT_POLL_INTERVAL_RUNNING_MS = 120_000;
+/**
+ * Polling interval (ms) while waiting for permission actions.
+ * Kept short so callers can unblock pending actions before permission timeout.
+ */
+export const DEFAULT_POLL_INTERVAL_WAITING_MS = 1_000;
+
+export const CHECK_ACTIONS = ["poll", "respond_permission"] as const;
+export type CheckAction = (typeof CHECK_ACTIONS)[number];
+
+export const CHECK_RESPONSE_MODES = ["minimal", "full", "delta_compact"] as const;
+export type CheckResponseMode = (typeof CHECK_RESPONSE_MODES)[number];
+
+export type PermissionDecision = "allow" | "deny" | "allow_for_session";
+
+/**
+ * Permission updates suggested by the SDK (shape is SDK-defined and may evolve).
+ * We treat it as opaque JSON and forward it to callers.
+ */
+export type PermissionUpdate = SDKPermissionUpdate;
+export type PermissionResult = SDKPermissionResult;
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  category?: string;
+  /**
+   * Internal tool approval is controlled by a combination of tools visibility,
+   * allowedTools/disallowedTools, and runtime permission callbacks.
+   */
+  permissionModel?: "policy_controlled";
+  /**
+   * Whether machine-validated input schemas are available via discovery.
+   */
+  schemaAvailability?: "none";
+  availabilityConditions?: string[];
+  platformConstraints?: string[];
+  notes?: string[];
+}
+
+export type SessionEventType =
+  | "output"
+  | "progress"
+  | "permission_request"
+  | "permission_result"
+  | "result"
+  | "error";
+
+export interface SessionEvent {
+  id: number;
+  type: SessionEventType;
+  data: unknown;
+  timestamp: string;
+  pinned: boolean;
+}
+
+export interface EventBuffer {
+  events: SessionEvent[];
+  maxSize: number;
+  hardMaxSize: number;
+  nextId: number;
+}
+
+export interface PermissionRequestRecord {
+  requestId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  summary: string;
+  title?: string;
+  displayName?: string;
+  decisionReason?: string;
+  blockedPath?: string;
+  toolUseID: string;
+  agentID?: string;
+  suggestions?: PermissionUpdate[];
+  description?: string;
+  createdAt: string;
+  /** Timeout for this permission request in milliseconds (informational). */
+  timeoutMs?: number;
+  /** ISO timestamp when the permission request will auto-deny (informational). */
+  expiresAt?: string;
+}
+
+export type FinishFn = (result: PermissionResult) => void;
+
+export type FinishSource =
+  | "respond"
+  | "timeout"
+  | "cancel"
+  | "interrupt"
+  | "cleanup"
+  | "destroy"
+  | "signal"
+  | "policy";
+
+export interface SessionStartResult {
+  sessionId: string;
+  status: "running";
+  pollInterval: number;
+  resumeToken?: string;
+  compatWarnings?: string[];
+}
+
+export type StoredAgentResult =
+  | { type: "result"; result: AgentResult; createdAt: string }
+  | { type: "error"; result: AgentResult; createdAt: string };
+
+export interface CheckResult {
+  sessionId: string;
+  status: SessionStatus;
+  pollInterval?: number;
+  cursorResetTo?: number;
+  truncated?: boolean;
+  truncatedFields?: string[];
+  events: Array<{
+    id: number;
+    type: SessionEventType;
+    data: unknown;
+    timestamp: string;
+  }>;
+  nextCursor?: number;
+  availableTools?: ToolInfo[];
+  toolValidation?: {
+    runtimeToolsKnown: boolean;
+    unknownAllowedTools: string[];
+    unknownDisallowedTools: string[];
+  };
+  compatWarnings?: string[];
+  actions?: Array<{
+    type: "permission";
+    requestId: string;
+    toolName: string;
+    input: Record<string, unknown>;
+    summary: string;
+    title?: string;
+    displayName?: string;
+    decisionReason?: string;
+    blockedPath?: string;
+    toolUseID: string;
+    agentID?: string;
+    suggestions?: PermissionUpdate[];
+    description?: string;
+    createdAt: string;
+    timeoutMs?: number;
+    expiresAt?: string;
+    /** Best-effort ms remaining until expiresAt (computed at poll time). */
+    remainingMs?: number;
+  }>;
+  result?: AgentResult;
+  cancelledAt?: string;
+  cancelledReason?: string;
+  cancelledSource?: string;
+  lastEventId?: number;
+  lastToolUseId?: string;
+}
+
+/** Error codes for structured error responses */
+export enum ErrorCode {
+  INVALID_ARGUMENT = "INVALID_ARGUMENT",
+  SESSION_NOT_FOUND = "SESSION_NOT_FOUND",
+  SESSION_BUSY = "SESSION_BUSY",
+  PERMISSION_REQUEST_NOT_FOUND = "PERMISSION_REQUEST_NOT_FOUND",
+  PERMISSION_DENIED = "PERMISSION_DENIED",
+  RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED",
+  TIMEOUT = "TIMEOUT",
+  CANCELLED = "CANCELLED",
+  INTERNAL = "INTERNAL",
+}

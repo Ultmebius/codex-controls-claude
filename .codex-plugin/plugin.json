@@ -1,0 +1,26 @@
+{
+  "name": "codex-controls-claude",
+  "version": "0.5.0",
+  "description": "Codex plans, dispatches and independently accepts Claude Code work through an event-driven local MCP.",
+  "author": {
+    "name": "CaesarEmperor"
+  },
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "requires_local_executor": true,
+  "interface": {
+    "displayName": "Codex Controls Claude",
+    "shortDescription": "Plan and supervise Claude Code",
+    "longDescription": "When you invoke this plugin, Codex designs the plan, delegates implementation to Claude Code using your configured model, waits for actionable events, independently verifies artifacts, requests rework and unlocks dependent tasks.",
+    "developerName": "CaesarEmperor",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "logo": "./assets/deepseek-color.png",
+    "composerIcon": "./assets/deepseek-color.png",
+    "defaultPrompt": "Use Codex Controls Claude to design the plan, delegate implementation to Claude Code, and independently verify every task."
+  }
+}
