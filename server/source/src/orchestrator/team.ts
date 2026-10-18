@@ -19,6 +19,8 @@ import {
 } from "./ownership.js";
 import type { Orchestrator, Run, TaskSpec } from "./controller.js";
 import {
+  DEFAULT_SEGMENT_TURNS,
+  DEFAULT_RUN_TURN_LIMIT,
   availableGrant,
   normalizedBudget,
   reserveGrant,
@@ -27,6 +29,8 @@ import {
 } from "./budget.js";
 
 export interface TeamTaskSpec extends TaskSpec {
+  /** Human label for that worker's terminal tab; defaults to the task title. */
+  workerName?: string;
   cwd?: string;
   /** Literal files/directories relative to cwd. Omission or [] reserves the whole workspace. */
   writeScope?: string[];
@@ -53,6 +57,7 @@ export interface TeamEvent {
 }
 interface TeamTask {
   contract: TaskSpec;
+  workerName?: string;
   cwd: string;
   writeScope?: string[];
   childRunId: string;
@@ -349,7 +354,7 @@ export class TeamCoordinator {
   create(input: TeamInput) {
     if (this.closed) fail("TEAM_COORDINATOR_CLOSED");
     const maxWorkers = input.maxWorkers ?? 3,
-      maxTurns = input.maxTurns ?? 40;
+      maxTurns = input.maxTurns ?? DEFAULT_SEGMENT_TURNS;
     const runTimeoutMs = input.runTimeoutMs ?? 7200000;
     const taskTimeoutMs = input.taskTimeoutMs ?? 7200000;
     if (!Number.isSafeInteger(maxWorkers) || maxWorkers < 1 || maxWorkers > 3)
@@ -387,14 +392,15 @@ export class TeamCoordinator {
       taskTimeoutMs,
       maxWorkers,
       maxTurns,
-      budget: normalizedBudget(undefined, input.maxTotalTurns ?? 200),
+      budget: normalizedBudget(undefined, input.maxTotalTurns ?? DEFAULT_RUN_TURN_LIMIT),
       tasks: [],
       receipts: {},
       events: [],
     };
-    const prepared = input.tasks.map(({ cwd, writeScope, ...contract }) => {
+    const prepared = input.tasks.map(({ cwd, writeScope, workerName, ...contract }) => {
       const task: TeamTask = {
         contract: structuredClone(contract),
+        workerName,
         cwd: realpathSync(cwd ?? team.cwd),
         writeScope: writeScope ? [...writeScope] : undefined,
         state: "pending",
@@ -421,6 +427,7 @@ export class TeamCoordinator {
             cwd: task.cwd,
             goal: team.goal,
             design: team.design,
+            workerName: task.workerName ?? task.contract.title,
             tasks: [
               {
                 ...task.contract,
@@ -653,6 +660,7 @@ export class TeamCoordinator {
       nextCursor: team.events.at(-1)?.seq ?? 0,
       tasks: team.tasks.map((task) => ({
         id: task.contract.id,
+        workerName: task.workerName ?? task.contract.title,
         childRunId: task.childRunId,
         dependsOn: task.contract.dependsOn,
         cwd: task.cwd,

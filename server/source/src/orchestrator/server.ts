@@ -86,7 +86,7 @@ export async function doctor() {
     workerPolicy: {
       hooks: "native_untouched",
       ordinaryTools: "native_permission_evaluation",
-      blockedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
+      blockedTools: ["Agent", "TeamCreate", "TeamDelete"],
       fileInterception: false,
       pathRewriting: false,
     },
@@ -113,6 +113,14 @@ const id = z
   .regex(/^[a-zA-Z0-9_-]+$/)
   .refine((v) => !["__proto__", "constructor", "prototype"].includes(v));
 const check = z.object({ command: z.string().min(1), args: z.array(z.string()).max(100) });
+const workerName = z
+  .string()
+  .min(1)
+  .max(64)
+  .describe(
+    "Human role name shown at the start of the worker's Windows Terminal tab, e.g. 'UI 修复'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+  )
+  .optional();
 const task = z.object({
   id,
   title: z.string().min(1),
@@ -287,6 +295,9 @@ export function createOrchestratorServer(
         goal: z.string().optional(),
         design: z.string().optional(),
         cwd: z.string().optional(),
+        workerName: workerName.describe(
+          "Human role name shown at the start of this worker's Windows Terminal tab, e.g. 'UI 修复'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+        ),
         tasks: z.array(task).optional(),
         taskTimeoutMs: z
           .number()
@@ -312,7 +323,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(1000)
           .describe(
-            "Native agentic-turn cap per execution segment, 1..1000. Default: 40 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
+            "Native agentic-turn cap per execution segment, 1..1000. Default: 200 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
           )
           .optional(),
         maxTotalTurns: z
@@ -321,7 +332,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(10000)
           .describe(
-            "Persistent run allowance in SDK-reported turns, 1..10000; Default: 200. Create only. Survives all continuation/reopen/supersede/resume operations."
+            "Persistent run allowance in SDK-reported turns, 1..10000; Default: 1000. Create only. Survives all continuation/reopen/supersede/resume operations."
           )
           .optional(),
         taskRevision: z.number().int().positive().optional(),
@@ -452,7 +463,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(1000)
           .describe(
-            "Optional native cap for this segment (default run.maxTurns=40), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
+            "Optional native cap for this segment (default run.maxTurns=200), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
           )
           .optional(),
         feedback: z
@@ -677,7 +688,7 @@ export function createOrchestratorServer(
     "orchestrator_team",
     {
       description:
-        "Codex schedules up to3 Claude Code sessions with a shared200-turn/2h budget. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout, acceptance or chat wakeup.",
+        "Codex schedules up to3 Claude Code sessions with a shared1000-turn/2h budget. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout, acceptance or chat wakeup.",
       inputSchema: {
         action: z.enum([
           "create",
@@ -700,6 +711,9 @@ export function createOrchestratorServer(
         tasks: z
           .array(
             task.extend({
+              workerName: workerName.describe(
+                "Human role name shown at the start of this worker's Windows Terminal tab, e.g. '预算配置'. Default: the task title. Display only; never part of task contracts or the SDK prompt."
+              ),
               cwd: z.string().optional(),
               writeScope: z.array(z.string().min(1)).max(100).optional(),
             })

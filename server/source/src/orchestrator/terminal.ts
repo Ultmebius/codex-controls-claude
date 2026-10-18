@@ -9,6 +9,7 @@ import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sd
 
 export interface TerminalInfo {
   title: string;
+  workerName?: string;
   hostPid?: number;
   wtSession?: string;
   workerPid?: number;
@@ -16,6 +17,8 @@ export interface TerminalInfo {
   windowPid?: number;
   startedMinimized?: boolean;
   windowLaunchMs?: number;
+  effort?: string;
+  effortSource?: string;
 }
 interface WindowInfo {
   launchMs?: number;
@@ -36,6 +39,25 @@ interface TerminalOptions {
     onError: (error: Error) => void
   ) => void;
   startupTimeoutMs?: number;
+  effort?: string;
+  effortSource?: string;
+  workerName?: string;
+}
+/** Display-only label: strip terminal control/escape sequences and bound the tab title. */
+export function sanitizeWorkerName(value: unknown, max = 64) {
+  if (typeof value !== "string") return undefined;
+  /* eslint-disable no-control-regex -- stripping terminal control sequences is the purpose */
+  const cleaned = value
+    .replace(/\u001b\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)?/g, "")
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\u001b[@-_]/g, "")
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  /* eslint-enable no-control-regex */
+  if (!cleaned) return undefined;
+  const chars = [...cleaned];
+  return chars.length > max ? chars.slice(0, max).join("").trim() || undefined : cleaned;
 }
 const active = new Set<TerminalProcess>();
 export function terminalInfo() {
@@ -114,13 +136,22 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
 
   constructor(
     private readonly opts: SpawnOptions,
-    options: TerminalOptions = {}
+    private readonly options: TerminalOptions = {}
   ) {
     super();
     const id = randomUUID();
     const token = randomUUID();
     const pipe = `\\\\.\\pipe\\codex-controls-claude-${id}`;
-    this.info = { title: `Codex Controls Claude ${id.slice(0, 8)}` };
+    const workerName = sanitizeWorkerName(options.workerName);
+    // The nonce keeps equal display names unique and is part of owned-window verification.
+    this.info = {
+      title: workerName
+        ? `${workerName} · CCC ${id.slice(0, 8)}`
+        : `Codex Controls Claude ${id.slice(0, 8)}`,
+      workerName,
+      effort: options.effort,
+      effortSource: options.effortSource,
+    };
     active.add(this);
     const fail = (error: Error) => {
       if (!this.finished) {
@@ -229,7 +260,15 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
     if (this.started || this.finished || !this.socket || !this.info.startedMinimized) return;
     this.started = true;
     const { command, args, cwd, env } = this.opts;
-    this.send({ type: "start", command, args, cwd, env });
+    this.send({
+      type: "start",
+      command,
+      args,
+      cwd,
+      env,
+      effort: this.options.effort ?? "unknown",
+      effortSource: this.options.effortSource ?? "not reported",
+    });
     this.stdin.on("data", (chunk: Buffer) => {
       if (!this.send({ type: "stdin", data: chunk.toString("base64") })) {
         this.stdin.pause();

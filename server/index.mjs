@@ -3222,8 +3222,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path10) {
-      let input = path10;
+    function removeDotSegments(path11) {
+      let input = path11;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3422,8 +3422,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path10, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path10 && path10 !== "/" ? path10 : void 0;
+        const [path11, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path11 && path11 !== "/" ? path11 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -7568,10 +7568,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path10) {
-  if (!path10)
+function getElementAtPath(obj, path11) {
+  if (!path11)
     return obj;
-  return path10.reduce((acc, key) => acc?.[key], obj);
+  return path11.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -7954,11 +7954,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path10, issues) {
+function prefixIssues(path11, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path10);
+    iss.path.unshift(path11);
     return iss;
   });
 }
@@ -8141,7 +8141,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result2 = { errors: [] };
-  const processError = (error49, path10 = []) => {
+  const processError = (error49, path11 = []) => {
     var _a2, _b2;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -8151,7 +8151,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path10, ...issue2.path];
+        const fullpath = [...path11, ...issue2.path];
         if (fullpath.length === 0) {
           result2.errors.push(mapper(issue2));
           continue;
@@ -8183,8 +8183,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path10 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path10) {
+  const path11 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path11) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -20161,13 +20161,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path10 = ref.slice(1).split("/").filter(Boolean);
-  if (path10.length === 0) {
+  const path11 = ref.slice(1).split("/").filter(Boolean);
+  if (path11.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path10[0] === defsKey) {
-    const key = path10[1];
+  if (path11[0] === defsKey) {
+    const key = path11[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -22535,8 +22535,8 @@ function getErrorMap2() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path10, errorMaps, issueData } = params;
-  const fullPath = [...path10, ...issueData.path || []];
+  const { data, path: path11, errorMaps, issueData } = params;
+  const fullPath = [...path11, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -22651,11 +22651,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path10, key) {
+  constructor(parent, value, path11, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path10;
+    this._path = path11;
     this._key = key;
   }
   get path() {
@@ -30089,27 +30089,27 @@ var EMPTY_COMPLETION_RESULT = {
 };
 
 // src/orchestrator/server.ts
-import os4 from "node:os";
-import path9 from "node:path";
+import os5 from "node:os";
+import path10 from "node:path";
 import { execFileSync as execFileSync5 } from "node:child_process";
 
 // src/orchestrator/controller.ts
 import { createHash as createHash3, randomUUID as randomUUID3 } from "node:crypto";
 import {
-  existsSync as existsSync5,
+  existsSync as existsSync6,
   mkdirSync,
-  readFileSync as readFileSync5,
+  readFileSync as readFileSync6,
   readdirSync as readdirSync2,
   realpathSync as realpathSync2,
   renameSync,
   writeFileSync
 } from "node:fs";
-import path5 from "node:path";
+import path6 from "node:path";
 
 // src/orchestrator/runtime.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2, realpathSync } from "node:fs";
-import os from "node:os";
-import path2 from "node:path";
+import { existsSync as existsSync3, readFileSync as readFileSync3, realpathSync } from "node:fs";
+import os2 from "node:os";
+import path3 from "node:path";
 import { execFileSync as execFileSync3, spawn as spawn2 } from "node:child_process";
 
 // src/orchestrator/terminal.ts
@@ -30227,6 +30227,13 @@ function claimFile(file2) {
 }
 
 // src/orchestrator/terminal.ts
+function sanitizeWorkerName(value, max = 64) {
+  if (typeof value !== "string") return void 0;
+  const cleaned = value.replace(/\u001b\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)?/g, "").replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "").replace(/\u001b[@-_]/g, "").replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleaned) return void 0;
+  const chars = [...cleaned];
+  return chars.length > max ? chars.slice(0, max).join("").trim() || void 0 : cleaned;
+}
 var active = /* @__PURE__ */ new Set();
 function terminalInfo() {
   return [...active].map((process4) => ({ ...process4.info }));
@@ -30285,10 +30292,17 @@ var TerminalProcess = class extends EventEmitter {
   constructor(opts, options = {}) {
     super();
     this.opts = opts;
+    this.options = options;
     const id2 = randomUUID2();
     const token = randomUUID2();
     const pipe2 = `\\\\.\\pipe\\codex-controls-claude-${id2}`;
-    this.info = { title: `Codex Controls Claude ${id2.slice(0, 8)}` };
+    const workerName2 = sanitizeWorkerName(options.workerName);
+    this.info = {
+      title: workerName2 ? `${workerName2} \xB7 CCC ${id2.slice(0, 8)}` : `Codex Controls Claude ${id2.slice(0, 8)}`,
+      workerName: workerName2,
+      effort: options.effort,
+      effortSource: options.effortSource
+    };
     active.add(this);
     const fail3 = (error48) => {
       if (!this.finished) {
@@ -30405,7 +30419,15 @@ var TerminalProcess = class extends EventEmitter {
     if (this.started || this.finished || !this.socket || !this.info.startedMinimized) return;
     this.started = true;
     const { command, args, cwd, env } = this.opts;
-    this.send({ type: "start", command, args, cwd, env });
+    this.send({
+      type: "start",
+      command,
+      args,
+      cwd,
+      env,
+      effort: this.options.effort ?? "unknown",
+      effortSource: this.options.effortSource ?? "not reported"
+    });
     this.stdin.on("data", (chunk) => {
       if (!this.send({ type: "stdin", data: chunk.toString("base64") })) {
         this.stdin.pause();
@@ -30443,8 +30465,19 @@ var TerminalProcess = class extends EventEmitter {
   }
 };
 
-// src/orchestrator/runtime.ts
-function permissionSettings(cwd, home = os.homedir()) {
+// src/orchestrator/display-settings.ts
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import path2 from "node:path";
+import os from "node:os";
+function displayEffort(cwd, env, args = [], home = os.homedir()) {
+  const valid = (value) => typeof value === "string" && ["low", "medium", "high", "xhigh", "max", "auto"].includes(value) ? value : void 0;
+  const explicit = valid(env.CLAUDE_CODE_EFFORT_LEVEL);
+  if (explicit) return { effort: explicit, effortSource: "environment (configured)" };
+  const index = args.lastIndexOf("--effort");
+  const cli = valid(
+    index >= 0 ? args[index + 1] : args.find((a3) => a3.startsWith("--effort="))?.slice(9)
+  );
+  if (cli) return { effort: cli, effortSource: "CLI (configured)" };
   const files = [path2.join(home, ".claude/settings.json")];
   if (cwd) {
     const ancestors = [];
@@ -30458,11 +30491,44 @@ function permissionSettings(cwd, home = os.homedir()) {
         path2.join(dir, ".claude/settings.local.json")
       );
   }
+  let effort = "unknown", effortSource = "not reported";
+  const model = env.ANTHROPIC_MODEL?.replace(/\[1m\]$/i, "");
+  for (const file2 of files) {
+    if (!existsSync2(file2)) continue;
+    try {
+      const settings = JSON.parse(readFileSync2(file2, "utf8").replace(/^\uFEFF/, ""));
+      const perModel = model ? valid(settings.modelSettings?.[model]?.effortLevel) : void 0;
+      const level = perModel ?? valid(settings.effortLevel);
+      if (level) {
+        effort = level;
+        effortSource = perModel ? "model setting (configured)" : "settings (configured)";
+      }
+    } catch {
+    }
+  }
+  return { effort, effortSource };
+}
+
+// src/orchestrator/runtime.ts
+function permissionSettings(cwd, home = os2.homedir()) {
+  const files = [path3.join(home, ".claude/settings.json")];
+  if (cwd) {
+    const ancestors = [];
+    for (let dir = path3.resolve(cwd); ; dir = path3.dirname(dir)) {
+      ancestors.unshift(dir);
+      if (path3.dirname(dir) === dir) break;
+    }
+    for (const dir of ancestors)
+      files.push(
+        path3.join(dir, ".claude/settings.json"),
+        path3.join(dir, ".claude/settings.local.json")
+      );
+  }
   let mode = "default";
   let source = "SDK compatibility default";
   for (const file2 of files) {
-    if (!existsSync2(file2)) continue;
-    const settings = JSON.parse(readFileSync2(file2, "utf8").replace(/^\uFEFF/, ""));
+    if (!existsSync3(file2)) continue;
+    const settings = JSON.parse(readFileSync3(file2, "utf8").replace(/^\uFEFF/, ""));
     const candidate = settings.permissions?.defaultMode;
     if (typeof candidate === "string" && ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"].includes(candidate)) {
       mode = candidate;
@@ -30494,26 +30560,26 @@ function checkTimeoutMs() {
   return value;
 }
 function localConfig() {
-  const settingsPath = path2.join(os.homedir(), ".claude", "settings.json");
-  const settings = existsSync2(settingsPath) ? JSON.parse(readFileSync2(settingsPath, "utf8").replace(/^\uFEFF/, "")) : {};
+  const settingsPath = path3.join(os2.homedir(), ".claude", "settings.json");
+  const settings = existsSync3(settingsPath) ? JSON.parse(readFileSync3(settingsPath, "utf8").replace(/^\uFEFF/, "")) : {};
   const env = { ...process.env, ...settings.env };
   const model = env.ANTHROPIC_MODEL?.trim() || settings.model?.trim() || void 0;
   if (model) env.ANTHROPIC_MODEL = model;
   let executable = process.env.CCC_CLAUDE_PATH;
   if (!executable) {
-    const native = path2.join(
-      os.homedir(),
+    const native = path3.join(
+      os2.homedir(),
       ".local",
       "bin",
       process.platform === "win32" ? "claude.exe" : "claude"
     );
-    if (existsSync2(native)) executable = native;
+    if (existsSync3(native)) executable = native;
     else {
       const command = process.platform === "win32" ? "where.exe" : "which";
       executable = execFileSync3(command, ["claude"], { encoding: "utf8", windowsHide: true }).trim().split(/\r?\n/)[0];
     }
   }
-  if (!executable || !existsSync2(executable)) throw new Error("Local Claude executable not found");
+  if (!executable || !existsSync3(executable)) throw new Error("Local Claude executable not found");
   const endpoint = env.ANTHROPIC_BASE_URL;
   if (endpoint) {
     const url2 = new URL(endpoint);
@@ -30522,32 +30588,32 @@ function localConfig() {
   return { env, executable: realpathSync(executable), endpoint, model };
 }
 function inside(root, target) {
-  let existing = path2.resolve(root, target);
+  let existing = path3.resolve(root, target);
   const suffix = [];
-  while (!existsSync2(existing)) {
-    const parent = path2.dirname(existing);
+  while (!existsSync3(existing)) {
+    const parent = path3.dirname(existing);
     if (parent === existing) return false;
-    suffix.unshift(path2.basename(existing));
+    suffix.unshift(path3.basename(existing));
     existing = parent;
   }
-  const resolved = path2.join(realpathSync.native(existing), ...suffix);
-  const relative = path2.relative(realpathSync.native(root), resolved);
-  return relative === "" || !relative.startsWith(`..${path2.sep}`) && relative !== ".." && !path2.isAbsolute(relative);
+  const resolved = path3.join(realpathSync.native(existing), ...suffix);
+  const relative = path3.relative(realpathSync.native(root), resolved);
+  return relative === "" || !relative.startsWith(`..${path3.sep}`) && relative !== ".." && !path3.isAbsolute(relative);
 }
 function withinScope(cwd, scope, target) {
   const resolve = (value) => {
-    let existing = path2.resolve(cwd, value);
+    let existing = path3.resolve(cwd, value);
     const suffix = [];
-    while (!existsSync2(existing)) {
-      const parent = path2.dirname(existing);
+    while (!existsSync3(existing)) {
+      const parent = path3.dirname(existing);
       if (parent === existing) throw new Error("UNRESOLVED_SCOPE");
-      suffix.unshift(path2.basename(existing));
+      suffix.unshift(path3.basename(existing));
       existing = parent;
     }
-    return path2.join(realpathSync.native(existing), ...suffix);
+    return path3.join(realpathSync.native(existing), ...suffix);
   };
-  const relative = path2.relative(resolve(scope), resolve(target));
-  return relative === "" || !relative.startsWith(`..${path2.sep}`) && relative !== ".." && !path2.isAbsolute(relative);
+  const relative = path3.relative(resolve(scope), resolve(target));
+  return relative === "" || !relative.startsWith(`..${path3.sep}`) && relative !== ".." && !path3.isAbsolute(relative);
 }
 var children = /* @__PURE__ */ new Set();
 var enabled = false;
@@ -30635,11 +30701,14 @@ function executeCheck(command, args, cwd, signal) {
     }
   );
 }
-function processSpawner(stoppers) {
+function processSpawner(stoppers, workerName2) {
   if (!enabled) return void 0;
   return (opts) => {
     if (process.platform === "win32") {
-      const terminal = new TerminalProcess(opts);
+      const terminal = new TerminalProcess(opts, {
+        ...displayEffort(opts.cwd, opts.env, opts.args),
+        workerName: workerName2
+      });
       const stop2 = () => terminal.kill("SIGTERM");
       stoppers?.add(stop2);
       terminal.once("exit", () => stoppers?.delete(stop2));
@@ -30676,8 +30745,8 @@ function processSpawner(stoppers) {
 // src/orchestrator/changes.ts
 import { execFileSync as execFileSync4 } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync as existsSync3, readFileSync as readFileSync3, statSync } from "node:fs";
-import path3 from "node:path";
+import { existsSync as existsSync4, readFileSync as readFileSync4, statSync } from "node:fs";
+import path4 from "node:path";
 var git = (cwd, args) => execFileSync4("git", args, {
   cwd,
   encoding: "utf8",
@@ -30689,9 +30758,9 @@ var git = (cwd, args) => execFileSync4("git", args, {
 function workspaceSnapshot(cwd, artifacts, baselineHeads) {
   const roots = /* @__PURE__ */ new Set();
   for (const file2 of [".", ...artifacts]) {
-    let dir = path3.resolve(cwd, file2);
-    while (!existsSync3(dir)) dir = path3.dirname(dir);
-    if (!statSync(dir).isDirectory()) dir = path3.dirname(dir);
+    let dir = path4.resolve(cwd, file2);
+    while (!existsSync4(dir)) dir = path4.dirname(dir);
+    if (!statSync(dir).isDirectory()) dir = path4.dirname(dir);
     try {
       roots.add(git(dir, ["rev-parse", "--show-toplevel"]).trim());
     } catch {
@@ -30712,10 +30781,10 @@ function workspaceSnapshot(cwd, artifacts, baselineHeads) {
       ]);
       const added = git(root, ["ls-files", "--others", "--exclude-standard", "-z"]);
       for (const name of new Set((changed + added).split("\0").filter(Boolean))) {
-        const absolute = path3.resolve(root, name);
+        const absolute = path4.resolve(root, name);
         if (!inside(cwd, absolute)) continue;
-        const relative = path3.relative(cwd, absolute).replaceAll("\\", "/");
-        files[relative] = existsSync3(absolute) && statSync(absolute).isFile() ? createHash("sha256").update(readFileSync3(absolute)).digest("hex") : null;
+        const relative = path4.relative(cwd, absolute).replaceAll("\\", "/");
+        files[relative] = existsSync4(absolute) && statSync(absolute).isFile() ? createHash("sha256").update(readFileSync4(absolute)).digest("hex") : null;
       }
     } catch {
       available = false;
@@ -30733,8 +30802,9 @@ function changedSince(baseline, current) {
 }
 
 // src/orchestrator/budget.ts
-var DEFAULT_SEGMENT_TURNS = 40;
-var DEFAULT_RUN_TURN_LIMIT = 200;
+var DEFAULT_SEGMENT_TURNS = 200;
+var DEFAULT_RUN_TURN_LIMIT = 1e3;
+var LEGACY_RUN_TURN_LIMIT = 200;
 var BOUNDARY_ALLOWANCE = 1;
 function positive(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
@@ -30813,9 +30883,9 @@ function budgetSummary(budget) {
 
 // src/orchestrator/capabilities.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
-import os2 from "node:os";
-import path4 from "node:path";
+import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
+import os3 from "node:os";
+import path5 from "node:path";
 function capabilitiesFromInit(init) {
   return {
     source: "sdk_init",
@@ -30831,7 +30901,7 @@ function capabilitiesFromInit(init) {
       mcp: "native_enabled_configuration",
       permissions: "native_configuration",
       hooks: "native_configuration",
-      blockedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"]
+      blockedTools: ["Agent", "TeamCreate", "TeamDelete"]
     }
   };
 }
@@ -30859,7 +30929,7 @@ var switches = [
   "enableAllProjectMcpServers"
 ];
 function json2(file2) {
-  return existsSync4(file2) ? JSON.parse(readFileSync4(file2, "utf8").replace(/^\uFEFF/, "")) : {};
+  return existsSync5(file2) ? JSON.parse(readFileSync5(file2, "utf8").replace(/^\uFEFF/, "")) : {};
 }
 function selected(value) {
   return Object.fromEntries(
@@ -30870,7 +30940,7 @@ function selected(value) {
   );
 }
 function normalize(file2) {
-  const resolved = path4.resolve(file2).replaceAll("\\", "/").replace(/\/$/, "");
+  const resolved = path5.resolve(file2).replaceAll("\\", "/").replace(/\/$/, "");
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 function stable(value) {
@@ -30881,18 +30951,18 @@ function stable(value) {
     );
   return value;
 }
-function nativeMcpSignature(cwd, home = os2.homedir()) {
-  const config2 = json2(path4.join(home, ".claude.json"));
+function nativeMcpSignature(cwd, home = os3.homedir()) {
+  const config2 = json2(path5.join(home, ".claude.json"));
   const projects = config2.projects;
   const target = normalize(cwd);
   const scopes2 = Object.entries(projects ?? {}).filter(([dir]) => target === normalize(dir) || target.startsWith(normalize(dir) + "/")).map(([dir, value]) => [normalize(dir), selected(value)]);
   const sources = [
     selected(config2),
     scopes2,
-    selected(json2(path4.join(home, ".claude/settings.json"))),
-    json2(path4.join(cwd, ".mcp.json")),
-    selected(json2(path4.join(cwd, ".claude/settings.json"))),
-    selected(json2(path4.join(cwd, ".claude/settings.local.json")))
+    selected(json2(path5.join(home, ".claude/settings.json"))),
+    json2(path5.join(cwd, ".mcp.json")),
+    selected(json2(path5.join(cwd, ".claude/settings.json"))),
+    selected(json2(path5.join(cwd, ".claude/settings.local.json")))
   ];
   return createHash2("sha256").update(JSON.stringify(stable(sources))).digest("hex");
 }
@@ -30911,7 +30981,7 @@ var Orchestrator = class {
     this.worker = worker;
     mkdirSync(dataDir, { recursive: true });
     for (const file2 of readdirSync2(dataDir).filter((f6) => /^run-[\w-]+\.json$/.test(f6))) {
-      const run = JSON.parse(readFileSync5(path5.join(dataDir, file2), "utf8"));
+      const run = JSON.parse(readFileSync6(path6.join(dataDir, file2), "utf8"));
       this.migrate(run);
       this.runs.set(run.id, run);
     }
@@ -31013,6 +31083,7 @@ var Orchestrator = class {
   }
   migrate(run) {
     run.executions ??= [];
+    run.workerName ??= run.tasks[0]?.title;
     if (!run.turnBudget) {
       let used = 0, observed = 0;
       for (const event of run.events)
@@ -31024,10 +31095,14 @@ var Orchestrator = class {
           }
         }
       const missing = Math.max(0, run.tasks.reduce((n3, task2) => n3 + task2.attempts, 0) - observed);
-      run.turnBudget = normalizedBudget({
-        used: used + missing * (run.maxTurns + 1),
-        estimated: missing * (run.maxTurns + 1)
-      });
+      run.turnBudget = normalizedBudget(
+        {
+          used: used + missing * (run.maxTurns + 1),
+          estimated: missing * (run.maxTurns + 1)
+        },
+        // Ledgers without a budget predate the raised default; keep the cap they ran under.
+        LEGACY_RUN_TURN_LIMIT
+      );
     } else run.turnBudget = normalizedBudget(run.turnBudget);
     for (const task2 of run.tasks) {
       if (task2.repairs === void 0) {
@@ -31050,10 +31125,10 @@ var Orchestrator = class {
     return Object.fromEntries(
       this.artifactPaths(task2).map((file2) => {
         if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
-        const absolute = path5.resolve(run.cwd, file2);
+        const absolute = path6.resolve(run.cwd, file2);
         return [
           file2,
-          existsSync5(absolute) ? createHash3("sha256").update(readFileSync5(absolute)).digest("hex") : null
+          existsSync6(absolute) ? createHash3("sha256").update(readFileSync6(absolute)).digest("hex") : null
         ];
       })
     );
@@ -31085,19 +31160,19 @@ var Orchestrator = class {
       (file2) => this.worker.permitsArtifact?.(run.cwd, file2) !== false
     );
     const included = new Set(
-      this.artifactPaths(task2).map((file2) => path5.resolve(run.cwd, file2).toLowerCase())
+      this.artifactPaths(task2).map((file2) => path6.resolve(run.cwd, file2).toLowerCase())
     );
     for (const peer of run.tasks.filter((peer2) => peer2.id !== task2.id && peer2.state === "accepted"))
       for (const file2 of this.artifactPaths(peer))
-        included.add(path5.resolve(run.cwd, file2).toLowerCase());
+        included.add(path6.resolve(run.cwd, file2).toLowerCase());
     for (const file2 of run.peerArtifacts ?? [])
-      included.add(path5.resolve(run.cwd, file2).toLowerCase());
+      included.add(path6.resolve(run.cwd, file2).toLowerCase());
     task2.changeInventory = {
       ...changes,
       changedFiles: changes.changedFiles,
       outsideScopeObservations: changes.changedFiles.filter((file2) => !owned.includes(file2)),
       undeclaredChanges: changes.changedFiles.filter(
-        (file2) => !included.has(path5.resolve(run.cwd, file2).toLowerCase())
+        (file2) => !included.has(path6.resolve(run.cwd, file2).toLowerCase())
       )
     };
     return task2.changeInventory;
@@ -31246,9 +31321,9 @@ var Orchestrator = class {
     }
   }
   save(run) {
-    const dest = path5.join(this.dataDir, `run-${run.id}.json`);
-    if (existsSync5(dest)) {
-      const disk = JSON.parse(readFileSync5(dest, "utf8"));
+    const dest = path6.join(this.dataDir, `run-${run.id}.json`);
+    if (existsSync6(dest)) {
+      const disk = JSON.parse(readFileSync6(dest, "utf8"));
       if (disk.ownerId && disk.ownerId !== run.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
         fail("STALE_SUPERVISOR_OWNER");
       if ((disk.ownerGeneration ?? 0) > (run.ownerGeneration ?? 0)) fail("STALE_SUPERVISOR_OWNER");
@@ -31294,19 +31369,19 @@ var Orchestrator = class {
   owns(run) {
     if (run.ownerPid !== process.pid || run.ownerReleased || run.ownerId && run.ownerId !== this.ownerId)
       return false;
-    const file2 = path5.join(this.dataDir, `run-${run.id}.json`);
-    if (!existsSync5(file2)) return true;
-    const disk = JSON.parse(readFileSync5(file2, "utf8"));
+    const file2 = path6.join(this.dataDir, `run-${run.id}.json`);
+    if (!existsSync6(file2)) return true;
+    const disk = JSON.parse(readFileSync6(file2, "utf8"));
     return !disk.ownerReleased && disk.ownerPid === process.pid && disk.ownerId === run.ownerId && disk.ownerGeneration === run.ownerGeneration;
   }
   attach(runId) {
     if (this.closed) fail("CONNECTION_CLOSED");
-    const file2 = path5.join(this.dataDir, `run-${runId}.json`);
-    if (!existsSync5(file2)) fail("RUN_NOT_FOUND");
+    const file2 = path6.join(this.dataDir, `run-${runId}.json`);
+    if (!existsSync6(file2)) fail("RUN_NOT_FOUND");
     const claim = `${file2}.claim`;
     const releaseClaim = claimFile(claim);
     try {
-      const run = JSON.parse(readFileSync5(file2, "utf8"));
+      const run = JSON.parse(readFileSync6(file2, "utf8"));
       if (!run.ownerReleased && processAlive(run.ownerPid) && (run.ownerPid !== process.pid || run.ownerId && run.ownerId !== this.ownerId))
         fail("OWNER_STILL_ACTIVE: no takeover of a live supervisor");
       if (this.startups.size || [...this.runs.values()].some((r3) => this.owns(r3) && (r3.activeTaskId || r3.sessionOperation)))
@@ -31473,6 +31548,7 @@ var Orchestrator = class {
         goal: input.goal,
         design: input.design,
         cwd,
+        workerName: input.workerName ?? input.tasks[0].title,
         revision: 1,
         status: "open",
         createdAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -31738,6 +31814,7 @@ var Orchestrator = class {
       const startup = { valid: true };
       this.startups.set(run.id, startup);
       try {
+        this.worker.setName?.(run.workerName);
         const prompt = "/compact Preserve these supervisor-confirmed facts and user feedback; omit raw logs. " + run.checkpoint;
         if (this.worker.model(run.sessionId) && this.worker.isLive?.(run.sessionId) !== false)
           await this.worker.reply(run.sessionId, prompt, nativeLimit);
@@ -31784,7 +31861,7 @@ var Orchestrator = class {
   }
   acquire(run) {
     if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
-    const lock = path5.join(this.dataDir, "executor.lock");
+    const lock = path6.join(this.dataDir, "executor.lock");
     acquireJsonLease(
       lock,
       "token",
@@ -31797,8 +31874,8 @@ var Orchestrator = class {
     if (timer) clearTimeout(timer);
     this.timers.delete(run.id);
     if (this.startups.has(run.id)) return;
-    const lock = path5.join(this.dataDir, "executor.lock");
-    if (existsSync5(lock))
+    const lock = path6.join(this.dataDir, "executor.lock");
+    if (existsSync6(lock))
       releaseJsonLease(lock, "token", {
         pid: process.pid,
         runId: run.id,
@@ -31911,6 +31988,7 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     const startup = { valid: true };
     this.startups.set(run.id, startup);
     try {
+      this.worker.setName?.(run.workerName);
       if (run.sessionId && this.worker.model(run.sessionId) && this.worker.isLive?.(run.sessionId) !== false)
         receipt.sessionId = await this.worker.reply(run.sessionId, prompt, nativeLimit, signal);
       else {
@@ -31978,10 +32056,10 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
       hash2.update(file2);
       hash2.update("\0");
-      const absolute = path5.resolve(run.cwd, file2);
-      if (task2.additionalArtifacts?.includes(file2) && !existsSync5(absolute))
+      const absolute = path6.resolve(run.cwd, file2);
+      if (task2.additionalArtifacts?.includes(file2) && !existsSync6(absolute))
         hash2.update("<deleted>");
-      else hash2.update(readFileSync5(absolute));
+      else hash2.update(readFileSync6(absolute));
     }
     return hash2.digest("hex");
   }
@@ -32506,8 +32584,8 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
 };
 
 // src/utils/normalize-windows-path.ts
-import path6 from "node:path";
-import os3 from "node:os";
+import path7 from "node:path";
+import os4 from "node:os";
 var TOOL_INPUT_PATH_FIELDS = [
   "file_path",
   "path",
@@ -32522,16 +32600,16 @@ var TOOL_INPUT_PATH_FIELDS = [
 function maybeAddWindowsLongPathPrefix(value) {
   if (value.startsWith("\\\\?\\") || value.startsWith("\\\\.\\") || value.length < 240)
     return value;
-  return path6.win32.toNamespacedPath(value);
+  return path7.win32.toNamespacedPath(value);
 }
 function expandTilde(value, platform) {
-  if (value === "~") return os3.homedir();
+  if (value === "~") return os4.homedir();
   if (!value.startsWith("~")) return value;
   const next = value[1];
   if (next !== "/" && next !== "\\") return value;
   const rest = value.slice(2);
-  const join2 = platform === "win32" ? path6.win32.join : path6.posix.join;
-  return join2(os3.homedir(), rest);
+  const join2 = platform === "win32" ? path7.win32.join : path7.posix.join;
+  return join2(os4.homedir(), rest);
 }
 function convertMsysToWindowsPath(rawPath) {
   if (/^[a-zA-Z]:[\\/]/.test(rawPath) || rawPath.startsWith("\\\\")) return void 0;
@@ -32558,7 +32636,7 @@ function convertMsysToWindowsPath(rawPath) {
 function normalizeMsysToWindowsPath(rawPath) {
   const converted = convertMsysToWindowsPath(rawPath);
   if (!converted) return void 0;
-  return path6.win32.normalize(converted);
+  return path7.win32.normalize(converted);
 }
 function isUnsupportedPosixAbsolutePath(value, platform = process.platform) {
   if (platform !== "win32") return false;
@@ -32587,7 +32665,7 @@ function normalizeWindowsPathLike(value, platform = process.platform) {
   if (platform !== "win32") return expanded;
   const converted = normalizeMsysToWindowsPath(expanded);
   if (!converted && expanded.startsWith("/")) return expanded;
-  const normalized = path6.win32.normalize(converted ?? expanded);
+  const normalized = path7.win32.normalize(converted ?? expanded);
   return maybeAddWindowsLongPathPrefix(normalized);
 }
 function normalizeWindowsPathArray(values, platform = process.platform) {
@@ -50969,8 +51047,8 @@ async function Bs($, X) {
 var DEFAULT_SETTING_SOURCES = ["user", "project", "local"];
 
 // src/utils/windows.ts
-import path7 from "node:path";
-var { join, dirname, normalize: normalize2, isAbsolute } = path7.win32;
+import path8 from "node:path";
+var { join, dirname, normalize: normalize2, isAbsolute } = path8.win32;
 function isWindows() {
   return process.platform === "win32";
 }
@@ -52018,6 +52096,10 @@ var ClaudeWorker = class {
   configurationSignature;
   processStoppers = /* @__PURE__ */ new Set();
   writeScope;
+  workerName;
+  setName(name) {
+    this.workerName = name;
+  }
   setWriteScope(cwd, paths) {
     this.writeScope = paths?.length ? { cwd, paths: [...paths] } : void 0;
   }
@@ -52142,13 +52224,13 @@ var ClaudeWorker = class {
       pathToClaudeCodeExecutable: config2.executable,
       env: config2.env,
       tools: { type: "preset", preset: "claude_code" },
-      disallowedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
+      disallowedTools: ["Agent", "TeamCreate", "TeamDelete"],
       persistSession: true,
       strictMcpConfig: false,
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Do not spawn subagents/teammates; Codex schedules up to3 managed sessions. Supervisor tools are not necessarily yours; select from your actually available tools."
+        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Agent/TeamCreate/TeamDelete are unavailable; Task remains permitted under native policies. Codex schedules up to3 managed top-level sessions. Supervisor tools are not necessarily yours; select from your actually available tools."
       }
     };
     if (resumeId)
@@ -52168,7 +52250,7 @@ var ClaudeWorker = class {
         ...buildOptions(source),
         permissionMode: permission.mode,
         allowDangerouslySkipPermissions: permission.mode === "bypassPermissions",
-        spawnClaudeCodeProcess: processSpawner(this.processStoppers),
+        spawnClaudeCodeProcess: processSpawner(this.processStoppers, this.workerName),
         mcpServers: { codex_supervisor: mailbox.createServer() }
       },
       nativeToolHandling: true,
@@ -52208,7 +52290,7 @@ var ClaudeWorker = class {
     const info = this.manager.get(sessionId);
     if (!info) throw new Error("SESSION_RUNTIME_MISSING");
     if (signal?.aborted) throw new Error("DISPATCH_CANCELLED");
-    const limit = maxTurns ?? info.maxTurns ?? 40;
+    const limit = maxTurns ?? info.maxTurns ?? DEFAULT_SEGMENT_TURNS;
     if (!this.live || !this.input || limit !== info.maxTurns || this.configurationSignature !== nativeMcpSignature(info.cwd)) {
       const cwd = info.cwd;
       this.stop(sessionId);
@@ -52354,28 +52436,28 @@ var ClaudeWorker = class {
 // src/orchestrator/team.ts
 import { randomUUID as randomUUID5 } from "node:crypto";
 import {
-  existsSync as existsSync7,
+  existsSync as existsSync8,
   mkdirSync as mkdirSync3,
-  readFileSync as readFileSync7,
+  readFileSync as readFileSync8,
   readdirSync as readdirSync4,
   realpathSync as realpathSync4,
   renameSync as renameSync3,
   writeFileSync as writeFileSync2
 } from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 function fail2(message) {
   throw new Error(message);
 }
 function canonical(file2) {
-  let existing = path8.resolve(file2);
+  let existing = path9.resolve(file2);
   const suffix = [];
-  while (!existsSync7(existing)) {
-    const parent = path8.dirname(existing);
+  while (!existsSync8(existing)) {
+    const parent = path9.dirname(existing);
     if (parent === existing) fail2("WORKSPACE_PATH_UNRESOLVED");
-    suffix.unshift(path8.basename(existing));
+    suffix.unshift(path9.basename(existing));
     existing = parent;
   }
-  const result2 = path8.join(realpathSync4.native(existing), ...suffix).replaceAll("\\", "/").replace(/\/$/, "");
+  const result2 = path9.join(realpathSync4.native(existing), ...suffix).replaceAll("\\", "/").replace(/\/$/, "");
   return process.platform === "win32" ? result2.toLowerCase() : result2;
 }
 function overlaps(a3, b) {
@@ -52386,7 +52468,7 @@ function scopes(task2) {
   if (!task2.writeScope?.length) return [root];
   return task2.writeScope.map((file2) => {
     if (!file2.trim() || /[*?]/.test(file2)) fail2("WRITE_SCOPE_REQUIRES_LITERAL_PATH");
-    const resolved = canonical(path8.resolve(task2.cwd, file2));
+    const resolved = canonical(path9.resolve(task2.cwd, file2));
     if (resolved !== root && !resolved.startsWith(root + "/"))
       fail2("WRITE_SCOPE_OUTSIDE_WORKSPACE");
     return resolved;
@@ -52398,7 +52480,7 @@ var TeamCoordinator = class {
     this.factory = factory;
     mkdirSync3(dataDir, { recursive: true });
     for (const file2 of readdirSync4(dataDir).filter((file3) => /^team-[\w-]+\.json$/.test(file3))) {
-      const team = JSON.parse(readFileSync7(path8.join(dataDir, file2), "utf8"));
+      const team = JSON.parse(readFileSync8(path9.join(dataDir, file2), "utf8"));
       this.teams.set(team.id, team);
     }
   }
@@ -52421,9 +52503,9 @@ var TeamCoordinator = class {
     );
   }
   save(team) {
-    const dest = path8.join(this.dataDir, `team-${team.id}.json`);
-    if (existsSync7(dest)) {
-      const disk = JSON.parse(readFileSync7(dest, "utf8"));
+    const dest = path9.join(this.dataDir, `team-${team.id}.json`);
+    if (existsSync8(dest)) {
+      const disk = JSON.parse(readFileSync8(dest, "utf8"));
       if ((disk.generation ?? 0) > (team.generation ?? 0) || disk.ownerId && disk.ownerId !== team.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
         fail2("STALE_TEAM_OWNER");
     }
@@ -52486,18 +52568,18 @@ var TeamCoordinator = class {
     for (const task2 of team.tasks) {
       const files = team.tasks.filter((peer) => peer !== task2).flatMap((peer) => {
         const contract = this.run(peer).tasks[0];
-        return [...contract.artifacts, ...contract.additionalArtifacts ?? []].map((file2) => path8.resolve(peer.cwd, file2)).filter((file2) => inside(task2.cwd, file2)).map((file2) => path8.relative(realpathSync4.native(task2.cwd), canonical(file2)));
+        return [...contract.artifacts, ...contract.additionalArtifacts ?? []].map((file2) => path9.resolve(peer.cwd, file2)).filter((file2) => inside(task2.cwd, file2)).map((file2) => path9.relative(realpathSync4.native(task2.cwd), canonical(file2)));
       });
       this.controllers.get(task2.childRunId).setPeerArtifacts(task2.childRunId, files);
     }
   }
   recover(teamId) {
     if (this.closed) fail2("TEAM_COORDINATOR_CLOSED");
-    const file2 = path8.join(this.dataDir, `team-${teamId}.json`);
-    if (!existsSync7(file2)) fail2("TEAM_NOT_FOUND");
+    const file2 = path9.join(this.dataDir, `team-${teamId}.json`);
+    if (!existsSync8(file2)) fail2("TEAM_NOT_FOUND");
     const releaseClaim = claimFile(`${file2}.claim`);
     try {
-      const team = JSON.parse(readFileSync7(file2, "utf8"));
+      const team = JSON.parse(readFileSync8(file2, "utf8"));
       if (team.ownerId === this.ownerId && !team.ownerReleased)
         return this.summary(this.get(teamId));
       if (!team.ownerReleased && processAlive(team.ownerPid)) fail2("OWNER_STILL_ACTIVE");
@@ -52581,7 +52663,7 @@ var TeamCoordinator = class {
   }
   create(input) {
     if (this.closed) fail2("TEAM_COORDINATOR_CLOSED");
-    const maxWorkers = input.maxWorkers ?? 3, maxTurns = input.maxTurns ?? 40;
+    const maxWorkers = input.maxWorkers ?? 3, maxTurns = input.maxTurns ?? DEFAULT_SEGMENT_TURNS;
     const runTimeoutMs = input.runTimeoutMs ?? 72e5;
     const taskTimeoutMs = input.taskTimeoutMs ?? 72e5;
     if (!Number.isSafeInteger(maxWorkers) || maxWorkers < 1 || maxWorkers > 3)
@@ -52618,19 +52700,20 @@ var TeamCoordinator = class {
       taskTimeoutMs,
       maxWorkers,
       maxTurns,
-      budget: normalizedBudget(void 0, input.maxTotalTurns ?? 200),
+      budget: normalizedBudget(void 0, input.maxTotalTurns ?? DEFAULT_RUN_TURN_LIMIT),
       tasks: [],
       receipts: {},
       events: []
     };
-    const prepared = input.tasks.map(({ cwd, writeScope, ...contract }) => {
+    const prepared = input.tasks.map(({ cwd, writeScope, workerName: workerName2, ...contract }) => {
       const task2 = {
         contract: structuredClone(contract),
+        workerName: workerName2,
         cwd: realpathSync4(cwd ?? team.cwd),
         writeScope: writeScope ? [...writeScope] : void 0,
         state: "pending",
         childRunId: "",
-        directory: path8.join(this.dataDir, team.id, contract.id)
+        directory: path9.join(this.dataDir, team.id, contract.id)
       };
       scopes(task2);
       return task2;
@@ -52651,6 +52734,7 @@ var TeamCoordinator = class {
             cwd: task2.cwd,
             goal: team.goal,
             design: team.design,
+            workerName: task2.workerName ?? task2.contract.title,
             tasks: [
               {
                 ...task2.contract,
@@ -52699,15 +52783,15 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
     ).flatMap((team) => team.tasks).filter((task2) => this.controllers.has(task2.childRunId));
   }
   hasOccupied() {
-    const file2 = path8.join(this.dataDir, "team-owner.lock");
-    if (existsSync7(file2)) {
-      const owner = JSON.parse(readFileSync7(file2, "utf8"));
+    const file2 = path9.join(this.dataDir, "team-owner.lock");
+    if (existsSync8(file2)) {
+      const owner = JSON.parse(readFileSync8(file2, "utf8"));
       if (owner.id !== this.ownerId && processAlive(owner.pid)) return true;
     }
     return this.ownedTasks().some((task2) => this.occupied(task2));
   }
   acquireExecutor() {
-    const file2 = path8.join(this.dataDir, "team-owner.lock");
+    const file2 = path9.join(this.dataDir, "team-owner.lock");
     acquireJsonLease(
       file2,
       "id",
@@ -52718,8 +52802,8 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
   }
   releaseExecutor() {
     if (this.pending.size || this.starts.size || this.hasActiveExecutions()) return;
-    const file2 = path8.join(this.dataDir, "team-owner.lock");
-    if (existsSync7(file2)) releaseJsonLease(file2, "id", { pid: process.pid, id: this.ownerId });
+    const file2 = path9.join(this.dataDir, "team-owner.lock");
+    if (existsSync8(file2)) releaseJsonLease(file2, "id", { pid: process.pid, id: this.ownerId });
   }
   canReview(childRunId) {
     const own = this.ownedTasks().find((task2) => task2.childRunId === childRunId);
@@ -52838,6 +52922,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       nextCursor: team.events.at(-1)?.seq ?? 0,
       tasks: team.tasks.map((task2) => ({
         id: task2.contract.id,
+        workerName: task2.workerName ?? task2.contract.title,
         childRunId: task2.childRunId,
         dependsOn: task2.contract.dependsOn,
         cwd: task2.cwd,
@@ -53152,7 +53237,7 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
 }
 
 // src/orchestrator/server.ts
-import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync9 } from "node:fs";
 import { randomUUID as randomUUID6 } from "node:crypto";
 async function doctor() {
   const config2 = localConfig();
@@ -53181,7 +53266,7 @@ async function doctor() {
     }
   }
   let terminalAvailable = true, dotnet10Available = true;
-  const nativeHelperPresent = process.platform !== "win32" || existsSync8(nativeHelperFile());
+  const nativeHelperPresent = process.platform !== "win32" || existsSync9(nativeHelperFile());
   if (process.platform === "win32") {
     try {
       execFileSync5("where.exe", ["wt.exe"], { windowsHide: true, stdio: "ignore" });
@@ -53197,7 +53282,7 @@ async function doctor() {
     }
   }
   return {
-    pluginVersion: false ? "0.0.0-dev" : "0.6.1",
+    pluginVersion: false ? "0.0.0-dev" : "0.7.1",
     node: process.version,
     platform: process.platform,
     claude: execFileSync5(config2.executable, ["--version"], {
@@ -53215,7 +53300,7 @@ async function doctor() {
     workerPolicy: {
       hooks: "native_untouched",
       ordinaryTools: "native_permission_evaluation",
-      blockedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
+      blockedTools: ["Agent", "TeamCreate", "TeamDelete"],
       fileInterception: false,
       pathRewriting: false
     },
@@ -53236,6 +53321,9 @@ async function doctor() {
 }
 var id = external_exports.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).refine((v2) => !["__proto__", "constructor", "prototype"].includes(v2));
 var check2 = external_exports.object({ command: external_exports.string().min(1), args: external_exports.array(external_exports.string()).max(100) });
+var workerName = external_exports.string().min(1).max(64).describe(
+  "Human role name shown at the start of the worker's Windows Terminal tab, e.g. 'UI \u4FEE\u590D'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+).optional();
 var task = external_exports.object({
   id,
   title: external_exports.string().min(1),
@@ -53268,10 +53356,10 @@ function taskSummary(run, task2) {
     }
   };
 }
-function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path9.join(os4.homedir(), ".local", "share", "codex-controls-claude"), makeWorker = () => new ClaudeWorker()) {
+function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path10.join(os5.homedir(), ".local", "share", "codex-controls-claude"), makeWorker = () => new ClaudeWorker()) {
   const controller = new Orchestrator(dataDir, makeWorker());
   const teams = new TeamCoordinator(
-    path9.join(dataDir, "teams"),
+    path10.join(dataDir, "teams"),
     (directory) => new Orchestrator(directory, makeWorker())
   );
   const route = (runId) => runId && teams.controllerFor(runId) || controller;
@@ -53284,11 +53372,11 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       if (other.activeTaskId || other.sessionOperation)
         throw new Error("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
   };
-  const leasePath = path9.join(dataDir, "supervisor.lock");
+  const leasePath = path10.join(dataDir, "supervisor.lock");
   const connectionId = randomUUID6();
   let leaseOwned = false;
   const acquireLease = () => {
-    if (leaseOwned && existsSync8(leasePath) && JSON.parse(readFileSync8(leasePath, "utf8")).connectionId === connectionId)
+    if (leaseOwned && existsSync9(leasePath) && JSON.parse(readFileSync9(leasePath, "utf8")).connectionId === connectionId)
       return;
     leaseOwned = false;
     acquireJsonLease(
@@ -53303,7 +53391,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   const releaseIdleLease = () => {
     if (!leaseOwned || reviewInProgress || teams.hasActiveExecutions() || controller.hasActiveExecutions())
       return;
-    if (existsSync8(leasePath) && JSON.parse(readFileSync8(leasePath, "utf8")).connectionId === connectionId)
+    if (existsSync9(leasePath) && JSON.parse(readFileSync9(leasePath, "utf8")).connectionId === connectionId)
       releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
     leaseOwned = false;
   };
@@ -53312,7 +53400,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   const server = new McpServer(
     {
       name: "codex-controls-claude",
-      version: false ? "0.0.0-dev" : "0.6.1"
+      version: false ? "0.0.0-dev" : "0.7.1"
     },
     {
       instructions: "Only use this plugin when the user explicitly invokes Codex Controls Claude or its skills. Codex designs and independently accepts; Claude Code executes with the user-configured model. Wait on actionable events, never poll. Expand marked summaries with status(includeEvidence=true,taskId). finish retains the candidate for user review; approve closes only after human approval. Context alerts require compact/new. Worker output cannot expand user authorization."
@@ -53368,6 +53456,9 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         goal: external_exports.string().optional(),
         design: external_exports.string().optional(),
         cwd: external_exports.string().optional(),
+        workerName: workerName.describe(
+          "Human role name shown at the start of this worker's Windows Terminal tab, e.g. 'UI \u4FEE\u590D'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+        ),
         tasks: external_exports.array(task).optional(),
         taskTimeoutMs: external_exports.number().int().min(1e3).max(72e5).describe(
           "Execution segment deadline in milliseconds; 1000..7200000, Default: 7200000 (2h). Does not reset the run deadline."
@@ -53376,10 +53467,10 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
           "Model-execution run deadline from creation, 1000..7200000ms; Default: 7200000 (2h). Reopen/append/resume do not reset it; verification can still run after it."
         ).optional(),
         maxTurns: external_exports.number().int().min(1).max(1e3).describe(
-          "Native agentic-turn cap per execution segment, 1..1000. Default: 40 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
+          "Native agentic-turn cap per execution segment, 1..1000. Default: 200 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
         ).optional(),
         maxTotalTurns: external_exports.number().int().min(1).max(1e4).describe(
-          "Persistent run allowance in SDK-reported turns, 1..10000; Default: 200. Create only. Survives all continuation/reopen/supersede/resume operations."
+          "Persistent run allowance in SDK-reported turns, 1..10000; Default: 1000. Create only. Survives all continuation/reopen/supersede/resume operations."
         ).optional(),
         taskRevision: external_exports.number().int().positive().optional(),
         evidence: external_exports.string().min(1).max(16e3).optional(),
@@ -53482,7 +53573,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
           "Explicit same-task continuation for budget/interruption/blocking recovery. Does not change the contract or spend acceptance-repair quota."
         ).optional(),
         maxTurns: external_exports.number().int().min(1).max(1e3).describe(
-          "Optional native cap for this segment (default run.maxTurns=40), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
+          "Optional native cap for this segment (default run.maxTurns=200), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
         ).optional(),
         feedback: external_exports.string().min(1).max(16e3).describe(
           "Supervisor answer/checkpoint guidance within the unchanged task scope; not a new contract."
@@ -53661,7 +53752,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   server.registerTool(
     "orchestrator_team",
     {
-      description: "Codex schedules up to3 Claude Code sessions with a shared200-turn/2h budget. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout, acceptance or chat wakeup.",
+      description: "Codex schedules up to3 Claude Code sessions with a shared1000-turn/2h budget. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout, acceptance or chat wakeup.",
       inputSchema: {
         action: external_exports.enum([
           "create",
@@ -53683,6 +53774,9 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         design: external_exports.string().optional(),
         tasks: external_exports.array(
           task.extend({
+            workerName: workerName.describe(
+              "Human role name shown at the start of this worker's Windows Terminal tab, e.g. '\u9884\u7B97\u914D\u7F6E'. Default: the task title. Display only; never part of task contracts or the SDK prompt."
+            ),
             cwd: external_exports.string().optional(),
             writeScope: external_exports.array(external_exports.string().min(1)).max(100).optional()
           })
@@ -53762,7 +53856,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
           controller.close();
         } finally {
           try {
-            if (leaseOwned && existsSync8(leasePath))
+            if (leaseOwned && existsSync9(leasePath))
               releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
           } finally {
             leaseOwned = false;

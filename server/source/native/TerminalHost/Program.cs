@@ -4,7 +4,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading.Channels;
 
 internal static class Program
 {
@@ -22,10 +21,13 @@ internal static class Program
                 case "--host": await Host(args[1], args[2]); return 0;
                 case "--inspect": Inspect(args[1], int.Parse(args[2]), args[3], false); return 0;
                 case "--close": Inspect(args[1], int.Parse(args[2]), args[3], true); return 0;
-                case "--self-test": SelfTest(); return 0;
+                case "--self-test": return SelfTest();
+                case "--sixel-probe": return await SixelProbe(args.Contains("--hold"));
                 case "--lease":
                     using (var request = JsonDocument.Parse(Console.In.ReadToEnd())) Console.WriteLine(JsonSerializer.Serialize(Lease(request.RootElement)));
                     return 0;
+                case "--dashboard-demo": await DashboardDemo(args.Contains("--multi"), args.Contains("--hold")); return 0;
+                case "--dashboard-input-test": return await DashboardInputTest(args[1], args.Contains("--in-console"));
                 case "--demo": Demo(args.Contains("--plain")); if (args.Contains("--hold")) await Task.Delay(120000); return 0;
                 default: throw new ArgumentException("Unknown terminal operation");
             }
@@ -123,9 +125,15 @@ internal static class Program
         using var sendLock = new SemaphoreSlim(1);
         Process? worker = null;
         var secrets = Array.Empty<string>();
-        var view = new TerminalView();
-        var display = Channel.CreateBounded<string>(new BoundedChannelOptions(128) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
-        var rendering = Task.Run(async () => { await foreach (var text in display.Reader.ReadAllAsync()) view.Write(text); });
+        using var view = new SessionDashboard();
+        // An explicit close from the dashboard stops the worker this terminal owns; nothing else does.
+        view.StopRequested += cancel.Cancel;
+        var rendering = view.RunAsync(cancel.Token);
+        var displayLock = new object();
+        var displayId = "starting";
+        var displayIds = new HashSet<string>();
+        var effort = "unknown";
+        var effortSource = "not reported";
         async Task Send(object message)
         {
             await sendLock.WaitAsync(cancel.Token);
@@ -134,10 +142,9 @@ internal static class Program
         }
         void Show(JsonElement message)
         {
-            foreach (var text in Display(message)) display.Writer.TryWrite(Clean(text, secrets));
+            lock (displayLock) displayId = Route(view, displayIds, displayId, effort, effortSource, secrets, message);
         }
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancel.Cancel(); };
-        view.Header();
         await Send(new { type = "hello", token, pid = Environment.ProcessId, wtSession = Environment.GetEnvironmentVariable("WT_SESSION") });
         Task? execution = null;
         var inputDecoder = Utf8.GetDecoder();
@@ -162,6 +169,8 @@ internal static class Program
                         foreach (var entry in message.GetProperty("env").EnumerateObject())
                             if (entry.Value.ValueKind == JsonValueKind.String) start.Environment[entry.Name] = entry.Value.GetString();
                         secrets = start.Environment.Where(e => Regex.IsMatch(e.Key, "TOKEN|KEY|PASSWORD|SECRET", RegexOptions.IgnoreCase) && e.Value?.Length > 0).Select(e => e.Value!).OrderByDescending(value => value.Length).ToArray();
+                        effort = Value(message, "effort"); effortSource = Value(message, "effortSource");
+                        view.Add(displayId, "Starting Claude Code", effort, effortSource, secrets);
                         worker = Process.Start(start) ?? throw new InvalidOperationException("Claude Code did not start");
                         await Send(new { type = "spawned", pid = worker.Id });
                         var current = worker;
@@ -201,8 +210,7 @@ internal static class Program
                 if (execution is not null) { try { await execution; } catch (OperationCanceledException) { } catch (IOException) { } }
                 worker.Dispose();
             }
-            display.Writer.TryComplete();
-            await rendering;
+            try { await rendering; } catch (OperationCanceledException) { }
         }
     }
 
@@ -294,7 +302,7 @@ internal static class Program
             Console.WriteLine();
             Console.WriteLine(Paint("  ◈  CODEX CONTROLS CLAUDE", "1;38;2;105;211;229"));
             Console.WriteLine(Paint("  Plan · Execute · Independently verify", "38;2;139;149;163"));
-            Console.WriteLine(Paint("  " + new string('─', Width), "38;2;58;69;84"));
+            Console.WriteLine(Paint("  " + new string('─', Width), "38;2;125;140;158"));
         }
         public void Write(string text)
         {
@@ -315,7 +323,7 @@ internal static class Program
             var style = tag switch { "failed" => "1;38;2;249;133;133", "permission/control" => "1;38;2;237;193;111", "review" => "1;38;2;133;214;168", "task" => "1;38;2;105;211;229", _ => "38;2;168;183;202" };
             if (tag is "task" or "session" or "review" or "failed") Console.WriteLine();
             Console.WriteLine("  " + Paint(DateTime.Now.ToString("HH:mm:ss"), "38;2;103;115;132") + "  " + Paint(tag.ToUpperInvariant(), style));
-            foreach (var line in Wrap(content, Width)) Console.WriteLine("  " + Paint("│ ", "38;2;58;69;84") + line);
+            foreach (var line in Wrap(content, Width)) Console.WriteLine("  " + Paint("│ ", "38;2;125;140;158") + line);
         }
         internal static IEnumerable<string> Wrap(string text, int width)
         {
@@ -332,6 +340,305 @@ internal static class Program
             }
         }
     }
+    // Demo runs no model, so the heading and model row say so instead of naming a plausible runtime model.
+    private const string DemoModel = "demo-no-model-running";
+
+    // Phase-1 prototype: paints the cached Sixel payload in this process's own console so the real
+    // Windows Terminal decides whether the image renders. It opens no window and runs no model.
+    private static async Task<int> SixelProbe(bool hold)
+    {
+        // Alternate screen so the probe never disturbs the invoking terminal's scrollback.
+        Console.Write("\u001b[?1049h\u001b[2J\u001b[H");
+        Console.Write("probe: cached sixel " + SixelLogo.PixelWidth + "x" + SixelLogo.PixelHeight + "\n");
+        Console.Write(SixelLogo.Frame);
+        Console.Write("\u001b[5;1Hafter-image cursor row 5\n");
+        Console.Out.Flush();
+        if (hold) await Task.Delay(TimeSpan.FromSeconds(180));
+        else await Task.Delay(1200);
+        Console.Write("\u001b[?1049l");
+        Console.Out.Flush();
+        return 0;
+    }
+
+    // Screenshot entry point. A single conversation is the default; --multi adds clearly labelled
+    // synthetic conversations so the conditional selector can be reviewed without a live run.
+    private static async Task DashboardDemo(bool multi, bool hold)
+    {
+        using var dashboard = new SessionDashboard();
+        using var cancel = new CancellationTokenSource();
+        // Demo data is explicitly labelled: it is not a model actually running on this machine.
+        Seed(dashboard, "demo-session-06", null, DemoModel);
+        if (multi) { Seed(dashboard, "demo-session-07", "Demo · review of usage reporting", DemoModel); Seed(dashboard, "demo-session-08", "演示 · 中文任务标题", DemoModel); }
+        dashboard.StopRequested += cancel.Cancel;
+        // Bounded even without --hold so an unattended invocation always returns.
+        using var timer = new CancellationTokenSource(hold ? TimeSpan.FromMinutes(2) : TimeSpan.FromSeconds(15));
+        timer.Token.Register(cancel.Cancel);
+        await dashboard.RunAsync(cancel.Token);
+    }
+
+    // Host's display routing, factored out so the startup-order regression exercises the real path.
+    // A conversation is a native session_id, never a task phase or another terminal's worker.
+    private static string Route(SessionDashboard view, HashSet<string> displayIds, string displayId, string effort, string effortSource, string[] secrets, JsonElement message)
+    {
+        var type = Value(message, "type");
+        var sessionId = Value(message, "session_id");
+        var init = type == "system" && Value(message, "subtype") == "init" && sessionId.Length > 0;
+        if (init && displayIds.Add(sessionId))
+        {
+            // A prompt may arrive before init. The starting pane is bound to this first real id so its
+            // task, name, history and clock survive; later ids get their own independent pane.
+            if (!view.Promote("starting", sessionId, effort, effortSource, secrets))
+                view.Add(sessionId, "Conversation " + displayIds.Count.ToString("00", System.Globalization.CultureInfo.InvariantCulture), effort, effortSource, secrets);
+        }
+        // A cold resume names its session id before any init exists: one host owns one worker, so a
+        // prompt arriving then is this terminal's own task and belongs in the starting pane. It is
+        // shown there, never turned into a conversation; once a real id exists unknown ids stay isolated.
+        if (init) displayId = sessionId;
+        var target = displayIds.Contains(sessionId) ? sessionId
+            : sessionId.Length == 0 || (displayIds.Count == 0 && type == "user") ? displayId : "";
+        if (target.Length > 0) view.Observe(target, message);
+        return displayId;
+    }
+
+    private static void Seed(SessionDashboard dashboard, string id, string? name, string model)
+    {
+        dashboard.Add(id, name ?? "Demo · native dashboard preview", "high", "config", []);
+        foreach (var raw in new[] {
+            "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"" + id + "\",\"model\":\"" + model + "\",\"permissionMode\":\"bypassPermissions\",\"mcp_servers\":[{\"name\":\"ccc_probe\",\"status\":\"connected\"}]}",
+            "{\"type\":\"user\",\"message\":{\"content\":\"Orchestrator preamble.\\nTask " + (name ?? "Demo · native dashboard preview") + "\\nBounded repair of the existing view.\"}}",
+            "{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":1840,\"output_tokens\":392},\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"dotnet build -c Release\"}}]}}",
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Console handles, row diffing and the one-second clock are in place.\\n几何图标与受限配色已核对；等待 Codex 独立验收。\"}]}}",
+            "{\"type\":\"result\",\"is_error\":false,\"num_turns\":6,\"usage\":{\"input_tokens\":1840,\"output_tokens\":392},\"result\":\"Native view compiles; no remaining blockers.\"}" })
+        { using var doc = JsonDocument.Parse(raw); dashboard.Observe(id, doc.RootElement); }
+    }
+
+    // The pump needs a real console, so the first invocation opens a dedicated Windows Terminal tab
+    // and re-runs itself there with --in-console. No other window is touched and the tab closes with it.
+    private static async Task<int> DashboardInputTest(string reportPath, bool inConsole)
+    {
+        if (inConsole) return await RunInputTest(reportPath);
+        var report = Path.GetFullPath(reportPath);
+        if (File.Exists(report)) File.Delete(report);
+        // Same production launcher as `--launch`: a fresh Windows Terminal tab, minimized, auto-closing.
+        var start = new ProcessStartInfo("wt.exe") { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Minimized };
+        foreach (var argument in new[] { "-w", "new", "new-tab", "--suppressApplicationTitle", "-d", Environment.CurrentDirectory })
+            start.ArgumentList.Add(argument);
+        // A .dll is not executable: the host has to be named first, then the assembly. A native image
+        // (an apphost) is its own launcher and must be passed alone.
+        var entry = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        if (!string.Equals(entry, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase))
+        {
+            start.ArgumentList.Add(Environment.ProcessPath!);
+            start.ArgumentList.Add(entry);
+        }
+        else start.ArgumentList.Add(entry);
+        foreach (var argument in new[] { "--dashboard-input-test", report, "--in-console" })
+            start.ArgumentList.Add(argument);
+        try
+        {
+            using var spawn = Process.Start(start);
+            if (spawn is null) throw new InvalidOperationException("Windows Terminal did not start");
+            // wt.exe only hands the tab off and exits at once, so its exit says nothing about the run.
+            // The report appearing is the child's completion signal; a file event waits on it without polling.
+            if (!await WaitForReport(report, TimeSpan.FromSeconds(90))) throw new TimeoutException();
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
+        {
+            Console.WriteLine("{\"status\":\"failed\",\"errors\":[\"no-console: a dedicated Windows Terminal tab could not complete\"]}");
+            return 1;
+        }
+        if (!File.Exists(report))
+        {
+            Console.WriteLine("{\"status\":\"failed\",\"errors\":[\"no-report: the test terminal produced no result\"]}");
+            return 1;
+        }
+        var text = File.ReadAllText(report, Utf8);
+        Console.WriteLine(text.Trim());
+        return text.Contains("\"status\": \"passed\"", StringComparison.Ordinal) ? 0 : 1;
+    }
+
+    // Waits for the child's report to appear using a filesystem event, so no report file is polled.
+    private static async Task<bool> WaitForReport(string report, TimeSpan timeout)
+    {
+        if (File.Exists(report)) return true;
+        var directory = Path.GetDirectoryName(report)!;
+        var name = Path.GetFileName(report);
+        var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var watcher = new FileSystemWatcher(directory, name) { EnableRaisingEvents = true };
+        watcher.Created += (_, _) => ready.TrySetResult(true);
+        watcher.Renamed += (_, _) => ready.TrySetResult(true);
+        if (File.Exists(report)) return true;   // it may have landed between the first check and the watcher
+        using var done = new CancellationTokenSource(timeout);
+        using (done.Token.Register(() => ready.TrySetResult(false)))
+            return await ready.Task;
+    }
+
+    // Runs the real pump against this terminal's real handles: synthetic Win32 mouse/keyboard records
+    // drive selection, per-conversation history is checked and the console modes are verified restored.
+    private static async Task<int> RunInputTest(string reportPath)
+    {
+        var checks = new List<string>();
+        var errors = new List<string>();
+        void Check(string name, bool passed) { (passed ? checks : errors).Add(name); }
+        using var dashboard = new SessionDashboard();
+        var stop = 0;
+        dashboard.StopRequested += () => Interlocked.Increment(ref stop);
+        Seed(dashboard, "one", null, "deepseek-v4.1-flash[1m]");
+        dashboard.Add("two", "独立会话 · 中文", "", "", []);
+        // The second conversation carries an explicit native init so its actual model and permission
+        // mode are what the painted header must show after selection.
+        using (var init = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"two\",\"model\":\"deepseek-v4.1-flash[1m]\",\"permissionMode\":\"bypassPermissions\"}"))
+            dashboard.Observe("two", init.RootElement);
+        var modesRead = SessionDashboard.NativeConsole.ReadModes(out var inputBefore, out var outputBefore);
+        bool RestoreCapturedModes()
+        {
+            var inputRestored = SessionDashboard.NativeConsole.WriteMode(SessionDashboard.NativeConsole.InputHandle(), inputBefore);
+            var outputRestored = SessionDashboard.NativeConsole.WriteMode(SessionDashboard.NativeConsole.OutputHandle(), outputBefore);
+            return inputRestored && outputRestored
+                && SessionDashboard.NativeConsole.ReadModes(out var finalIn, out var finalOut)
+                && finalIn == inputBefore && finalOut == outputBefore;
+        }
+        if (modesRead)
+        {
+            // Simulate failure after the first mode mutation. The same cleanup routine used by the
+            // outer finally must restore both captured modes without relying on zeroProbe success.
+            try
+            {
+                Check("partial-mode-mutation", SessionDashboard.NativeConsole.WriteMode(SessionDashboard.NativeConsole.InputHandle(), 0)
+                    && SessionDashboard.NativeConsole.ReadModes(out var partialIn, out var partialOut)
+                    && partialIn == 0 && partialOut == outputBefore);
+            }
+            finally { Check("partial-mode-restored", RestoreCapturedModes()); }
+        }
+        // Zero is a valid console mode, so prove a zero-mode console still round-trips exactly. This runs
+        // in the test's own console only; the outer modes are put back in finally no matter what happens.
+        var zeroProbe = false;
+        if (modesRead)
+        {
+            zeroProbe = SessionDashboard.NativeConsole.WriteMode(SessionDashboard.NativeConsole.InputHandle(), 0)
+                && SessionDashboard.NativeConsole.WriteMode(SessionDashboard.NativeConsole.OutputHandle(), 0)
+                && SessionDashboard.NativeConsole.ReadModes(out var zeroIn, out var zeroOut) && zeroIn == 0 && zeroOut == 0;
+        }
+        // The pump must exit on Escape, not on this bound; it only exists so a stuck run still returns.
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        try
+        {
+            var pump = dashboard.RunAsync(cancel.Token);
+            await Task.Delay(700, CancellationToken.None);
+            var handle = SessionDashboard.NativeConsole.InputHandle();
+            Check("input-handle", handle != 0 && handle != -1);
+            Check("output-handle", SessionDashboard.NativeConsole.OutputHandle() is not (0 or -1));
+            Check("painted-interactive", SessionDashboard.NativeConsole.PaintedInteractive);
+
+            // Screen coordinates come from the pump's own geometry, exactly what the hit test re-lays out.
+            var width = SessionDashboard.NativeConsole.PaintedWidth;
+            var height = SessionDashboard.NativeConsole.PaintedHeight;
+            var chipRow = dashboard.Frame(width, height).Length - 1;
+            // A chip starts at its marker cell ('│' unselected, '█' selected); the "◈ 2" count prefix
+            // is not a chip. Convert the UTF-16 offset to display cells for CJK-safe coordinates.
+            var chipLine = dashboard.Frame(width, height)[chipRow];
+            var second = -1;
+            for (var index = 0; index + 3 < chipLine.Length; index++)
+                if (chipLine[index] is '│' or '█' && chipLine[index + 1] == ' ' && chipLine[(index + 2)..].StartsWith("2 ", StringComparison.Ordinal))
+                    second = SessionDashboard.CellWidth(chipLine[..index]);
+            Check("chip-row-found", second >= 0);
+            SessionDashboard.NativeConsole.InjectMouse(handle, second, chipRow);
+            await Task.Delay(400, CancellationToken.None);
+            Check("mouse-select", dashboard.SelectedId == "two");
+            Check("history-isolated", dashboard.LogText("one") != dashboard.LogText("two"));
+
+            // Header contract on the REAL painted screen: the logo is non-blank, paging the log never
+            // scrolls it, and no native id or provenance wording ever reaches a painted row.
+            // Painted rows carry SGR colour, so the text checks strip ANSI first. Let the pump paint
+            // the newly selected conversation before snapshotting its header.
+            await Task.Delay(300, CancellationToken.None);
+            static string Plain(string row) => SessionDashboard.StripAnsi(row);
+            var painted = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            // The footer selector also uses block glyphs, so only rows above the first rule are header.
+            static string[] Header(string[] rows)
+            {
+                var rule = Array.FindIndex(rows, row => row.TrimStart().StartsWith('─'));
+                return rows[..(rule < 0 ? 0 : rule)];
+            }
+            static int RuleRow(string[] rows) => Array.FindIndex(rows, row => row.TrimStart().StartsWith('─'));
+            var logoBefore = Header(painted);
+            Check("header-compact", logoBefore.Length == 5);
+            Check("header-logo-painted", SessionDashboard.NativeConsole.PaintedImage
+                ? SessionDashboard.NativeConsole.ImagePaintCount > 0
+                : logoBefore.Any(row => row.IndexOfAny(['█', '▀', '▄']) >= 0));
+            // The painted header carries the ACTUAL model and native permission mode, and never a
+            // block-glyph logo or provenance wording.
+            var headerText = string.Join("\n", logoBefore);
+            Check("header-model-painted", headerText.Contains("MODEL") && headerText.Contains("Deepseek V4.1 Flash"));
+            Check("header-permissions-painted", headerText.Contains("Permissions") && headerText.Contains("bypassPermissions"));
+            Check("header-no-dot-logo", headerText.All(ch => ch is < '\u2800' or > '\u28FF'));
+            Check("header-title-painted", painted.Any(row => row.Contains("独立会话")));
+            Check("header-time-painted", painted.Any(row => System.Text.RegularExpressions.Regex.IsMatch(row, @"TIME\s+\d\d:\d\d:\d\d")));
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x21, '\0');   // PageUp through populated history
+            await Task.Delay(300, CancellationToken.None);
+            var pagedRows = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            // Compare the HEADER (above the first rule, clock row excluded) and the BODY separately:
+            // the body must actually change, and the header must not. A TIME tick alone cannot pass this.
+            var logoAfter = Header(pagedRows);
+            static bool Pinned(string[] before, string[] after) =>
+                before.Length == after.Length
+                && before.Where(row => !row.Contains("TIME")).SequenceEqual(after.Where(row => !row.Contains("TIME")));
+            var ruleBefore = RuleRow(painted);
+            var ruleAfter = RuleRow(pagedRows);
+            var bodyBefore = ruleBefore < 0 ? [] : painted[(ruleBefore + 1)..];
+            var bodyAfter = ruleAfter < 0 ? [] : pagedRows[(ruleAfter + 1)..];
+            Check("header-pinned", Pinned(logoBefore, logoAfter)
+                && pagedRows.Any(row => row.Contains("独立会话")));
+            Check("body-paged", bodyBefore.Length > 0 && bodyAfter.Length > 0
+                && !bodyBefore.SequenceEqual(bodyAfter));
+            Check("no-id-or-provenance", pagedRows.All(row => !row.Contains("configured") && !row.Contains("environment")
+                && !System.Text.RegularExpressions.Regex.IsMatch(row, "[0-9a-f]{8}-[0-9a-f]{4}-")));
+            // Truthful claim: this only proves a NAMED conversation keeps its human heading while painted.
+            // The unnamed "Conversation 01" fallback is covered deterministically in the frame self-test.
+            Check("named-heading-preserved", dashboard.Frame(width, height).Any(row => row.Contains("独立会话")));
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x23, '\0');   // End back to latest
+
+            // "two" never received a result, so its clock is live. Assert the CONSOLE changed: compare the
+            // rows the pump actually wrote and the write revision, not regenerated model text.
+            var rowsBefore = SessionDashboard.NativeConsole.PaintedRows.ToArray();
+            var revisionBefore = SessionDashboard.NativeConsole.PaintedRevision;
+            await Task.Delay(1600, CancellationToken.None);
+            var rowsAfter = SessionDashboard.NativeConsole.PaintedRows;
+            Check("timer-repaint", SessionDashboard.NativeConsole.PaintedRevision > revisionBefore
+                && rowsAfter.Length > 0 && !rowsBefore.SequenceEqual(rowsAfter));
+            Check("timer-row-written", SessionDashboard.NativeConsole.LastWrittenRows.Any(written => written));
+
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x09, '\t');
+            await Task.Delay(400, CancellationToken.None);
+            Check("key-select", dashboard.SelectedId == "one");
+
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x1B, '\u001b');
+            await Task.Delay(400, CancellationToken.None);
+            Check("escape-requests-stop", Volatile.Read(ref stop) > 0);
+            await pump;
+            cancel.Cancel();
+            // Enter saw the zeroed modes, so a correct Restore puts zero back — the case the review flagged.
+            Check("zero-mode-roundtrip", SessionDashboard.NativeConsole.ReadModes(out var zeroAfterIn, out var zeroAfterOut)
+                && zeroAfterIn == 0 && zeroAfterOut == 0);
+        }
+        catch (Exception error) { errors.Add(error.GetType().Name + ": " + error.Message); }
+        finally
+        {
+            // Always put this terminal's outer modes back, whether the checks passed, failed or threw.
+            if (modesRead)
+            {
+                Check("outer-modes-restored", RestoreCapturedModes());
+            }
+        }
+        var report = new { status = errors.Count == 0 ? "passed" : "failed", checks, errors,
+            graphics = new { enabled = SixelLogo.ImageCapable, cellWidth = SixelLogo.CellSize.Width,
+                cellHeight = SixelLogo.CellSize.Height, rows = SixelLogo.RowSpan, columns = SixelLogo.ColumnSpan,
+                imagePaints = SessionDashboard.NativeConsole.ImagePaintCount } };
+        await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }), Utf8);
+        Console.WriteLine(JsonSerializer.Serialize(new { status = report.status, passed = checks.Count, failed = errors.Count, report = reportPath }));
+        return errors.Count == 0 ? 0 : 1;
+    }
+
     private static void Demo(bool plain)
     {
         var view = new TerminalView(plain); view.Header();
@@ -344,9 +651,10 @@ internal static class Program
         { using var doc = JsonDocument.Parse(raw); foreach (var item in Display(doc.RootElement)) view.Write(item); }
     }
 
-    private static void SelfTest()
+    private static int SelfTest()
     {
-        void Require(bool condition) { if (!condition) throw new InvalidOperationException("Native terminal regression"); }
+        var checks = 0;
+        void Require(bool condition) { checks++; if (!condition) throw new InvalidOperationException("Native terminal regression #" + checks); }
         Require(Clean("中文 secret-token \u001b", ["secret-token"]) == "中文 [redacted] ");
         Require(Clean("password abc123", ["abc123"]) == "password [redacted]");
         using var task = JsonDocument.Parse("{\"type\":\"user\",\"message\":{\"content\":\"任务\"}}");
@@ -360,7 +668,81 @@ internal static class Program
         Require(string.Join("", TerminalView.Wrap("中文abcdef", 4)) == "中文abcdef");
         using var failed = JsonDocument.Parse("{\"type\":\"result\",\"is_error\":true,\"subtype\":\"error_max_turns\",\"errors\":[\"limit\"]}");
         Require(Display(failed.RootElement).Single().Contains("[failed] error_max_turns"));
-        Console.WriteLine("{\"nativeSelfTests\":9,\"status\":\"passed\"}");
+        // The reported defect end-to-end through Host's own routing: the initial user prompt arrives
+        // BEFORE system/init, and the starting pane must survive as one conversation with its task.
+        using (var routing = new SessionDashboard())
+        {
+            var ids = new HashSet<string>();
+            var current = "starting";
+            routing.Add("starting", "Starting Claude Code", "high", "env", []);
+            using (var prompt = JsonDocument.Parse("{\"type\":\"user\",\"message\":{\"content\":\"Orchestrator preamble.\\nTask Finish native dashboard\\nBody.\"}}"))
+                current = Route(routing, ids, current, "high", "env", [], prompt.RootElement);
+            Require(routing.LogText(current).Contains("Finish native dashboard"));   // task survived
+            using (var init = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"native-1\",\"model\":\"claude-fable-5-1\",\"permissionMode\":\"acceptEdits\",\"cwd\":\"/work/project\"}"))
+                current = Route(routing, ids, current, "high", "env", [], init.RootElement);
+            Require(current == "native-1");
+            Require(routing.LogText("native-1").Contains("Finish native dashboard"));
+            Require(routing.LogText("starting") == "");
+            var frame = routing.Frame(100, 24);
+            Require(frame.Any(row => row.Contains("1 conversation")));               // not counted as two
+            // The actual native permission mode is a header row; workspace stays internal, and the
+            // native session id itself never renders.
+            var backend = routing.Backend(current);
+            Require(backend.Mode == "acceptEdits" && backend.Workspace == "/work/project");
+            Require(backend.Model == "claude-fable-5-1");
+            Require(frame.Any(row => row.Contains("Permissions") && row.Contains("acceptEdits")));
+            Require(!frame.Any(row => row.Contains("/work/project")));
+            Require(!frame.Any(row => row.Contains("native-1")));
+            // An unknown explicit id must not enter any existing pane's history.
+            using (var stray = JsonDocument.Parse("{\"type\":\"user\",\"session_id\":\"someone-else\",\"message\":{\"content\":\"Task Foreign work\"}}"))
+                current = Route(routing, ids, current, "", "", [], stray.RootElement);
+            Require(!routing.LogText("native-1").Contains("Foreign work"));
+            Require(routing.LogText("native-1").Contains("Finish native dashboard"));
+        }
+        // Cold resume: the initial prompt names the resumed session BEFORE any init, so that id is not
+        // known yet. It must still reach the starting pane - the real init then promotes that same pane.
+        using (var cold = new SessionDashboard())
+        {
+            var ids = new HashSet<string>();
+            var current = "starting";
+            cold.Add("starting", "Starting Claude Code", "high", "env", []);
+            using (var resume = JsonDocument.Parse("{\"type\":\"user\",\"session_id\":\"resume-sid-9\",\"message\":{\"content\":\"Orchestrator preamble.\\nTask Continue cold resume work\\nBody.\"}}"))
+                current = Route(cold, ids, current, "high", "env", [], resume.RootElement);
+            Require(current == "starting");                                          // no pane invented from the prompt
+            Require(cold.LogText("starting").Contains("Continue cold resume work")); // the real task survived
+            Require(!cold.Frame(100, 24).Any(row => row.Contains("resume-sid-9")));  // still the single starting pane
+            using (var init = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"resume-sid-9\",\"model\":\"claude-fable-5-1\",\"permissionMode\":\"acceptEdits\",\"cwd\":\"/work/project\"}"))
+                current = Route(cold, ids, current, "high", "env", [], init.RootElement);
+            Require(current == "resume-sid-9");                                      // active native routing id
+            Require(cold.LogText("resume-sid-9").Contains("Continue cold resume work"));
+            Require(cold.LogText("starting") == "");
+            var coldFrame = cold.Frame(100, 24);
+            Require(coldFrame.Any(row => row.Contains("1 conversation")));
+            Require(!coldFrame.Any(row => row.Contains(" 1 ") && row.Contains('│')));// one conversation, no tabs
+            var coldTitle = Array.FindIndex(coldFrame, row => row.Contains("Continue cold resume work"));
+            Require(coldTitle >= 0 && !coldFrame[coldTitle].Contains("Orchestrator"));
+            var coldBackend = cold.Backend("resume-sid-9");
+            Require(coldBackend.Mode == "acceptEdits" && coldBackend.Workspace == "/work/project");
+            Require(coldFrame.Any(row => row.Contains("Permissions") && row.Contains("acceptEdits")));
+            Require(!coldFrame.Any(row => row.Contains("/work/project")));
+            // A repeat init for an id that already owns a pane must not reset it, copy it or re-route wrongly.
+            using (var again = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"resume-sid-9\",\"model\":\"claude-fable-5-1\",\"permissionMode\":\"acceptEdits\",\"cwd\":\"/work/project\"}"))
+                current = Route(cold, ids, current, "high", "env", [], again.RootElement);
+            Require(current == "resume-sid-9");
+            Require(cold.LogText("resume-sid-9").Contains("Continue cold resume work"));   // history kept
+            var repeatFrame = cold.Frame(100, 24);
+            Require(repeatFrame.Any(row => row.Contains("1 conversation")));               // not duplicated
+            Require(Array.FindIndex(repeatFrame, row => row.Contains("Continue cold resume work")) >= 0); // title kept
+            // Once a real id exists an unrelated peer id stays isolated, as in the earlier stage.
+            using (var peer = JsonDocument.Parse("{\"type\":\"user\",\"session_id\":\"someone-else\",\"message\":{\"content\":\"Task Foreign resume work\"}}"))
+                current = Route(cold, ids, current, "", "", [], peer.RootElement);
+            Require(current == "resume-sid-9");
+            Require(!cold.LogText("resume-sid-9").Contains("Foreign resume work"));
+            Require(cold.LogText("resume-sid-9").Contains("Continue cold resume work"));
+        }
+        var dashboardTests = SessionDashboard.SelfTest();
+        Console.WriteLine(JsonSerializer.Serialize(new { nativeSelfTests = checks, dashboardSelfTests = dashboardTests, status = "passed" }));
+        return 0;
     }
 }
 

@@ -24,6 +24,7 @@ import { compactCapabilities, type WorkerCapabilities } from "./capabilities.js"
 import {
   DEFAULT_SEGMENT_TURNS,
   DEFAULT_RUN_TURN_LIMIT,
+  LEGACY_RUN_TURN_LIMIT,
   normalizedBudget,
   availableGrant,
   reserveGrant,
@@ -114,6 +115,8 @@ export interface Run {
   goal: string;
   design: string;
   cwd: string;
+  /** Optional human label for the worker's terminal tab; display only, not part of task contracts. */
+  workerName?: string;
   revision: number;
   status: "open" | "awaiting_user_review" | "completed" | "cancelled";
   sessionState?: "retained" | "closed" | "resume_pending";
@@ -287,6 +290,7 @@ export class Orchestrator {
 
   private migrate(run: Run) {
     run.executions ??= [];
+    run.workerName ??= run.tasks[0]?.title;
     if (!run.turnBudget) {
       let used = 0,
         observed = 0;
@@ -299,10 +303,14 @@ export class Orchestrator {
           }
         }
       const missing = Math.max(0, run.tasks.reduce((n, task) => n + task.attempts, 0) - observed);
-      run.turnBudget = normalizedBudget({
-        used: used + missing * (run.maxTurns + 1),
-        estimated: missing * (run.maxTurns + 1),
-      });
+      run.turnBudget = normalizedBudget(
+        {
+          used: used + missing * (run.maxTurns + 1),
+          estimated: missing * (run.maxTurns + 1),
+        },
+        // Ledgers without a budget predate the raised default; keep the cap they ran under.
+        LEGACY_RUN_TURN_LIMIT
+      );
     } else run.turnBudget = normalizedBudget(run.turnBudget);
     for (const task of run.tasks) {
       if (task.repairs === undefined) {
@@ -821,6 +829,7 @@ export class Orchestrator {
     goal?: string;
     design?: string;
     cwd?: string;
+    workerName?: string;
     tasks?: TaskSpec[];
     taskTimeoutMs?: number;
     runTimeoutMs?: number;
@@ -844,6 +853,7 @@ export class Orchestrator {
         goal: input.goal,
         design: input.design,
         cwd,
+        workerName: input.workerName ?? input.tasks[0].title,
         revision: 1,
         status: "open",
         createdAt: new Date().toISOString(),
@@ -1140,6 +1150,7 @@ export class Orchestrator {
       const startup = { valid: true };
       this.startups.set(run.id, startup);
       try {
+        this.worker.setName?.(run.workerName);
         const prompt =
           "/compact Preserve these supervisor-confirmed facts and user feedback; omit raw logs. " +
           run.checkpoint;
@@ -1331,6 +1342,8 @@ export class Orchestrator {
     const startup = { valid: true };
     this.startups.set(run.id, startup);
     try {
+      // A display label set before startup; it never changes the task contract.
+      this.worker.setName?.(run.workerName);
       // A recovered transcript is never replayed automatically. Explicit dispatch starts a new session if runtime is gone.
       if (
         run.sessionId &&

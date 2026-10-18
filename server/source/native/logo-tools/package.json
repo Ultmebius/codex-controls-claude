@@ -1,0 +1,14 @@
+{
+  "name": "ccc-logo-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Build-only Sixel logo asset generator for the native terminal dashboard",
+  "type": "module",
+  "scripts": {
+    "generate": "node generate-logo.mjs"
+  },
+  "dependencies": {
+    "pngjs": "7.0.0",
+    "sixel": "0.16.0"
+  }
+}

@@ -9,7 +9,7 @@ The persistent SDK input stream reuses the live Claude Code process and conversa
 - Resume restores the saved conversation on the next explicit task, within original execution limits. A changed native cap or relevant MCP config reload also resumes that conversation.
 - Supervisor interrupt stops a current segment with a checkpoint and preserves its contract. Explicit cancel honors user stop; host connection/wait interruption preserves recoverable ledger state without replay.
 
-Execution segment/run deadlines default2h. The supervisor may stop earlier when work is complete or needs intervention. The persistent200 SDK-reported-turn allowance does not reset on continuation, append, reopen, supersede, resume, compact or new context. Unknown accounting is conservatively charged and marked estimated. Verification/reconcile may finish after model-execution time expires; it does not grant further model work.
+Execution segment/run deadlines default2h. The supervisor may stop earlier when work is complete or needs intervention. The persistent1000 SDK-reported-turn allowance does not reset on continuation, append, reopen, supersede, resume, compact or new context. Unknown accounting is conservatively charged and marked estimated. Verification/reconcile may finish after model-execution time expires; it does not grant further model work.
 
 Near300K latest reported input-context tokens consider compact/new. At400K maintenance is required before dispatch, with lower75%/90% limits when a smaller window is reported. Model aliases are preserved. Usage/window metadata is reported evidence, not an independently measured provider capacity; missing metadata remains unknown.
 

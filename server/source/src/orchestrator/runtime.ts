@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { TerminalProcess, terminalInfo, stopTerminalProcesses } from "./terminal.js";
+import { displayEffort } from "./display-settings.js";
 import type { Options, SpawnOptions, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 
 export function permissionSettings(cwd?: string, home = os.homedir()) {
@@ -231,11 +232,17 @@ export function executeCheck(command: string, args: string[], cwd: string, signa
   );
 }
 
-export function processSpawner(stoppers?: Set<() => void>): Options["spawnClaudeCodeProcess"] {
+export function processSpawner(
+  stoppers?: Set<() => void>,
+  workerName?: string
+): Options["spawnClaudeCodeProcess"] {
   if (!enabled) return undefined;
   return (opts: SpawnOptions) => {
     if (process.platform === "win32") {
-      const terminal = new TerminalProcess(opts);
+      const terminal = new TerminalProcess(opts, {
+        ...displayEffort(opts.cwd, opts.env, opts.args),
+        workerName,
+      });
       const stop = () => terminal.kill("SIGTERM");
       stoppers?.add(stop);
       terminal.once("exit", () => stoppers?.delete(stop));

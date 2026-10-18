@@ -1,6 +1,6 @@
 # Worker and call-layer policy
 
-This inventory reflects the user's final instruction: start native Claude Code, assign work, inject communication MCP, and leave ordinary execution to Claude. Blocking native subagents was explicitly retained.
+This inventory reflects the user's final instruction: start native Claude Code, assign work, inject communication MCP, and leave ordinary execution to Claude. Blocking Agent/TeamCreate/TeamDelete was explicitly retained; Task follows native permissions.
 
 ## Native behavior
 
@@ -8,7 +8,7 @@ This inventory reflects the user's final instruction: start native Claude Code, 
 | --- | --- |
 | Hooks | No plugin hook callbacks and no settings override. User/project/local hooks, including disable/enable choices, are untouched. |
 | Ordinary tools | Claude Code built-in preset plus its own enabled MCP configuration. No copied Codex MCP configuration or ordinary tool allowlist. |
-| Subagents | Only Agent, Task, TeamCreate and TeamDelete are blocked, as requested. The plugin manages up to three top-level worker sessions; it is not an OS sandbox against arbitrary shell processes. |
+| Subagents | Agent, TeamCreate and TeamDelete remain blocked. Task is permitted under native policies. The plugin manages up to three top-level worker sessions; it is not an OS sandbox against arbitrary shell processes. |
 | Permission mode | Reads configured permissions.defaultMode by scope and passes it to the pinned SDK. Actual init metadata is authoritative. Auto uses native classification; bypass avoids ordinary approval requests. Native explicit ask/deny rules still apply. A temporary mode switch in another interactive window is not a configuration change for this session. |
 | Tool input | Passed through unchanged. Native-mode calls skip the inherited bridge's Windows path normalization, POSIX path veto and secondary allowlist checks. Native residual approval responses preserve the original input. |
 | File access | No plugin file interception or PreToolUse scope gate. writeScope is a scheduling/audit reservation. Native permissions govern access. Out-of-reservation changes are observations to review, not silently assumed to belong to a peer. |
@@ -25,7 +25,7 @@ These govern dispatch, evidence and owned process lifetime, not individual nativ
 | Control | Default / behavior |
 | --- | --- |
 | Managed concurrency | Up to3 sessions; dependencies and conflicting declared reservations gate dispatch. |
-| Segment/run turns | 40 native agentic rounds per segment;200 persistent SDK-reported turns per run/team. Explicit create overrides and same-task continuation remain supported; provisional charges are disclosed separately. |
+| Segment/run turns | 200 native agentic rounds per segment;1000 persistent SDK-reported turns per run/team. Explicit create overrides and same-task continuation remain supported; provisional charges are disclosed separately. |
 | Model execution time | Segment/run2h; no silent reset on resume/rework/append. Acceptance/reconciliation may finish after model budget expires. |
 | Acceptance | Immutable dispatched contract/checks, fresh artifact/revision hash, independent Codex evidence, fixed-check rerun and dependency acceptance. Additional artifacts inside the task workspace need explicit acknowledgement. This evidence boundary does not prevent Claude from accessing files elsewhere. |
 | Rework | Two acceptance repairs by default; budget continuation is separately counted. |
@@ -37,6 +37,7 @@ These govern dispatch, evidence and owned process lifetime, not individual nativ
 | Communication resource bounds |16K characters/message,128 message IDs/attempt,16 pending questions. Explicit errors on limits; no silent loss of decision evidence. |
 | Idle review lifecycle | Useful session retained for user review, suspended after30min idle with transcript preserved. Explicit close/cancel affects owned processes only. |
 | Connection ownership | Unique owner/generation, atomic explicit attach, no live-owner takeover. Idle execution leases are released. |
-| Terminal display | Styled C# activity view of the real SDK worker. A bounded rendering queue and compact task excerpt affect display only; SDK protocol is forwarded independently. CCC_TERMINAL_COLOR=never selects plain output. |
+| Terminal display | Each worker has its own C# dashboard and terminal, with local elapsed clock, observed model/effort/native permission mode and activity; provenance stays in backend evidence. Conversation selectors appear only for multiple actual native session IDs inside that terminal; separate terminals never share a dashboard. Effort observation does not override native settings. CCC_TERMINAL_COLOR=never selects plain output. |
+| GUI test ownership | Codex launches, captures and closes only specifically verified test windows using nonce/title, HWND and PID. Workers edit, compile and run noninteractive checks. Windows Terminal can share a broker process across unrelated windows: no termination by process name or broker PID. This is explicit task-scope guidance, not a new native tool veto, hook or permission mode. |
 
-Subagent blocking is the sole extra native tool block. No plugin claim of filesystem isolation or measured billed-token savings follows from these controls.
+Agent/TeamCreate/TeamDelete are the extra native tool blocks. No plugin claim of filesystem isolation or measured billed-token savings follows from these controls.

@@ -14,6 +14,7 @@ import {
   startupTimeoutMs,
 } from "./runtime.js";
 import { InputQueue } from "./input-queue.js";
+import { DEFAULT_SEGMENT_TURNS } from "./budget.js";
 import { SupervisorMailbox, type SupervisorMessage } from "./messaging.js";
 import { getSessionMessages, type SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -70,6 +71,8 @@ export interface Worker {
   stop(sessionId?: string): void;
   destroy(): void;
   setWriteScope?(cwd: string, paths?: string[]): void;
+  /** Optional human-readable worker label for the owned terminal tab. */
+  setName?(name: string | undefined): void;
   permitsArtifact?(cwd: string, file: string): boolean;
 }
 
@@ -93,6 +96,10 @@ export class ClaudeWorker implements Worker {
   private configurationSignature?: string;
   private processStoppers = new Set<() => void>();
   private writeScope?: { cwd: string; paths: string[] };
+  private workerName?: string;
+  setName(name: string | undefined) {
+    this.workerName = name;
+  }
   setWriteScope(cwd: string, paths?: string[]) {
     this.writeScope = paths?.length ? { cwd, paths: [...paths] } : undefined;
   }
@@ -241,14 +248,14 @@ export class ClaudeWorker implements Worker {
       pathToClaudeCodeExecutable: config.executable,
       env: config.env,
       tools: { type: "preset" as const, preset: "claude_code" as const },
-      disallowedTools: ["Agent", "Task", "TeamCreate", "TeamDelete"],
+      disallowedTools: ["Agent", "TeamCreate", "TeamDelete"],
       persistSession: true,
       strictMcpConfig: false,
       systemPrompt: {
         type: "preset" as const,
         preset: "claude_code" as const,
         append:
-          "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Do not spawn subagents/teammates; Codex schedules up to3 managed sessions. Supervisor tools are not necessarily yours; select from your actually available tools.",
+          "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Agent/TeamCreate/TeamDelete are unavailable; Task remains permitted under native policies. Codex schedules up to3 managed top-level sessions. Supervisor tools are not necessarily yours; select from your actually available tools.",
       },
     };
     if (resumeId)
@@ -268,7 +275,7 @@ export class ClaudeWorker implements Worker {
         ...buildOptions(source),
         permissionMode: permission.mode,
         allowDangerouslySkipPermissions: permission.mode === "bypassPermissions",
-        spawnClaudeCodeProcess: processSpawner(this.processStoppers),
+        spawnClaudeCodeProcess: processSpawner(this.processStoppers, this.workerName),
         mcpServers: { codex_supervisor: mailbox.createServer() },
       },
       nativeToolHandling: true,
@@ -312,7 +319,7 @@ export class ClaudeWorker implements Worker {
     const info = this.manager.get(sessionId);
     if (!info) throw new Error("SESSION_RUNTIME_MISSING");
     if (signal?.aborted) throw new Error("DISPATCH_CANCELLED");
-    const limit = maxTurns ?? info.maxTurns ?? 40;
+    const limit = maxTurns ?? info.maxTurns ?? DEFAULT_SEGMENT_TURNS;
     if (
       !this.live ||
       !this.input ||
