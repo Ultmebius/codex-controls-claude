@@ -13,8 +13,9 @@ internal sealed class SessionDashboard : IDisposable
     private const string TruncatedMark = " …[truncated]";
     private const string Redacted = "[redacted]";
     private const int PageStep = 6;
+    private const int WheelNotch = 120;
 
-    private enum Tone { Plain, Title, Accent, Dim, Text, Gold, Green, Error, LogoA, LogoB, LogoC, LogoD }
+    private enum Tone { Plain, Title, Accent, Dim, Text, Output, Gold, Green, Error, LogoA, LogoB, LogoC, LogoD }
 
     private readonly record struct Seg(string Text, Tone Style);
     private readonly record struct Chip(int Start, int End, int Index)
@@ -50,12 +51,23 @@ internal sealed class SessionDashboard : IDisposable
         public int Tools;
         public long Input = -1;
         public long Output = -1;
+        public long BaseInput = -1, CacheRead, CacheWrite;
+        public double EstimatedOutput;
+        public string StreamMessageId = "";
+        public bool SawStreamDelta;
+        public bool StreamActive, OutputConfirmed;
+        public bool NativeError;
         public int Mcp = -1;
         public int ExitCode = -1;
         public bool Ended;
         public DateTime Started = DateTime.Now;
         public DateTime Stopped = DateTime.MinValue;
         public int Scroll;
+        public int WheelRemainder;
+        // What the body can actually show for this conversation, recorded by the last layout, so
+        // scrolling is clamped to real content instead of an arbitrary number.
+        public int BodyRows;
+        public int BodyLines;
         public string ProgressTool = "";
         public double ProgressSeconds = -1;
     }
@@ -67,6 +79,7 @@ internal sealed class SessionDashboard : IDisposable
 
     public SessionDashboard() { }
     public event Action? StopRequested;
+    internal nint OwnedWindow { get; set; }
 
     public void Dispose() => disposed = true;
 
@@ -183,10 +196,10 @@ internal sealed class SessionDashboard : IDisposable
                     selectedId = sessions[target].Id;
                     break;
                 case ConsoleKey.PageUp:
-                    sessions[index].Scroll += PageStep;
+                    ScrollBy(sessions[index], PageStep);
                     break;
                 case ConsoleKey.PageDown:
-                    sessions[index].Scroll = Math.Max(0, sessions[index].Scroll - PageStep);
+                    ScrollBy(sessions[index], -PageStep);
                     break;
                 case ConsoleKey.End:
                     sessions[index].Scroll = 0;
@@ -196,6 +209,41 @@ internal sealed class SessionDashboard : IDisposable
             }
             return true;
         }
+    }
+
+    // Wheel scrolling: the input loop accumulates signed deltas so a fast wheel notch (several
+    // records) moves by whole steps instead of being discarded one record at a time.
+    internal bool Wheel(bool up, int steps = 1)
+    {
+        lock (gate)
+        {
+            if (Find(selectedId) is not { } session) return false;
+            ScrollBy(session, up ? 3 * steps : -3 * steps);
+            return true;
+        }
+    }
+
+    internal bool WheelDelta(int delta)
+    {
+        lock (gate)
+        {
+            if (Find(selectedId) is not { } session) return false;
+            session.WheelRemainder += delta;
+            var steps = session.WheelRemainder / WheelNotch;
+            if (steps == 0) return false;
+            session.WheelRemainder -= steps * WheelNotch;
+            ScrollBy(session, steps * 3);
+            return true;
+        }
+    }
+
+    // Scroll counts back from the newest rendered log line, so the bound is what the body can
+    // actually show: clamped here, never allowed to run past the oldest item.
+    private void ScrollBy(Session session, int delta)
+    {
+        var rows = session.BodyRows > 0 ? session.BodyRows : PageStep;
+        var maximum = Math.Max(0, session.BodyLines - rows);
+        session.Scroll = Math.Clamp(session.Scroll + delta, 0, maximum);
     }
 
     private Session? Find(string id) => sessions.FirstOrDefault(session => session.Id == id);
@@ -221,6 +269,7 @@ internal sealed class SessionDashboard : IDisposable
                 case "system": Metadata(session, message, "system" + (subtype.Length > 0 ? "/" + subtype : "")); break;
                 case "user": UserPrompt(session, message); break;
                 case "assistant": Assistant(session, message); break;
+                case "stream_event": Stream(session, message); break;
                 case "control_request": Control(session, message); break;
                 case "tool_progress": Progress(session, message); break;
                 case "result": Result(session, message); break;
@@ -257,11 +306,57 @@ internal sealed class SessionDashboard : IDisposable
         session.Status = tag == "status" && Text(message, "status") is { Length: > 0 } status ? Safe(session, status) : session.Status;
     }
 
-    private void Tokens(Session session, JsonElement message)
+    private void Tokens(Session session, JsonElement message, bool provisional = false)
     {
         if (!message.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object) return;
-        if (Number(usage, "input_tokens") is { } input && input >= 0) session.Input = input;
-        if (Number(usage, "output_tokens") is { } output && output >= 0) session.Output = output;
+        if (Number(usage, "input_tokens") is { } input && input >= 0) session.BaseInput = input;
+        if (Number(usage, "cache_read_input_tokens") is { } read && read >= 0) session.CacheRead = read;
+        if (Number(usage, "cache_creation_input_tokens") is { } write && write >= 0) session.CacheWrite = write;
+        if (session.BaseInput >= 0) session.Input = session.BaseInput + session.CacheRead + session.CacheWrite;
+        if (Number(usage, "output_tokens") is { } output && output >= 0)
+        {
+            session.Output = output;
+            session.OutputConfirmed = !provisional || output > 0;
+        }
+    }
+
+    private static void StartMessage(Session session, string id)
+    {
+        if (id.Length == 0 || id == session.StreamMessageId) return;
+        session.StreamMessageId = id;
+        session.Input = session.BaseInput = session.Output = -1;
+        session.CacheRead = session.CacheWrite = 0;
+        session.EstimatedOutput = 0;
+        session.SawStreamDelta = false;
+        session.OutputConfirmed = false;
+    }
+
+    private void Stream(Session session, JsonElement envelope)
+    {
+        if (!envelope.TryGetProperty("event", out var item) || item.ValueKind != JsonValueKind.Object) return;
+        var type = Text(item, "type");
+        if (type == "message_start" && item.TryGetProperty("message", out var message))
+        {
+            StartMessage(session, Text(message, "id"));
+            session.StreamActive = true;
+            if (Text(message, "model") is { Length: > 0 } model) session.Model = Safe(session, model);
+            Tokens(session, message, provisional: true);
+        }
+        else if (type == "message_delta") Tokens(session, item);
+        else if (type == "message_stop") session.StreamActive = false;
+        else if (type == "content_block_delta" && item.TryGetProperty("delta", out var delta))
+        {
+            // A model-independent character estimate only when upstream has not yet reported
+            // output usage. Count and discard chunks, including thinking; never log their content.
+            var chunk = Text(delta, "text") + Text(delta, "partial_json") + Text(delta, "thinking");
+            session.SawStreamDelta = true;
+            Estimate(session, chunk);
+        }
+    }
+
+    private static void Estimate(Session session, string chunk)
+    {
+        foreach (var rune in chunk.EnumerateRunes()) session.EstimatedOutput += rune.Value >= 0x2e80 ? 1 : .25;
     }
 
     private void UserPrompt(Session session, JsonElement message)
@@ -283,7 +378,11 @@ internal sealed class SessionDashboard : IDisposable
                 if (title.Length > 0) { session.Name = Fit(title, 44); session.TitleAssigned = true; }
             }
             session.Status = "working";
+            session.NativeError = false;
             session.Ended = false; session.Stopped = DateTime.MinValue;
+            session.StreamMessageId = "";
+            session.EstimatedOutput = 0;
+            session.SawStreamDelta = false;
             Append(session, "task", task.Trim());   // full task text stays in the audit log
             return;
         }
@@ -292,17 +391,27 @@ internal sealed class SessionDashboard : IDisposable
             if (Text(item, "type") == "tool_result")
             {
                 var failed = item.TryGetProperty("is_error", out var flag) && flag.ValueKind == JsonValueKind.True;
-                Append(session, failed ? "error" : "result", failed ? "tool reported an error" : "tool result received");
+                if (failed)
+                {
+                    var detail = "";
+                    if (item.TryGetProperty("content", out var errorContent))
+                        detail = errorContent.ValueKind == JsonValueKind.String ? errorContent.GetString() ?? ""
+                            : errorContent.ValueKind == JsonValueKind.Array ? string.Join("\n", errorContent.EnumerateArray().Where(x => Text(x, "type") == "text").Select(x => Text(x, "text"))) : "";
+                    Append(session, "error", detail.Length > 0 ? detail : "tool reported an error");
+                }
             }
     }
 
     private void Assistant(Session session, JsonElement message)
     {
+        session.NativeError = Text(message, "error").Length > 0;
         if (message.TryGetProperty("message", out var body) && body.ValueKind == JsonValueKind.Object)
         {
+            StartMessage(session, Text(body, "id"));
             if (Text(body, "model") is { Length: > 0 } model) session.Model = Safe(session, model);
-            Tokens(session, body);
+            Tokens(session, body, provisional: session.StreamActive);
             if (!body.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) return;
+            if (!session.SawStreamDelta && content.GetArrayLength() > 0) Estimate(session, content.GetRawText());
             foreach (var item in content.EnumerateArray())
             {
                 switch (Text(item, "type"))
@@ -315,13 +424,12 @@ internal sealed class SessionDashboard : IDisposable
                         Append(session, "tool", Text(item, "name") + ToolDetail(session, item));
                         break;
                     case "thinking":
-                        // Reasoning text is never displayed; only the fact that the model reasoned.
-                        Append(session, "thinking", "reasoning");
+                        // Keep reasoning out of the display, including placeholder chatter.
                         break;
                 }
             }
         }
-        session.Status = "working";
+        session.Status = session.NativeError ? "failed" : "working";
     }
 
     // Order matters: redact and sanitise the whole value first, then fit. Fitting first would keep an
@@ -357,7 +465,7 @@ internal sealed class SessionDashboard : IDisposable
 
     private void Result(Session session, JsonElement message)
     {
-        var failed = message.TryGetProperty("is_error", out var error) && error.ValueKind == JsonValueKind.True;
+        var failed = session.NativeError || (message.TryGetProperty("is_error", out var error) && error.ValueKind == JsonValueKind.True);
         Tokens(session, message);
         session.Ended = true;
         session.Stopped = DateTime.Now;
@@ -537,6 +645,8 @@ internal sealed class SessionDashboard : IDisposable
         // Readable slate, not near-black: the previous #3a4554 labels were illegible on a black terminal.
         Tone.Dim => "38;2;125;140;158",
         Tone.Text => "38;2;168;183;202",
+        // Model output is the text the user reads; brighter than plumbing without washing out.
+        Tone.Output => "38;2;214;226;240",
         Tone.Gold => "1;38;2;237;193;111",
         Tone.Green => "1;38;2;133;214;168",
         Tone.Error => "1;38;2;249;133;133",
@@ -580,8 +690,8 @@ internal sealed class SessionDashboard : IDisposable
 
     private sealed record Built(List<List<Seg>> Lines, List<Chip> Chips, bool Image);
 
-    // The mark is the cached Sixel whale (96x72: a 32x24 logical grid enlarged 3x) painted over the
-    // reserved cells left of the metadata. Terminals without Sixel get five plain half-block rows;
+    // The mark is the cached Sixel whale (144x96: a 24x16 logical grid enlarged 6x) painted over the
+    // reserved cells left of the metadata. Terminals without Sixel get six plain half-block rows;
     // both occupy the same reserved width, so the text column never moves.
     private Built Build(int width, int height, bool graphics = true)
     {
@@ -589,15 +699,15 @@ internal sealed class SessionDashboard : IDisposable
         var chips = new List<Chip>();
         var now = DateTime.Now;
 
-        // Five metadata rows plus the divider; no full blank rows above or below. Narrow or short
+        // Six metadata rows plus the divider; no full blank rows above or below. Narrow or short
         // terminals drop the mark first so the metadata keeps its room.
         var mark = width >= 62 && height >= 16;
         var imageEnabled = graphics && SixelLogo.ImageCapable;
-        var textLeft = mark ? (imageEnabled ? SixelLogo.ColumnSpan : SixelLogo.ReservedColumns) + 4 : 2;
+        var textLeft = mark ? (imageEnabled ? SixelLogo.ColumnSpan : SixelLogo.ReservedColumns) + 3 : 2;
         var textWidth = Math.Max(1, width - textLeft - 2);
 
         var top = new List<List<Seg>>();
-        var block = HeaderBlock(session, textWidth, height, now);
+        var block = HeaderBlock(session, textLeft, textWidth, height, now, chips);
         for (var row = 0; row < block.Count; row++)
         {
             var line = new List<Seg> { new Seg("  ", Tone.Plain) };
@@ -608,19 +718,16 @@ internal sealed class SessionDashboard : IDisposable
         }
         top.Add(Rule(width));
 
-        var chipRow = ChipRow(width, out chips);
-        var footer = height - top.Count >= 3 ? new List<List<Seg>> { Rule(width), chipRow } : new List<List<Seg>> { chipRow };
-        var rows = height - top.Count - footer.Count;
+        // No bottom bar: the reclaimed row belongs to the body, and the conversation count/selectors
+        // live in the pinned top header.
+        var rows = height - top.Count;
         var lines = new List<List<Seg>>(top);
         if (session is not null && rows > 0) lines.AddRange(Body(session, width, rows));
-        while (lines.Count < height - footer.Count) lines.Add(Pad([], width));
-        lines.AddRange(footer);
-        // Very short terminals keep the chip row; the metrics above it are dropped first.
-        var chipRowIndex = lines.Count - 1;
-        if (lines.Count > height) lines.RemoveRange(Math.Max(0, height - 1), lines.Count - height);
+        while (lines.Count < height) lines.Add(Pad([], width));
+        if (lines.Count > height) lines.RemoveRange(height, lines.Count - height);
         var image = mark && imageEnabled
             && SixelLogo.RowSpan <= top.Count - 1 && SixelLogo.ColumnSpan <= textLeft - 2;
-        return new Built(lines, chips.Select(chip => chip with { Row = Math.Min(chipRowIndex, lines.Count - 1) }).ToList(), image);
+        return new Built(lines, chips, image);
     }
 
     // The mark's cells for one header row: blank when the Sixel image paints over them, else the
@@ -643,46 +750,54 @@ internal sealed class SessionDashboard : IDisposable
         : index * 4 < rows * 2 ? Tone.LogoB
         : index * 4 < rows * 3 ? Tone.LogoC : Tone.LogoD;
 
-    // Header text: five readable truthful rows — heading, actual model, effort/counters, native
-    // permission mode, live state with clock. No UUIDs and no "configured / environment" provenance
+    // Header text: six readable rows — heading/status/clock, model, effort/tools, tokens,
+    // permission mode and conversations. No UUIDs and no "configured / environment" provenance
     // wording — the source stays in the model and Backend(id).
-    private List<List<Seg>> HeaderBlock(Session? session, int width, int height, DateTime now)
+    private List<List<Seg>> HeaderBlock(Session? session, int textLeft, int width, int height, DateTime now, List<Chip> chips)
     {
         var lines = new List<List<Seg>>();
         if (session is null)
         {
-            lines.Add([new Seg("CODEX CONTROLS CLAUDE", Tone.Title)]);
             lines.Add([new Seg("no conversation attached", Tone.Dim)]);
             return lines;
         }
-        lines.Add([new Seg(Fit(SessionName(session), Math.Max(8, width)), Tone.Title)]);
+        var right = StatusRow(session, Math.Min(width, Math.Max(10, Math.Min(42, width / 2))), now);
+        var nameWidth = width - SegWidth(right);
+        var heading = nameWidth >= 4
+            ? Pad([new Seg(Fit(SessionName(session), nameWidth - 2), Tone.Title)], nameWidth)
+            : new List<Seg>();
+        heading.AddRange(right); // right edge is the metadata region's right edge
+        lines.Add(heading);
         lines.Add([new Seg(ModelTag, Tone.Dim), new Seg(Fit(ModelLabel(session), Math.Max(4, width - ModelTag.Length)), Tone.Text)]);
-        // Secondary counters drop whole rather than being cut mid-word: TOOLS, then TOKENS, then both.
+        // The tools counter drops as a whole field in narrow layouts.
         var effortText = "EFFORT " + EffortText(session);
         var toolsText = "   TOOLS " + session.Tools.ToString(Culture);
-        var tokensText = "   TOKENS " + TokenText(session);
         var effort = new List<Seg> { new Seg("EFFORT ", Tone.Dim), new Seg(EffortText(session), Tone.Gold) };
-        var used = CellWidth(effortText);
-        if (used + CellWidth(toolsText) <= width)
+        var counters = CellWidth(effortText);
+        if (counters + CellWidth(toolsText) <= width)
         {
             effort.Add(new Seg("   TOOLS ", Tone.Dim));
             effort.Add(new Seg(session.Tools.ToString(Culture), Tone.Text));
-            used += CellWidth(toolsText);
-        }
-        if (used + CellWidth(tokensText) <= width)
-        {
-            effort.Add(new Seg("   TOKENS ", Tone.Dim));
-            effort.Add(new Seg(TokenText(session), Tone.Text));
         }
         lines.Add(effort);
+        lines.Add([new Seg("TOKENS ", Tone.Dim), new Seg(Fit(TokenText(session), Math.Max(0, width - 7)), Tone.Text)]);
         lines.Add([new Seg(PermissionsTag, Tone.Dim),
             new Seg(Fit(PermissionText(session), Math.Max(4, width - PermissionsTag.Length)), Tone.Text)]);
         // A short terminal keeps the heading and its live status/clock but drops secondary rows:
         // counters first, then the mark, so permissions and the actual model stay visible.
-        if (height < 10) lines.RemoveAt(3);
-        if (height < 8) lines.RemoveAt(2);
-        if (height < 6) lines.RemoveAt(1);
-        lines.Add(StatusRow(session, width, now));
+        if (height < 10) lines.RemoveAt(Math.Min(3, lines.Count - 1));
+        if (height < 8) lines.RemoveAt(Math.Min(2, lines.Count - 1));
+        if (height < 6) lines.RemoveAt(Math.Min(1, lines.Count - 1));
+        var conversations = new List<Seg>();
+        if (sessions.Count == 1) conversations.Add(new Seg("◉ 1 conversation", Tone.Accent));
+        else
+        {
+            conversations.Add(new Seg("◈ " + sessions.Count + " ", Tone.Accent));
+            AddChips(conversations, Math.Max(0, width - SegWidth(conversations)), textLeft, chips);
+        }
+        foreach (var index in Enumerable.Range(0, chips.Count))
+            chips[index] = chips[index] with { Row = lines.Count };
+        lines.Add(conversations);
         return lines;
     }
 
@@ -761,55 +876,50 @@ internal sealed class SessionDashboard : IDisposable
         {
             lines.Add([new Seg("  " + entry.At.ToString("HH:mm:ss", Culture) + "  ", Tone.Dim),
                 new Seg(TagLabel(entry.Truncated ? entry.Tag + "+" : entry.Tag), TagTone(entry.Tag))]);
-            foreach (var text in Wrap(entry.Text, Math.Max(4, width - 6))) lines.Add([new Seg("  │ ", Tone.Dim), new Seg(text, Tone.Text)]);
+            // Model output is the reading surface: brighter than tool/response plumbing.
+            var tone = entry.Tag == "output" ? Tone.Output : Tone.Text;
+            foreach (var text in Wrap(entry.Text, Math.Max(4, width - 6))) lines.Add([new Seg("  │ ", Tone.Dim), new Seg(text, tone)]);
         }
         if (lines.Count == 0) lines.Add([new Seg(Fit("  waiting for session output", width), Tone.Dim)]);
+        // Recorded so PageUp/PageDown and the wheel clamp to what the log actually contains.
+        session.BodyLines = lines.Count;
+        session.BodyRows = rows;
+        session.Scroll = Math.Clamp(session.Scroll, 0, Math.Max(0, lines.Count - rows));
         var end = Math.Max(0, lines.Count - session.Scroll);
         var start = Math.Max(0, end - rows);
         return lines.GetRange(start, end - start);
     }
 
-    private List<Seg> ChipRow(int width, out List<Chip> chips)
+    // Chips share the columns left on the heading row, so every conversation's numbered name stays
+    // visible and clickable. Hit columns are display cells from the start of the drawn heading row.
+    private void AddChips(List<Seg> line, int available, int offset, List<Chip> chips)
     {
-        chips = [];
-        if (sessions.Count < 2)
-            return Pad([new Seg("  ◉ ", Tone.Accent),
-                new Seg(sessions.Count == 0 ? "no conversation" : "1 conversation", Tone.Accent),
-                new Seg("   PgUp/PgDn history · End latest · Ctrl+C close", Tone.Dim)], width);
-        // Compact prefix, then every chip shares the remaining columns so all names stay visible.
-        var count = "  ◈ " + sessions.Count + "  ";
-        var digits = sessions.Count.ToString(Culture).Length;
-        var overflow = " +" + sessions.Count + " more";
-        var line = new List<Seg> { new Seg(count, Tone.Dim) };
-        var column = CellWidth(count);
-        var available = width - column - (sessions.Count - 1);          // one space between chips
-        var budget = available / sessions.Count;
-        // A name needs at least a few cells; below that, number-only chips plus an honest "+N more"
-        // indicator. The indicator's cells are reserved before any chip is drawn, so it is never clipped.
-        var compact = budget < 4 + digits + 2;
-        var reserve = compact ? CellWidth(overflow) : 0;
-        var usable = available - reserve;
+        var column = offset + SegWidth(line);
+        var minimum = sessions.Count * (3 + sessions.Count.ToString(Culture).Length) + sessions.Count - 1;
+        var reserve = available < minimum ? CellWidth(" +" + sessions.Count + " more") : 0;
+        var usable = Math.Max(0, available - reserve);
+        var end = column + usable;
+        var cell = Math.Max(1, (usable - (sessions.Count - 1)) / sessions.Count);
         var shown = 0;
         for (var index = 0; index < sessions.Count; index++)
         {
             var session = sessions[index];
             var number = (index + 1).ToString(Culture);
-            var cell = compact ? 2 + digits : usable / sessions.Count;
-            var name = compact ? "" : Fit(SessionName(session), Math.Max(1, cell - 3 - digits));
-            var label = " " + number + (compact ? "" : " " + name + " ");
-            if (compact && index < sessions.Count - 1) label += " ";   // separator space stays in the budget
+            var prefix = " " + number + " ";
+            var name = cell >= 7 ? Fit(SessionName(session), cell - CellWidth(prefix) - 1) : "";
+            var label = prefix + name;
             var run = 1 + CellWidth(label);
-            if (column + run > width - reserve) break;
+            if (column + run > end) break;
             var selected = session.Id == selectedId;
             line.Add(new Seg(selected ? "█" : "│", selected ? Tone.Accent : Tone.Dim));
             line.Add(new Seg(label, selected ? Tone.Title : Tone.Text));
             chips.Add(new Chip(column, column + run - 1, index));
             column += run;
             shown++;
+            if (index + 1 < sessions.Count && column < end) { line.Add(new Seg(" ", Tone.Plain)); column++; }
         }
         // Sessions that did not fit are named as a count; Tab/Alt+1..3 still reach every one of them.
         if (shown < sessions.Count) line.Add(new Seg(" +" + (sessions.Count - shown) + " more", Tone.Dim));
-        return Pad(line, width);
     }
 
     private static string CodexTitle(Session session) => session.Name.Length > 0 ? session.Name : "Conversation";
@@ -830,7 +940,12 @@ internal sealed class SessionDashboard : IDisposable
     }
     private static string Or(string value, string fallback) => value.Length > 0 ? value : fallback;
     private static string TokenText(Session session)
-        => "in " + (session.Input < 0 ? "—" : session.Input.ToString("N0", Culture)) + "  out " + (session.Output < 0 ? "—" : session.Output.ToString("N0", Culture));
+    {
+        var estimate = session.EstimatedOutput > 0 && !session.OutputConfirmed;
+        var output = estimate ? "~" + ((long)Math.Ceiling(session.EstimatedOutput)).ToString("N0", Culture)
+            : session.Output < 0 ? "—" : session.Output.ToString("N0", Culture);
+        return "in " + (session.Input < 0 ? "—" : session.Input.ToString("N0", Culture)) + "  out " + output;
+    }
 
     private static string EffortText(Session session)
     {
@@ -866,7 +981,7 @@ internal sealed class SessionDashboard : IDisposable
     private static Tone TagTone(string tag) => tag switch
     {
         "task" => Tone.Title,
-        "output" => Tone.Text,
+        "output" => Tone.Output,
         "result" or "tool" => Tone.Green,
         "permission" => Tone.Gold,
         "error" => Tone.Error,
@@ -921,6 +1036,10 @@ internal sealed class SessionDashboard : IDisposable
     // caller: awaiting this must never stall the host's SDK pipe forwarding behind console rendering.
     public Task RunAsync(CancellationToken cancel) => Task.Run(() => Run(cancel), CancellationToken.None);
 
+    // Local animation only: a cached SIXEL frame swap at ~4fps. It is a console repaint, never a
+    // model/process/protocol call, and it ends with the pump.
+    private const long AnimationIntervalMs = 167;
+
     private void Run(CancellationToken cancel)
     {
         var console = new NativeConsole();
@@ -929,6 +1048,8 @@ internal sealed class SessionDashboard : IDisposable
         {
             int width = 0, height = 0;
             var lastSecond = -1L;
+            var frames = 0;
+            var animated = false;
             try
             {
                 console.Enter();
@@ -943,8 +1064,17 @@ internal sealed class SessionDashboard : IDisposable
                     lastSecond = second;
                     var drain = console.Drain(this, width, height);
                     if (drain < 0) { RequestStop(); break; }
-                    if (resized || tick || drain > 0) console.Draw(this, width, height, resized);
-                    if (console.Wait(UntilNextSecond(), closing.WaitHandle) == 1) break;
+                    var animate = false;
+                    animated = console.CanAnimate && width >= 62 && height >= 16 && (OwnedWindow == 0 || !Window.IsIconic(OwnedWindow));
+                    if (animated)
+                    {
+                        var frame = (int)(Environment.TickCount64 / AnimationIntervalMs);
+                        animate = frame != frames;
+                        frames = frame;
+                    }
+                    if (resized || tick || drain > 0 || animate) console.Draw(this, width, height, resized, animate);
+                    // While animated, wake on the next animation slot; otherwise exactly on the clock boundary.
+                    if (console.Wait(UntilNextWake(animated), closing.WaitHandle) == 1) break;
                 }
             }
             finally { console.Restore(); }
@@ -954,6 +1084,11 @@ internal sealed class SessionDashboard : IDisposable
     // Wake exactly on the next clock boundary so the elapsed second is painted at most once late.
     private static int UntilNextSecond()
         => (int)Math.Clamp(1000 - Environment.TickCount64 % 1000, 20, 1000);
+
+    private static int UntilNextWake(bool animated)
+        => animated
+            ? (int)Math.Clamp(AnimationIntervalMs - Environment.TickCount64 % AnimationIntervalMs, 20, AnimationIntervalMs)
+            : UntilNextSecond();
 
     private static (int Width, int Height) ConsoleSize()
     {
@@ -970,17 +1105,28 @@ internal sealed class SessionDashboard : IDisposable
             MouseInput = 0x0010, QuickEdit = 0x0040, ExtendedFlags = 0x0080, VirtualTerminalInput = 0x0200;
         private const uint LeftButton = 0x0001;
         private const uint KeyEvent = 0x0001, MouseEvent = 0x0002;
+        private const uint MouseWheeled = 0x0004, MouseHWheeled = 0x0008;
+        // Windows reports one wheel notch as WHEEL_DELTA (120); trackpads send partial notches.
 
         private readonly StringBuilder frame = new();
         private string[] painted = [];
         private nint inputHandle, outputHandle;
         private bool active, interactive, color;
+        private int lastImagePhase = -1;
+        internal bool CanAnimate => color && interactive && SixelLogo.ImageCapable;
         private ConsoleColor originalColor;
         private uint originalInputMode, originalOutputMode;
         // Zero is a legal console mode, so validity is tracked separately from the value.
         private bool hasInputMode, hasOutputMode;
         private bool originalCursorVisible = true;
         private uint originalCursorSize = 25;
+
+        // The local animation phase; a cached payload index, never an encode.
+        private static int AnimationFrame()
+        {
+            var count = SixelLogo.FrameCount;
+            return count <= 1 ? 0 : (int)(Environment.TickCount64 / AnimationIntervalMs % (uint)count);
+        }
 
         // Every step is guarded: a partially entered console is still fully restored by Restore.
         internal void Enter()
@@ -993,6 +1139,8 @@ internal sealed class SessionDashboard : IDisposable
             active = true;
             PaintedRows = [];
             LastWrittenRows = [];
+            PaintedImageFrames.Clear();
+            lastImagePhase = -1;
             try { Console.OutputEncoding = new UTF8Encoding(false); } catch (IOException) { }
             try
             {
@@ -1053,7 +1201,7 @@ internal sealed class SessionDashboard : IDisposable
 
         // Rows are compared against what is actually on screen, so a moved clock or a new event repaints
         // its row immediately. The row count follows the window, so there is no fixed height limit.
-        internal void Draw(SessionDashboard dashboard, int width, int height, bool resized)
+        internal void Draw(SessionDashboard dashboard, int width, int height, bool resized, bool animate = false)
         {
             if (!active || !interactive) return;
             PaintedWidth = width;
@@ -1079,10 +1227,15 @@ internal sealed class SessionDashboard : IDisposable
             PaintedRows = lines;
             // Text erasure can remove image slices. Repaint the cached trusted asset after affected
             // header rows, in the same output batch; body-only changes leave the image untouched.
-            if (render.Image && (full || written.Take(SixelLogo.HeaderRows).Any(value => value)))
+            // An animation step repaints only this cached payload — never the text rows around it.
+            if (render.Image && (full || animate || written.Take(SixelLogo.HeaderRows).Any(value => value)))
             {
-                frame.Append("\u001b7\u001b[1;3H").Append(SixelLogo.Frame).Append("\u001b8");
+                var phase = animate || lastImagePhase < 0 ? AnimationFrame() : lastImagePhase;
+                lastImagePhase = phase;
+                frame.Append("\u001b7\u001b[1;3H").Append(SixelLogo.FrameAt(phase)).Append("\u001b8");
                 ImagePaintCount++;
+                PaintedImageFrames.Add(phase);
+                if (PaintedImageFrames.Count > 256) PaintedImageFrames.RemoveAt(0);
             }
             if (frame.Length == 0) return;
             PaintedRevision++;
@@ -1121,9 +1274,19 @@ internal sealed class SessionDashboard : IDisposable
                         if (!Handle(record.Key, dashboard)) return -1;
                         handled++;
                     }
-                    else if (record.EventType == MouseEvent && (record.Mouse.Buttons & LeftButton) != 0)
+                    else if (record.EventType == MouseEvent)
                     {
-                        if (dashboard.Click(record.Mouse.X, record.Mouse.Y, width, height)) handled++;
+                        // The wheel delta is a signed short in the high word of the button state,
+                        // separate from the buttons themselves.
+                        if ((record.Mouse.Flags & (MouseWheeled | MouseHWheeled)) != 0)
+                        {
+                            if ((record.Mouse.Flags & MouseHWheeled) != 0) continue;
+                            var delta = (short)(record.Mouse.Buttons >> 16);
+                            if (dashboard.WheelDelta(delta)) handled++;
+                            continue;
+                        }
+                        if ((record.Mouse.Buttons & LeftButton) != 0
+                            && dashboard.Click(record.Mouse.X, record.Mouse.Y, width, height)) handled++;
                     }
                 }
             }
@@ -1262,6 +1425,8 @@ internal sealed class SessionDashboard : IDisposable
         internal static int PaintedRevision { get; private set; }
         internal static int ImagePaintCount { get; private set; }
         internal static bool PaintedImage { get; private set; }
+        // Cached animation phases actually emitted, so a test can prove the gradient moved.
+        internal static readonly List<int> PaintedImageFrames = [];
 
         // Synthetic records for --dashboard-input-test. They are ordinary Win32 console records, so
         // the pump parses them exactly as it parses real mouse and keyboard input.
@@ -1269,6 +1434,13 @@ internal sealed class SessionDashboard : IDisposable
         {
             EventType = (ushort)MouseEvent,
             Mouse = new MouseRecord { X = (short)x, Y = (short)y, Buttons = LeftButton }
+        });
+
+        // A real wheel record: the signed delta lives in the high word of the button state.
+        internal static bool InjectWheel(nint handle, int delta) => Inject(handle, new InputRecord
+        {
+            EventType = (ushort)MouseEvent,
+            Mouse = new MouseRecord { Buttons = (uint)(delta << 16), Flags = MouseWheeled }
         });
 
         internal static bool InjectKey(nint handle, ushort code, char character) => Inject(handle, new InputRecord
@@ -1364,15 +1536,25 @@ internal sealed class SessionDashboard : IDisposable
         Require(dashboard.Frame(20, 6).All(row => CellWidth(row) <= 20));
         Require(dashboard.Frame(1, 1).Length == 1);
 
-        // Five metadata rows and one divider; the image is emitted separately from the text rows.
+        // Six metadata rows and one divider; the image is emitted separately from the text rows.
         var normal = dashboard.Frame(120, 36);
         var rule = Array.FindIndex(normal, row => row.TrimStart().StartsWith('─'));
         var header = normal[..rule];
-        Require(rule == 5 && header.Length == 5);
+        Require(rule == 6 && header.Length == 6);
         Require(header.All(row => row.All(ch => ch is < '\u2800' or > '\u28FF')));
-        Require(SixelLogo.PixelWidth == 96 && SixelLogo.PixelHeight == 72);
-        Require(SixelLogo.Frame.StartsWith("\u001bP") && SixelLogo.Frame.EndsWith("\u001b\\"));
-        Require(SixelLogo.FallbackRows.Length == 5);
+        // Enlarged square pixels fit the six-row header with a bounded cyclic frame cache.
+        Require(SixelLogo.PixelWidth == 144 && SixelLogo.PixelHeight == 96);
+        Require(LogoSixelData.LogicalRows.Length == 16 && LogoSixelData.LogicalRows.All(row => row.Length == 24));
+        Require(LogoSixelData.LogicalRows[7][12] == '.' && LogoSixelData.LogicalRows[7][13] == '#'
+            && LogoSixelData.LogicalRows[7][14] == '.'); // separate reference pupil and brow
+        Require(SixelLogo.FrameCount is >= 16 and <= 64);
+        Require(SixelLogo.FrameAt(0).StartsWith("\u001bP") && SixelLogo.FrameAt(0).EndsWith("\u001b\\"));
+        Require(SixelLogo.FrameAt(0) != SixelLogo.FrameAt(1));          // the gradient actually cycles
+        Require(SixelLogo.FrameAt(SixelLogo.FrameCount - 1).EndsWith("\u001b\\"));
+        // The mark fills the six-row header at the verified cell without exceeding it.
+        Require(SixelLogo.RowSpan <= SixelLogo.HeaderRows);
+        Require(SixelLogo.ColumnSpan >= 12 && SixelLogo.ColumnSpan <= SixelLogo.ReservedColumns);
+        Require(SixelLogo.FallbackRows.Length == 6);
         Require(SixelLogo.FallbackRows.All(row => CellWidth(row) <= SixelLogo.ReservedColumns));
         Require(SixelLogo.FallbackRows.Any(row => row.Any(ch => ch is '█' or '▀' or '▄')));
         Require(!dashboard.RenderFrame(120, 36, false).Image);
@@ -1398,26 +1580,27 @@ internal sealed class SessionDashboard : IDisposable
         dashboard.Key(ConsoleKey.End);
         Require(dashboard.Frame(120, 36).Take(rule + 1).SequenceEqual(normal.Take(rule + 1)));
 
-        // 80x24 keeps the same five-row mark, the five metadata rows and still leaves a useful log
-        // viewport (>= ten rows before the footer).
+        // 80x24 keeps the six-row mark and metadata, leaving a useful log viewport.
         var narrow = dashboard.Frame(80, 24);
         Require(narrow.Length == 24);
         Require(narrow.All(row => CellWidth(row) <= 80));
         var narrowRule = Array.FindIndex(narrow, row => row.TrimStart().StartsWith('─'));
         var narrowHeader = narrow[..narrowRule];
-        Require(narrowRule == 5 && narrowHeader.Length == 5);
-        Require(narrow.Length - 2 - narrowRule >= 10);                  // >=10 log rows before the footer
+        Require(narrowRule == 6 && narrowHeader.Length == 6);
+        Require(narrow.Length - 1 - narrowRule >= 12);                  // reclaimed footer rows go to the log
         Require(narrow.Any(row => row.Contains("Ship the native dashboard")));
         Require(narrow.Any(row => row.Contains("MODEL") && row.Contains("Claude Fable 5 1")));
         Require(narrow.Any(row => row.Contains("Permissions") && row.Contains("bypassPermissions")));
 
         // Below 62 columns the mark is dropped before the metadata; nothing wraps or overflows.
+        // The heading yields columns to the top-header chips, so it truncates rather than overlaps.
         foreach (var width in new[] { 72, 60, 48, 40, 32, 24 })
         {
             var rows = dashboard.Frame(width, 24);
             Require(rows.Length <= 24);
             Require(rows.All(row => CellWidth(row) <= width));
-            Require(rows.Any(row => row.Contains("Ship the native")));
+            Require(rows[0].Trim().Length > 0);
+            if (width >= 60) Require(rows[0].Contains("Ship the native"));
         }
 
         // Friendly display of the ACTUAL runtime model: raw id kept internally, readable on screen.
@@ -1468,25 +1651,29 @@ internal sealed class SessionDashboard : IDisposable
             Require(!LooksLikeSessionId("Ship the native dashboard"));
         }
 
-        // Chip row: the row is re-derived each time because it is the last drawn row, which moves
-        // with the selected session's log length — exactly what the live dashboard lays out.
-        int ChipRow() => dashboard.Frame(100, 24).Length - 1;
+        // The selectable chips live in the pinned TOP header (row 0), never in a bottom bar.
+        const int ChipRow = 5;
         // Hit columns come from the drawn chip row itself: the labels are the numbered names.
         int Chip(string marker)
         {
-            var row = dashboard.Frame(100, 24)[ChipRow()];
+            var row = dashboard.Frame(100, 24)[ChipRow];
             var at = row.IndexOf(marker, StringComparison.Ordinal);
             return at < 0 ? -1 : CellWidth(row[..at]) + 1;           // display cells, not UTF-16 units
         }
-        Require(dashboard.Click(0, ChipRow(), 100, 24) == false);
+        Require(dashboard.Frame(100, 24)[ChipRow].Contains(" 1 ") && dashboard.Frame(100, 24)[ChipRow].Contains(" 2 "));
+        Require(dashboard.Click(0, ChipRow, 100, 24) == false);
         Require(dashboard.SelectedId == "a");
-        Require(dashboard.Click(Chip(" 2 "), ChipRow(), 100, 24));   // second chip: 任务二
+        Require(dashboard.Click(Chip(" 2 "), ChipRow, 100, 24));   // second chip: 任务二
         Require(dashboard.SelectedId == "b");
-        Require(dashboard.Click(Chip(" 1 "), ChipRow(), 100, 24));   // first chip
+        Require(dashboard.Click(Chip(" 1 "), ChipRow, 100, 24));   // first chip
         Require(dashboard.SelectedId == "a");
-        Require(dashboard.Click(40, 0, 100, 24) == false);           // header row is not a chip
-        // The header grows under the new design: a click on a header row is still never a chip.
+        // A body row is not a chip, and a header row without a chip is not one either.
+        Require(dashboard.Click(60, 8, 100, 24) == false && dashboard.SelectedId == "a");
         Require(dashboard.Click(60, 3, 100, 24) == false && dashboard.SelectedId == "a");
+        // No bottom bar: the last row is body content, not a selector strip or help text.
+        var full = dashboard.Frame(100, 24);
+        Require(!full[full.Length - 1].Contains("Ctrl+C") && !full[full.Length - 1].Contains("1 conversation"));
+        Require(!full.Any(row => row.Contains("PgUp/PgDn history")));
 
         Require(dashboard.Key(ConsoleKey.Tab) && dashboard.SelectedId == "b");
         Require(dashboard.Key(ConsoleKey.RightArrow) && dashboard.SelectedId == "c");
@@ -1509,12 +1696,12 @@ internal sealed class SessionDashboard : IDisposable
         foreach (var width in new[] { 100, 80 })
         {
             var rows = dashboard.Frame(width, 24);
-            var row = rows[rows.Length - 1];
+            var row = rows[5];                                     // selectors live in the TOP header
             Require(row.Contains(" 1 ") && row.Contains(" 2 ") && row.Contains(" 3 "));
             Require(CellWidth(row) <= width);
             var third = ChipColumn(row, "3");
             Require(third > 0);
-            Require(dashboard.Click(third, rows.Length - 1, width, 24));
+            Require(dashboard.Click(third, 5, width, 24));
             Require(dashboard.SelectedId == "c");                  // real third id, not a placeholder
             dashboard.Select("a");
         }
@@ -1527,12 +1714,12 @@ internal sealed class SessionDashboard : IDisposable
             foreach (var width in new[] { 100, 80, 60 })
             {
                 var rows = crowded.Frame(width, 24);
-                var chipRow = rows[rows.Length - 1];
+                var chipRow = rows[5];
                 Require(CellWidth(chipRow) <= width);
                 Require(chipRow.Contains(" 1 ") && chipRow.Contains(" 2 ") && chipRow.Contains(" 3 "));
                 Require(chipRow.Contains('…'));
                 var third = ChipColumn(chipRow, "3");
-                Require(third > 0 && crowded.Click(third, rows.Length - 1, width, 24));
+                Require(third > 0 && crowded.Click(third, 5, width, 24));
                 Require(crowded.SelectedId == "three");
             }
         }
@@ -1542,7 +1729,7 @@ internal sealed class SessionDashboard : IDisposable
             for (var index = 1; index <= 4; index++) tiny.Add("s" + index, "Conversation 0" + index, "", "", []);
             // 20 columns cannot hold four numbered chips, so the row must say so rather than omit them.
             var tinyRow = tiny.Frame(20, 24);
-            Require(tinyRow[tinyRow.Length - 1].Contains("more"));
+            Require(tinyRow[5].Contains("more"));
             Require(tinyRow.All(row => CellWidth(row) <= 20));
             // Every conversation stays reachable by keyboard even when its chip is summarised.
             Require(tiny.Key(ConsoleKey.Tab) && tiny.Key(ConsoleKey.Tab) && tiny.Key(ConsoleKey.Tab)
@@ -1783,6 +1970,75 @@ internal sealed class SessionDashboard : IDisposable
             Require(initFields.Frame(40, 24).All(row => CellWidth(row) <= 40));
         }
 
+        using (var scrolling = new SessionDashboard())
+        {
+            scrolling.Add("a", "First", "", "", []);
+            scrolling.Add("b", "Second", "", "", []);
+            for (var index = 0; index < 40; index++)
+            {
+                using var line = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Line " + index } } } }));
+                scrolling.Observe("a", line.RootElement); scrolling.Observe("b", line.RootElement);
+            }
+            string BodyText() => string.Join("\n", scrolling.Frame(100, 24).Skip(7));
+            var firstLatest = BodyText();
+            Require(!scrolling.WheelDelta(60) && BodyText() == firstLatest);
+            scrolling.Select("b"); var secondLatest = BodyText();
+            Require(!scrolling.WheelDelta(60) && BodyText() == secondLatest);
+            Require(scrolling.WheelDelta(60) && BodyText() != secondLatest);
+            var secondScrolled = BodyText();
+            scrolling.Select("a");
+            Require(scrolling.WheelDelta(60) && BodyText() != firstLatest);
+            scrolling.WheelDelta(-120);
+            Require(BodyText() == firstLatest);
+            scrolling.Select("b"); Require(BodyText() == secondScrolled);
+            scrolling.WheelDelta(int.MaxValue / 1000);
+            Require(scrolling.Frame(100, 24).Length == 24);
+        }
+        using (var live = new SessionDashboard())
+        {
+            live.Add("s", "Live usage", "high", "configured", ["RAW-SECRET"]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); live.Observe("s", doc.RootElement); }
+            string Screen() => string.Join("\n", live.Frame(120, 24));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":0,\"cache_read_input_tokens\":1200,\"cache_creation_input_tokens\":80,\"output_tokens\":0}}}}");
+            Require(Screen().Contains("in 1,280") && Screen().Contains("out 0"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"abcdefgh\"}}}");
+            Require(Screen().Contains("out ~2"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"RAW-SECRET\"}}}");
+            Require(!Screen().Contains("RAW-SECRET") && !live.LogText("s").Contains("RAW-SECRET"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":0}}}");
+            Require(Screen().Contains("out 0") && !Screen().Contains("out ~"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":11}}}");
+            Require(Screen().Contains("in 1,280") && Screen().Contains("out 11") && !Screen().Contains("out ~"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":20}}}");
+            Require(Screen().Contains("out 20") && !Screen().Contains("out 31"));
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"hidden\"},{\"type\":\"text\",\"text\":\"Visible output\"}]}}");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"content\":\"ok\"}]}}");
+            Require(!live.LogText("s").Contains("reasoning") && !Screen().Contains("THINKING"));
+            Require(!Screen().Contains("tool result received") && Screen().Contains("Visible output"));
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"is_error\":true,\"content\":\"Actual tool failure RAW-SECRET\"}]}}");
+            Require(Screen().Contains("Actual tool failure [redacted]") && !Screen().Contains("RAW-SECRET"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"usage\":{\"input_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}");
+            Require(Screen().Contains("in 0") && Screen().Contains("out 20"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"m2\",\"usage\":{\"input_tokens\":30}}}}");
+            Require(Screen().Contains("in 30") && Screen().Contains("out —"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"abcdefgh\"}}}");
+            Require(Screen().Contains("out ~2"));
+            Feed("{\"type\":\"result\",\"is_error\":false,\"usage\":{\"input_tokens\":4,\"output_tokens\":0}}");
+            Require(Screen().Contains("in 4") && Screen().Contains("out 0") && !Screen().Contains("out ~"));
+            var liveHeader = live.Frame(120, 24);
+            Require(Regex.IsMatch(liveHeader[0], @"TIME\s+\d\d:\d\d:\d\d\s*$"));
+            Require(liveHeader[5].Contains("1 conversation") && !liveHeader[5].Contains("TIME"));
+            Require(!liveHeader[^1].Contains("conversation") && !liveHeader[^1].Contains("Ctrl+C"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"m3\",\"usage\":{\"cache_read_input_tokens\":1200}}}}");
+            Require(Screen().Contains("in —"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_delta\",\"usage\":{\"input_tokens\":10,\"cache_creation_input_tokens\":80}}}");
+            Require(Screen().Contains("in 1,290"));
+            Feed("{\"type\":\"result\",\"is_error\":false,\"usage\":{\"input_tokens\":4,\"output_tokens\":0}}");
+            Require(Screen().Contains("in 1,284") && Screen().Contains("out 0"));
+            Feed("{\"type\":\"assistant\",\"error\":\"rate_limit\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"API error\"}]}}");
+            Feed("{\"type\":\"result\",\"is_error\":false}");
+            Require(Screen().Contains("failed") && !Screen().Contains("○ review"));
+        }
         Console.WriteLine("{\"dashboardSelfTests\":" + checks + ",\"status\":\"passed\"}");
         return checks;
     }

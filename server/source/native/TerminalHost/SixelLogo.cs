@@ -1,28 +1,35 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
-// Compiled Sixel payload and the dependency-free half-block fallback (see LogoSixelData.g.cs).
-// No image decoder, encoder or external process runs here: the asset is generated once at build time.
+// Compiled Sixel payloads and the dependency-free half-block fallback (see LogoSixelData.g.cs).
+// No image decoder, encoder or external process runs here: every gradient frame is generated once
+// at build time and cached in memory.
 internal static class SixelLogo
 {
-    // The header's five metadata rows; the art must fit inside them.
-    internal const int HeaderRows = 5;
+    // The header's six metadata rows; the art must fit inside them.
+    internal const int HeaderRows = 6;
     // The fallback glyph rows are the widest thing reserved, so the layout never shifts.
     internal const int ReservedColumns = LogoSixelData.FallbackColumns;
 
     internal const int PixelWidth = LogoSixelData.PixelWidth;
     internal const int PixelHeight = LogoSixelData.PixelHeight;
 
-    private static readonly Lazy<string> Cached = new(() =>
-        Encoding.Latin1.GetString(Convert.FromBase64String(LogoSixelData.Payload)));
+    internal static int FrameCount => LogoSixelData.Payloads.Length;
 
-    internal static string Payload => Cached.Value;
+    private static readonly Lazy<string[]> Cached = new(() =>
+        LogoSixelData.Payloads
+            .Select(payload => Encoding.Latin1.GetString(Convert.FromBase64String(payload)))
+            .ToArray());
+
+    internal static string PayloadAt(int index) => Cached.Value[Math.Clamp(index, 0, FrameCount - 1)];
 
     internal static string[] FallbackRows => LogoSixelData.FallbackRows;
 
-    // DECSIXEL introducer with 1:1 pixel aspect and transparent background; the payload carries
+    // DECSIXEL introducer with 1:1 pixel aspect and transparent background; each payload carries
     // its own raster attributes, palette and colour bands.
-    internal static string Frame => "\u001bP0;1;0q" + Payload + "\u001b\\";
+    internal static string FrameAt(int index) => "\u001bP0;1;0q" + PayloadAt(index) + "\u001b\\";
+
+    internal static string Frame => FrameAt(0);
 
     // Console font metrics in pixels, probed once; 8x16 is the safe fallback when unavailable.
     // Called from the static initialiser below, so it never runs per frame.
@@ -33,7 +40,7 @@ internal static class SixelLogo
     internal static int ColumnSpan => Math.Max(1, (PixelWidth + Math.Max(1, CellSize.Width) - 1) / Math.Max(1, CellSize.Width));
 
     // Sixel needs an image-capable terminal; WT_SESSION is set by Windows Terminal (1.24 proven).
-    // A font whose cell cannot hold the image in five rows also degrades to the half-block fallback.
+    // A font whose cell cannot hold the image in six rows also degrades to the half-block fallback.
     internal static bool ImageCapable { get; } = Detect();
 
     private static bool Detect()

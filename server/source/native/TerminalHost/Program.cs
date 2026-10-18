@@ -17,10 +17,10 @@ internal static class Program
         {
             switch (args.ElementAtOrDefault(0))
             {
-                case "--launch": await Launch(args[1], args[2], args[3], args[4]); return 0;
+                case "--launch": await Launch(args[1], args[2], args[3], args[4], args[5]); return 0;
                 case "--host": await Host(args[1], args[2]); return 0;
-                case "--inspect": Inspect(args[1], int.Parse(args[2]), args[3], false); return 0;
-                case "--close": Inspect(args[1], int.Parse(args[2]), args[3], true); return 0;
+                case "--inspect": Inspect(args[1], int.Parse(args[2]), args[3], args[4], false); return 0;
+                case "--close": Inspect(args[1], int.Parse(args[2]), args[3], args[4], true); return 0;
                 case "--self-test": return SelfTest();
                 case "--sixel-probe": return await SixelProbe(args.Contains("--hold"));
                 case "--lease":
@@ -35,22 +35,29 @@ internal static class Program
         catch (Exception error)
         {
             // Do not print process arguments, environment or raw provider diagnostics.
-            Console.Error.WriteLine("Claude terminal operation failed: " + error.GetType().Name);
+            Console.Error.WriteLine("Claude terminal operation failed: " + error.GetType().Name + ": " + error.Message);
             return 1;
         }
     }
 
-    private static async Task Launch(string pipe, string token, string title, string cwd)
+    // The visible title is only the sanitized worker name. Ownership is a private window property
+    // claimed under a per-HWND mutex, so equal display names stay distinct and
+    // no check ever falls back to title-only matching.
+    private static async Task Launch(string pipe, string token, string title, string cwd, string nonce)
     {
         var watch = Stopwatch.StartNew();
+        // The spawn title carries this launch's private nonce so the window is unambiguous even
+        // between equal display names; the host renames the visible title to the pure worker name.
+        // Application title changes must be allowed for that rename, so no suppression flag.
+        var spawnTitle = Window.SpawnTitle(title, nonce);
         var start = new ProcessStartInfo("wt.exe") { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Minimized };
-        foreach (var arg in new[] { "-w", "new", "new-tab", "--title", title, "--suppressApplicationTitle", "-d", cwd, Environment.ProcessPath!, System.Reflection.Assembly.GetExecutingAssembly().Location, "--host", pipe, token })
+        foreach (var arg in new[] { "-w", "new", "new-tab", "--title", spawnTitle, "--useApplicationTitle", "-d", cwd, Environment.ProcessPath!, System.Reflection.Assembly.GetExecutingAssembly().Location, "--host", pipe, token })
             start.ArgumentList.Add(arg);
         using var launcher = Process.Start(start) ?? throw new InvalidOperationException("Windows Terminal did not start");
         nint window = 0;
         for (var attempt = 0; attempt < 100; attempt++)
         {
-            window = Window.Find(title);
+            window = Window.Claim(spawnTitle, nonce);
             if (window != 0) break;
             await Task.Delay(50);
         }
@@ -103,19 +110,24 @@ internal static class Program
         }
     }
 
-    private static void Inspect(string handle, int owner, string title, bool close)
+    private static void Inspect(string handle, int owner, string title, string nonce, bool close)
     {
         var window = new nint(long.Parse(handle));
         if (!Window.IsWindow(window)) { Console.WriteLine("{\"exists\":false}"); return; }
         Window.GetWindowThreadProcessId(window, out var actualOwner);
-        if (actualOwner != owner || !Window.Text(window).Contains(title, StringComparison.Ordinal))
+        // Private nonce + HWND/PID establish ownership. Caption changes are diagnostic, so a
+        // native application or user rename cannot prevent cleanup of this exact owned window.
+        if (actualOwner != owner
+            || !Window.Owner(window, nonce))
             throw new InvalidOperationException("Window ownership changed");
         if (close) Window.PostMessage(window, 0x0010, 0, 0);
-        else Console.WriteLine(JsonSerializer.Serialize(new { exists = true, minimized = Window.IsIconic(window), title = Window.Text(window), pid = actualOwner }));
+        else Console.WriteLine(JsonSerializer.Serialize(new { exists = true, minimized = Window.IsIconic(window), title = Window.Text(window), captionMatches = Window.Text(window) == title, pid = actualOwner }));
     }
 
     private static async Task Host(string pipePath, string token)
     {
+        // The window was created with a private spawn title; the visible tab/window title becomes
+        // exactly the sanitized worker name. Ownership stays the window property set by --launch.
         var pipeName = pipePath.StartsWith(@"\\.\pipe\", StringComparison.Ordinal) ? pipePath[9..] : pipePath;
         using var cancel = new CancellationTokenSource();
         using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -158,6 +170,11 @@ internal static class Program
                 switch (Value(message, "type"))
                 {
                     case "start" when worker is null:
+                        // The authenticated parent sends start only after the launcher has captured
+                        // and claimed the exact window. Earlier renaming would race that discovery.
+                        // Neutral startup caption; subsequent titles belong to native Claude.
+                        Console.Write("\u001b]0;Claude Code\u0007");
+                        if (long.TryParse(Value(message, "windowHandle"), out var owned)) view.OwnedWindow = new nint(owned);
                         var start = new ProcessStartInfo(Value(message, "command"))
                         {
                             UseShellExecute = false, CreateNoWindow = false, WindowStyle = ProcessWindowStyle.Minimized,
@@ -489,6 +506,12 @@ internal static class Program
         // mode are what the painted header must show after selection.
         using (var init = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"two\",\"model\":\"deepseek-v4.1-flash[1m]\",\"permissionMode\":\"bypassPermissions\"}"))
             dashboard.Observe("two", init.RootElement);
+        // Real scrolling needs content taller than the viewport; clamping an empty log is a no-op.
+        for (var index = 0; index < 40; index++)
+        {
+            using var history = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "History line " + index } } } }));
+            dashboard.Observe("two", history.RootElement);
+        }
         var modesRead = SessionDashboard.NativeConsole.ReadModes(out var inputBefore, out var outputBefore);
         bool RestoreCapturedModes()
         {
@@ -533,7 +556,7 @@ internal static class Program
             // Screen coordinates come from the pump's own geometry, exactly what the hit test re-lays out.
             var width = SessionDashboard.NativeConsole.PaintedWidth;
             var height = SessionDashboard.NativeConsole.PaintedHeight;
-            var chipRow = dashboard.Frame(width, height).Length - 1;
+            var chipRow = 5;                                  // selectors live in the pinned top header
             // A chip starts at its marker cell ('│' unselected, '█' selected); the "◈ 2" count prefix
             // is not a chip. Convert the UTF-16 offset to display cells for CJK-safe coordinates.
             var chipLine = dashboard.Frame(width, height)[chipRow];
@@ -554,7 +577,7 @@ internal static class Program
             await Task.Delay(300, CancellationToken.None);
             static string Plain(string row) => SessionDashboard.StripAnsi(row);
             var painted = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
-            // The footer selector also uses block glyphs, so only rows above the first rule are header.
+            // Only rows above the first rule are header; the chip row itself uses block glyphs.
             static string[] Header(string[] rows)
             {
                 var rule = Array.FindIndex(rows, row => row.TrimStart().StartsWith('─'));
@@ -562,16 +585,21 @@ internal static class Program
             }
             static int RuleRow(string[] rows) => Array.FindIndex(rows, row => row.TrimStart().StartsWith('─'));
             var logoBefore = Header(painted);
-            Check("header-compact", logoBefore.Length == 5);
+            Check("header-compact", logoBefore.Length == 6);
             Check("header-logo-painted", SessionDashboard.NativeConsole.PaintedImage
                 ? SessionDashboard.NativeConsole.ImagePaintCount > 0
                 : logoBefore.Any(row => row.IndexOfAny(['█', '▀', '▄']) >= 0));
+            Check("cached-image-mode-preserved", !SixelLogo.ImageCapable || SessionDashboard.NativeConsole.PaintedImage);
             // The painted header carries the ACTUAL model and native permission mode, and never a
             // block-glyph logo or provenance wording.
             var headerText = string.Join("\n", logoBefore);
             Check("header-model-painted", headerText.Contains("MODEL") && headerText.Contains("Deepseek V4.1 Flash"));
             Check("header-permissions-painted", headerText.Contains("Permissions") && headerText.Contains("bypassPermissions"));
             Check("header-no-dot-logo", headerText.All(ch => ch is < '\u2800' or > '\u28FF'));
+            // Top header carries the real conversation count / selectors; there is no bottom bar.
+            Check("header-conversations", painted[chipRow].Contains(" 1 ") && painted[chipRow].Contains(" 2 "));
+            Check("no-bottom-bar", !painted.Any(row => row.Contains("Ctrl+C close") || row.Contains("PgUp/PgDn history"))
+                && Header(painted).Length == 6);
             Check("header-title-painted", painted.Any(row => row.Contains("独立会话")));
             Check("header-time-painted", painted.Any(row => System.Text.RegularExpressions.Regex.IsMatch(row, @"TIME\s+\d\d:\d\d:\d\d")));
             SessionDashboard.NativeConsole.InjectKey(handle, 0x21, '\0');   // PageUp through populated history
@@ -591,6 +619,33 @@ internal static class Program
                 && pagedRows.Any(row => row.Contains("独立会话")));
             Check("body-paged", bodyBefore.Length > 0 && bodyAfter.Length > 0
                 && !bodyBefore.SequenceEqual(bodyAfter));
+            // The wheel scrolls this session's own log, and its bound is what the body contains.
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x23, '\0');   // End first
+            await Task.Delay(250, CancellationToken.None);
+            static string[] BodyRows(string[] rows, int rule)
+                => rule < 0 ? rows : rows[(rule + 1)..];
+            var latest = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            SessionDashboard.NativeConsole.InjectWheel(handle, 60);
+            await Task.Delay(200, CancellationToken.None);
+            var fraction = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            Check("wheel-fraction-held", BodyRows(latest, RuleRow(latest)).SequenceEqual(BodyRows(fraction, RuleRow(fraction))));
+            SessionDashboard.NativeConsole.InjectWheel(handle, 60);          // completes one notch
+            await Task.Delay(350, CancellationToken.None);
+            var wheeled = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            Check("wheel-body-scrolls", BodyRows(latest, RuleRow(latest)).Length > 0
+                && !BodyRows(latest, RuleRow(latest)).SequenceEqual(BodyRows(wheeled, RuleRow(wheeled))));
+            // A burst of notches cannot scroll past the oldest item or until rows disappear.
+            for (var notch = 0; notch < 40; notch++) SessionDashboard.NativeConsole.InjectWheel(handle, 120);
+            await Task.Delay(400, CancellationToken.None);
+            var clamped = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            Check("wheel-clamped", clamped.Length == height
+                && BodyRows(clamped, RuleRow(clamped)).Length == BodyRows(latest, RuleRow(latest)).Length);
+            // Per-session isolation: the other conversation's own scroll position is untouched.
+            Check("wheel-session-isolated", dashboard.SelectedId == "two"
+                && dashboard.LogText("one") != dashboard.LogText("two"));
+            SessionDashboard.NativeConsole.InjectWheel(handle, -120 * 40);    // back to latest
+            await Task.Delay(300, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x23, '\0');     // End after wheel checks
             Check("no-id-or-provenance", pagedRows.All(row => !row.Contains("configured") && !row.Contains("environment")
                 && !System.Text.RegularExpressions.Regex.IsMatch(row, "[0-9a-f]{8}-[0-9a-f]{4}-")));
             // Truthful claim: this only proves a NAMED conversation keeps its human heading while painted.
@@ -606,7 +661,12 @@ internal static class Program
             var rowsAfter = SessionDashboard.NativeConsole.PaintedRows;
             Check("timer-repaint", SessionDashboard.NativeConsole.PaintedRevision > revisionBefore
                 && rowsAfter.Length > 0 && !rowsBefore.SequenceEqual(rowsAfter));
-            Check("timer-row-written", SessionDashboard.NativeConsole.LastWrittenRows.Any(written => written));
+            Check("timer-row-written", rowsBefore[0] != rowsAfter[0]);
+            Check("status-time-top-right", System.Text.RegularExpressions.Regex.IsMatch(Plain(rowsAfter[0]), @"TIME\s+\d\d:\d\d:\d\d\s*$"));
+            Check("no-thinking-or-filler", rowsAfter.Select(Plain).All(row => !row.Contains("THINKING") && !row.Contains("tool result received")));
+            // The gradient is local animation: cached payload phases are swapped, never encoded.
+            if (SessionDashboard.NativeConsole.PaintedImage)
+                Check("animation-frames-painted", SessionDashboard.NativeConsole.PaintedImageFrames.Distinct().Count() > 1);
 
             SessionDashboard.NativeConsole.InjectKey(handle, 0x09, '\t');
             await Task.Delay(400, CancellationToken.None);
@@ -756,11 +816,54 @@ internal static class Window
     [DllImport("user32.dll")] internal static extern bool ShowWindowAsync(nint window, int command);
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint pid);
     [DllImport("user32.dll")] internal static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+    // SetProp replaces a property; serialize claiming and explicitly reject an owned HWND.
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetPropW(nint window, string name, nint value);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint GetPropW(nint window, string name);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint RemovePropW(nint window, string name);
+
+    internal const string OwnerProperty = "CodexControlsClaude.Owner";
+    private static readonly nint Marker = 1;
+
     internal static string Text(nint window) { var text = new StringBuilder(2048); GetWindowText(window, text, text.Capacity); return text.ToString(); }
-    internal static nint Find(string title)
+
+    // The launch-time title includes a short private nonce, so the window is addressed unambiguously
+    // before the host restores the pure worker name. The nonce never remains visible.
+    internal static string SpawnTitle(string title, string nonce)
+        => "CCC launch " + nonce;
+
+    // One property name per nonce: the nonce is the private ownership identity, not the display name.
+    private static string Property(string nonce) => OwnerProperty + "." + nonce;
+
+    // Claims an unowned window whose title matches the private spawn title. A pre-existing equal
+    // window (another worker, or a user window that happens to share the name) is never taken.
+    internal static nint Claim(string spawnTitle, string nonce)
     {
+        if (!Guid.TryParse(nonce, out _)) return 0;
         nint found = 0;
-        EnumWindows((window, _) => { if (!Text(window).Contains(title, StringComparison.Ordinal)) return true; found = window; return false; }, 0);
+        EnumWindows((window, _) =>
+        {
+            if (!Text(window).Contains(spawnTitle, StringComparison.Ordinal)) return true;
+            using var claim = new Mutex(false, @"Local\CodexControlsClaude.Window." + window.ToInt64());
+            var acquired = false;
+            try
+            {
+                try { acquired = claim.WaitOne(TimeSpan.FromSeconds(2)); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired || !IsWindow(window) || !Text(window).Contains(spawnTitle, StringComparison.Ordinal)) return true;
+                if (GetPropW(window, OwnerProperty) != 0) return true;
+                if (!SetPropW(window, Property(nonce), Marker)) return true;
+                if (!SetPropW(window, OwnerProperty, Marker)) { RemovePropW(window, Property(nonce)); return true; }
+                found = window;
+                return false;
+            }
+            finally { if (acquired) claim.ReleaseMutex(); }
+        }, 0);
         return found;
     }
+
+    internal static bool Owner(nint window, string nonce)
+        => Guid.TryParse(nonce, out _) && GetPropW(window, OwnerProperty) == Marker && GetPropW(window, Property(nonce)) == Marker;
 }

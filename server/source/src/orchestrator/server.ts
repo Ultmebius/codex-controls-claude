@@ -89,6 +89,7 @@ export async function doctor() {
       blockedTools: ["Agent", "TeamCreate", "TeamDelete"],
       fileInterception: false,
       pathRewriting: false,
+      terminalTitle: "native_claude",
     },
     gatewayStatus,
     modelListed,
@@ -118,7 +119,7 @@ const workerName = z
   .min(1)
   .max(64)
   .describe(
-    "Human role name shown at the start of the worker's Windows Terminal tab, e.g. 'UI 修复'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+    "Human role label for the task ledger and audit. Defaults to task title. Native Claude controls its terminal caption; this label is not an SDK prompt or contract."
   )
   .optional();
 const task = z.object({
@@ -296,7 +297,7 @@ export function createOrchestratorServer(
         design: z.string().optional(),
         cwd: z.string().optional(),
         workerName: workerName.describe(
-          "Human role name shown at the start of this worker's Windows Terminal tab, e.g. 'UI 修复'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+          "Human role label for the task ledger and audit. Defaults to task title. Native Claude controls its terminal caption; this label is not an SDK prompt or contract."
         ),
         tasks: z.array(task).optional(),
         taskTimeoutMs: z
@@ -494,7 +495,7 @@ export function createOrchestratorServer(
     "orchestrator_wait",
     {
       description:
-        "Event-driven blocking wait, NOT status polling. Use previous nextCursor and omit timeout: Codex package defaults5min with660s host timeout; portable clients45s. Only questions, native residual permissions, failures, budget risk and candidates wake it; ordinary milestones stay in audit. Empty timeout renews wait without status/log reads or replanning. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
+        "Event-driven blocking wait, NOT status polling. Use previous nextCursor and the actual loaded host timeout; default is CCC_WAIT_MS or45s. A compatibility file does not prove five-minute host support. Mechanically renew empty replies in a bounded same-connection code-mode chain. Only questions, native residual permissions, failures, budget risk and candidates wake it; ordinary milestones stay in audit. Empty timeout renews wait without status/log reads or replanning. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
       inputSchema: {
         runId: id,
         afterSeq: z.number().int().min(0),
@@ -712,7 +713,7 @@ export function createOrchestratorServer(
           .array(
             task.extend({
               workerName: workerName.describe(
-                "Human role name shown at the start of this worker's Windows Terminal tab, e.g. '预算配置'. Default: the task title. Display only; never part of task contracts or the SDK prompt."
+                "Human role label for the task ledger and audit. Defaults to task title. Native Claude controls its terminal caption; this label is not an SDK prompt or contract."
               ),
               cwd: z.string().optional(),
               writeScope: z.array(z.string().min(1)).max(100).optional(),

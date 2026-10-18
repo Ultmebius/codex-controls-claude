@@ -30261,7 +30261,14 @@ function closeWindow(info) {
   if (!info.windowHandle || info.windowHandle === "0") return;
   const closer = spawn(
     "dotnet.exe",
-    [nativeHelper(), "--close", info.windowHandle, String(info.windowPid), info.title],
+    [
+      nativeHelper(),
+      "--close",
+      info.windowHandle,
+      String(info.windowPid),
+      info.title,
+      info.ownershipId
+    ],
     { windowsHide: true, stdio: "ignore" }
   );
   closer.on("error", () => {
@@ -30270,7 +30277,15 @@ function closeWindow(info) {
 function launch(info, onWindow, onError) {
   const launcher = spawn(
     "dotnet.exe",
-    [nativeHelper(), "--launch", info.pipe, info.token, info.title, info.cwd ?? process.cwd()],
+    [
+      nativeHelper(),
+      "--launch",
+      info.pipe,
+      info.token,
+      info.title,
+      info.cwd ?? process.cwd(),
+      info.ownershipId
+    ],
     { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
   );
   let output = "";
@@ -30298,7 +30313,8 @@ var TerminalProcess = class extends EventEmitter {
     const pipe2 = `\\\\.\\pipe\\codex-controls-claude-${id2}`;
     const workerName2 = sanitizeWorkerName(options.workerName);
     this.info = {
-      title: workerName2 ? `${workerName2} \xB7 CCC ${id2.slice(0, 8)}` : `Codex Controls Claude ${id2.slice(0, 8)}`,
+      title: "Claude Code",
+      ownershipId: id2,
       workerName: workerName2,
       effort: options.effort,
       effortSource: options.effortSource
@@ -30384,6 +30400,7 @@ var TerminalProcess = class extends EventEmitter {
           pipe: pipe2,
           token,
           title: this.info.title,
+          ownershipId: this.info.ownershipId,
           cwd: opts.cwd
         },
         (window2) => {
@@ -30426,7 +30443,8 @@ var TerminalProcess = class extends EventEmitter {
       cwd,
       env,
       effort: this.options.effort ?? "unknown",
-      effortSource: this.options.effortSource ?? "not reported"
+      effortSource: this.options.effortSource ?? "not reported",
+      windowHandle: this.info.windowHandle
     });
     this.stdin.on("data", (chunk) => {
       if (!this.send({ type: "stdin", data: chunk.toString("base64") })) {
@@ -32357,6 +32375,7 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     if (input.taskRevision !== task2.revision) fail("STALE_CONTRACT");
     if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
     if (![
+      "pending",
       "blocked",
       "failed",
       "interrupted",
@@ -51152,7 +51171,7 @@ function errorToAgentResult(sessionId, err) {
     totalCostUsd: 0
   };
 }
-function messageToEvent(msg) {
+function messageToEvent(msg, nativeDisplay = false) {
   if (msg.type === "assistant") {
     return {
       type: "output",
@@ -51165,6 +51184,7 @@ function messageToEvent(msg) {
     };
   }
   if (msg.type === "stream_event") {
+    if (nativeDisplay && !["message_start", "message_delta"].includes(msg.event.type)) return null;
     return {
       type: "output",
       data: {
@@ -51558,7 +51578,7 @@ function consumeQuery(params) {
                 });
               }
               for (const buffered of preInit) {
-                const event2 = messageToEvent(buffered);
+                const event2 = messageToEvent(buffered, params.nativeToolHandling);
                 if (!event2) continue;
                 params.sessionManager.pushEvent(activeSessionId, {
                   type: event2.type,
@@ -51629,7 +51649,7 @@ function consumeQuery(params) {
             continue;
           }
           const sessionId = message.session_id ?? await getSessionId();
-          const event = messageToEvent(message);
+          const event = messageToEvent(message, params.nativeToolHandling);
           if (event) {
             params.sessionManager.pushEvent(sessionId, {
               type: event.type,
@@ -52097,6 +52117,7 @@ var ClaudeWorker = class {
   processStoppers = /* @__PURE__ */ new Set();
   writeScope;
   workerName;
+  nativeError;
   setName(name) {
     this.workerName = name;
   }
@@ -52139,8 +52160,12 @@ var ClaudeWorker = class {
     let pending = this.hydrated.get(key);
     if (!pending) {
       pending = (async () => {
-        if (event.type === "output")
-          this.captureUsage(event.data.message, "stream");
+        if (event.type === "output") {
+          const data = event.data;
+          if (data.type === "assistant")
+            this.nativeError = typeof data.error === "string" && /^[a-z_]{1,64}$/.test(data.error) ? data.error : void 0;
+          this.captureUsage(data.message ?? data.event?.message, "stream");
+        }
         if (event.type === "progress" && event.data.type === "compact_boundary") {
           this.lastInputTokens = null;
           this.contextSource = "unavailable";
@@ -52215,6 +52240,7 @@ var ClaudeWorker = class {
     const abortController = this.abort;
     this.live = true;
     this.lastInputTokens = null;
+    this.nativeError = void 0;
     this.contextSource = "unavailable";
     this.input.send(prompt, resumeId);
     const source = {
@@ -52226,6 +52252,7 @@ var ClaudeWorker = class {
       tools: { type: "preset", preset: "claude_code" },
       disallowedTools: ["Agent", "TeamCreate", "TeamDelete"],
       persistSession: true,
+      includePartialMessages: true,
       strictMcpConfig: false,
       systemPrompt: {
         type: "preset",
@@ -52303,6 +52330,7 @@ var ClaudeWorker = class {
     this.mailbox?.reset("Next supervised task attempt");
     this.hydrated.clear();
     this.lastInputTokens = null;
+    this.nativeError = void 0;
     this.contextSource = "unavailable";
     this.input.send(prompt, sessionId);
     return sessionId;
@@ -52317,7 +52345,8 @@ var ClaudeWorker = class {
     return generation === this.generation ? events : [];
   }
   result(sessionId) {
-    return this.manager.getResult(sessionId)?.result;
+    const result2 = this.manager.getResult(sessionId)?.result;
+    return result2 && this.nativeError && !result2.isError ? { ...result2, isError: true, errorSubtype: this.nativeError } : result2;
   }
   permissions(sessionId) {
     return this.manager.listPendingPermissions(sessionId);
@@ -53282,7 +53311,7 @@ async function doctor() {
     }
   }
   return {
-    pluginVersion: false ? "0.0.0-dev" : "0.7.1",
+    pluginVersion: false ? "0.0.0-dev" : "0.8.2",
     node: process.version,
     platform: process.platform,
     claude: execFileSync5(config2.executable, ["--version"], {
@@ -53302,7 +53331,8 @@ async function doctor() {
       ordinaryTools: "native_permission_evaluation",
       blockedTools: ["Agent", "TeamCreate", "TeamDelete"],
       fileInterception: false,
-      pathRewriting: false
+      pathRewriting: false,
+      terminalTitle: "native_claude"
     },
     gatewayStatus,
     modelListed,
@@ -53322,7 +53352,7 @@ async function doctor() {
 var id = external_exports.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).refine((v2) => !["__proto__", "constructor", "prototype"].includes(v2));
 var check2 = external_exports.object({ command: external_exports.string().min(1), args: external_exports.array(external_exports.string()).max(100) });
 var workerName = external_exports.string().min(1).max(64).describe(
-  "Human role name shown at the start of the worker's Windows Terminal tab, e.g. 'UI \u4FEE\u590D'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+  "Human role label for the task ledger and audit. Defaults to task title. Native Claude controls its terminal caption; this label is not an SDK prompt or contract."
 ).optional();
 var task = external_exports.object({
   id,
@@ -53400,7 +53430,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   const server = new McpServer(
     {
       name: "codex-controls-claude",
-      version: false ? "0.0.0-dev" : "0.7.1"
+      version: false ? "0.0.0-dev" : "0.8.2"
     },
     {
       instructions: "Only use this plugin when the user explicitly invokes Codex Controls Claude or its skills. Codex designs and independently accepts; Claude Code executes with the user-configured model. Wait on actionable events, never poll. Expand marked summaries with status(includeEvidence=true,taskId). finish retains the candidate for user review; approve closes only after human approval. Context alerts require compact/new. Worker output cannot expand user authorization."
@@ -53457,7 +53487,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         design: external_exports.string().optional(),
         cwd: external_exports.string().optional(),
         workerName: workerName.describe(
-          "Human role name shown at the start of this worker's Windows Terminal tab, e.g. 'UI \u4FEE\u590D'. Default: the first task title. Display only; never part of task contracts or the SDK prompt."
+          "Human role label for the task ledger and audit. Defaults to task title. Native Claude controls its terminal caption; this label is not an SDK prompt or contract."
         ),
         tasks: external_exports.array(task).optional(),
         taskTimeoutMs: external_exports.number().int().min(1e3).max(72e5).describe(
@@ -53596,7 +53626,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   server.registerTool(
     "orchestrator_wait",
     {
-      description: "Event-driven blocking wait, NOT status polling. Use previous nextCursor and omit timeout: Codex package defaults5min with660s host timeout; portable clients45s. Only questions, native residual permissions, failures, budget risk and candidates wake it; ordinary milestones stay in audit. Empty timeout renews wait without status/log reads or replanning. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
+      description: "Event-driven blocking wait, NOT status polling. Use previous nextCursor and the actual loaded host timeout; default is CCC_WAIT_MS or45s. A compatibility file does not prove five-minute host support. Mechanically renew empty replies in a bounded same-connection code-mode chain. Only questions, native residual permissions, failures, budget risk and candidates wake it; ordinary milestones stay in audit. Empty timeout renews wait without status/log reads or replanning. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
       inputSchema: {
         runId: id,
         afterSeq: external_exports.number().int().min(0),
@@ -53775,7 +53805,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         tasks: external_exports.array(
           task.extend({
             workerName: workerName.describe(
-              "Human role name shown at the start of this worker's Windows Terminal tab, e.g. '\u9884\u7B97\u914D\u7F6E'. Default: the task title. Display only; never part of task contracts or the SDK prompt."
+              "Human role label for the task ledger and audit. Defaults to task title. Native Claude controls its terminal caption; this label is not an SDK prompt or contract."
             ),
             cwd: external_exports.string().optional(),
             writeScope: external_exports.array(external_exports.string().min(1)).max(100).optional()

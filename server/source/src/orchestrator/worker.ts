@@ -97,6 +97,7 @@ export class ClaudeWorker implements Worker {
   private processStoppers = new Set<() => void>();
   private writeScope?: { cwd: string; paths: string[] };
   private workerName?: string;
+  private nativeError?: string;
   setName(name: string | undefined) {
     this.workerName = name;
   }
@@ -151,8 +152,20 @@ export class ClaudeWorker implements Worker {
     let pending = this.hydrated.get(key);
     if (!pending) {
       pending = (async () => {
-        if (event.type === "output")
-          this.captureUsage((event.data as { message?: unknown }).message, "stream");
+        if (event.type === "output") {
+          const data = event.data as {
+            type?: string;
+            error?: unknown;
+            message?: unknown;
+            event?: { message?: unknown };
+          };
+          if (data.type === "assistant")
+            this.nativeError =
+              typeof data.error === "string" && /^[a-z_]{1,64}$/.test(data.error)
+                ? data.error
+                : undefined;
+          this.captureUsage(data.message ?? data.event?.message, "stream");
+        }
         if (
           event.type === "progress" &&
           (event.data as { type?: string }).type === "compact_boundary"
@@ -239,6 +252,7 @@ export class ClaudeWorker implements Worker {
     const abortController = this.abort;
     this.live = true;
     this.lastInputTokens = null;
+    this.nativeError = undefined;
     this.contextSource = "unavailable";
     this.input.send(prompt, resumeId);
     const source = {
@@ -250,6 +264,7 @@ export class ClaudeWorker implements Worker {
       tools: { type: "preset" as const, preset: "claude_code" as const },
       disallowedTools: ["Agent", "TeamCreate", "TeamDelete"],
       persistSession: true,
+      includePartialMessages: true,
       strictMcpConfig: false,
       systemPrompt: {
         type: "preset" as const,
@@ -337,6 +352,7 @@ export class ClaudeWorker implements Worker {
     this.mailbox?.reset("Next supervised task attempt");
     this.hydrated.clear();
     this.lastInputTokens = null;
+    this.nativeError = undefined;
     this.contextSource = "unavailable";
     this.input.send(prompt, sessionId);
     return sessionId;
@@ -353,7 +369,10 @@ export class ClaudeWorker implements Worker {
     return generation === this.generation ? events : [];
   }
   result(sessionId: string) {
-    return this.manager.getResult(sessionId)?.result;
+    const result = this.manager.getResult(sessionId)?.result;
+    return result && this.nativeError && !result.isError
+      ? { ...result, isError: true, errorSubtype: this.nativeError }
+      : result;
   }
   permissions(sessionId: string) {
     return this.manager.listPendingPermissions(sessionId);

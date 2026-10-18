@@ -1798,6 +1798,7 @@ export class Orchestrator {
     if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
     if (
       ![
+        "pending",
         "blocked",
         "failed",
         "interrupted",

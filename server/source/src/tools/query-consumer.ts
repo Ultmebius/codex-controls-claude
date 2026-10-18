@@ -202,7 +202,10 @@ function errorToAgentResult(sessionId: string, err: unknown): AgentResult {
   };
 }
 
-function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: unknown } | null {
+function messageToEvent(
+  msg: SDKMessage,
+  nativeDisplay = false
+): { type: "output" | "progress"; data: unknown } | null {
   if (msg.type === "assistant") {
     return {
       type: "output",
@@ -216,6 +219,9 @@ function messageToEvent(msg: SDKMessage): { type: "output" | "progress"; data: u
   }
 
   if (msg.type === "stream_event") {
+    // The C# host already renders raw streaming before forwarding stdout. Keep only usage
+    // boundaries in the supervisor ledger, avoiding a disk/event write for every token delta.
+    if (nativeDisplay && !["message_start", "message_delta"].includes(msg.event.type)) return null;
     return {
       type: "output",
       data: {
@@ -689,7 +695,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
               }
 
               for (const buffered of preInit) {
-                const event = messageToEvent(buffered);
+                const event = messageToEvent(buffered, params.nativeToolHandling);
                 if (!event) continue;
                 params.sessionManager.pushEvent(activeSessionId, {
                   type: event.type,
@@ -775,7 +781,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
           }
 
           const sessionId = message.session_id ?? (await getSessionId());
-          const event = messageToEvent(message);
+          const event = messageToEvent(message, params.nativeToolHandling);
           if (event) {
             params.sessionManager.pushEvent(sessionId, {
               type: event.type,

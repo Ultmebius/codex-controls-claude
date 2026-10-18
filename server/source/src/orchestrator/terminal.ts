@@ -9,6 +9,7 @@ import type { SpawnOptions, SpawnedProcess } from "@anthropic-ai/claude-agent-sd
 
 export interface TerminalInfo {
   title: string;
+  ownershipId: string;
   workerName?: string;
   hostPid?: number;
   wtSession?: string;
@@ -30,6 +31,7 @@ interface LaunchInfo {
   pipe: string;
   token: string;
   title: string;
+  ownershipId: string;
   cwd?: string;
 }
 interface TerminalOptions {
@@ -89,7 +91,14 @@ function closeWindow(info: TerminalInfo) {
   if (!info.windowHandle || info.windowHandle === "0") return;
   const closer = spawn(
     "dotnet.exe",
-    [nativeHelper(), "--close", info.windowHandle, String(info.windowPid), info.title],
+    [
+      nativeHelper(),
+      "--close",
+      info.windowHandle,
+      String(info.windowPid),
+      info.title,
+      info.ownershipId,
+    ],
     { windowsHide: true, stdio: "ignore" }
   );
   closer.on("error", () => {});
@@ -101,7 +110,15 @@ function launch(
 ) {
   const launcher = spawn(
     "dotnet.exe",
-    [nativeHelper(), "--launch", info.pipe, info.token, info.title, info.cwd ?? process.cwd()],
+    [
+      nativeHelper(),
+      "--launch",
+      info.pipe,
+      info.token,
+      info.title,
+      info.cwd ?? process.cwd(),
+      info.ownershipId,
+    ],
     { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }
   );
   let output = "";
@@ -143,11 +160,10 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
     const token = randomUUID();
     const pipe = `\\\\.\\pipe\\codex-controls-claude-${id}`;
     const workerName = sanitizeWorkerName(options.workerName);
-    // The nonce keeps equal display names unique and is part of owned-window verification.
+    // Display and ownership are separate: equal names still have distinct full identities.
     this.info = {
-      title: workerName
-        ? `${workerName} · CCC ${id.slice(0, 8)}`
-        : `Codex Controls Claude ${id.slice(0, 8)}`,
+      title: "Claude Code",
+      ownershipId: id,
       workerName,
       effort: options.effort,
       effortSource: options.effortSource,
@@ -237,6 +253,7 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
           pipe,
           token,
           title: this.info.title,
+          ownershipId: this.info.ownershipId,
           cwd: opts.cwd,
         },
         (window) => {
@@ -268,6 +285,7 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
       env,
       effort: this.options.effort ?? "unknown",
       effortSource: this.options.effortSource ?? "not reported",
+      windowHandle: this.info.windowHandle,
     });
     this.stdin.on("data", (chunk: Buffer) => {
       if (!this.send({ type: "stdin", data: chunk.toString("base64") })) {

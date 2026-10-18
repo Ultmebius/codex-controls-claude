@@ -4,6 +4,8 @@ This inventory reflects the user's final instruction: start native Claude Code, 
 
 ## Native behavior
 
+Claude Code manages its native terminal title. The plugin initializes a neutral caption after its private startup handshake and passes native title updates through without injecting a title-disable flag. Worker names remain task and audit labels. HWND/PID/full private ownership identity authorize window cleanup; captions are diagnostic so a native/user rename cannot strand an owned window.
+
 | Area | Current behavior |
 | --- | --- |
 | Hooks | No plugin hook callbacks and no settings override. User/project/local hooks, including disable/enable choices, are untouched. |
@@ -33,7 +35,7 @@ These govern dispatch, evidence and owned process lifetime, not individual nativ
 | Native startup handshake | Default120s; CCC_INIT_TIMEOUT_MS configures1s..10min. |
 | Fixed acceptance checks | Default5min overall per review; CCC_CHECK_TIMEOUT_MS configures1s..10min. |
 | Residual native decisions / supervisor questions | Default5min; CCC_DECISION_TIMEOUT_MS configures1s..30min. Expired content remains available and requires fresh evaluation on explicit continuation. |
-| Event wait transport | Codex package5min default under660s host timeout; portable package45s. No worker status/log polling; ordinary milestones are audited without waking Codex. |
+| Event wait transport | Use the loaded CCC_WAIT_MS or45s default; compatibility-file settings are not proof of a longer portable-host timeout. Prefer bounded same-connection empty-wait chaining. No worker status/log polling; ordinary milestones are audited without waking Codex. |
 | Communication resource bounds |16K characters/message,128 message IDs/attempt,16 pending questions. Explicit errors on limits; no silent loss of decision evidence. |
 | Idle review lifecycle | Useful session retained for user review, suspended after30min idle with transcript preserved. Explicit close/cancel affects owned processes only. |
 | Connection ownership | Unique owner/generation, atomic explicit attach, no live-owner takeover. Idle execution leases are released. |

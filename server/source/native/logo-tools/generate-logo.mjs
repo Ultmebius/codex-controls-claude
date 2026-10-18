@@ -1,10 +1,13 @@
 // Build-time only: derives the dashboard logo assets from the packaged PNG.
-// Runtime never decodes images or runs an encoder; it emits the cached Sixel payload.
+// Runtime never decodes images or runs an encoder; it emits cached Sixel payloads.
 //
-// Pixel-art contract: sample the whale silhouette on a 32x24 logical grid (the crop's own
-// aspect), colour each logical pixel once from the violet->blue->cyan ramp, then replicate
-// that exact colour in a 3x3 output square (nearest neighbour, no antialias, no dithering).
-// The 96x72 stored image reads as clearly visible square pixels in the terminal.
+// Pixel-art contract: sample the whale silhouette on a 24x16 logical grid, colour each logical
+// pixel once from a cyclic violet->blue->cyan ramp, then replicate that exact colour in a 6x6
+// output square (nearest neighbour, no antialias, no dithering). The 144x96 stored image fits the
+// six-row header at the verified 8x16 console cell (6 rows, 18 columns).
+//
+// Animation is precomputed here as FRAMES separate payloads, each a one-step phase shift of the
+// same cyclic gradient. The host cycles cached strings locally at ~6fps; no per-tick encoding.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,20 +22,22 @@ const pngPath = [
 if (!pngPath) throw new Error("Packaged logo PNG not found");
 const outPath = path.resolve(here, "../TerminalHost/LogoSixelData.g.cs");
 
-// Visible indigo/violet -> blue -> cyan ramp.
+// Closed loop: violet -> blue -> cyan -> violet, so a phase shift never shows a seam.
 const STOPS = [
   [0x8b, 0x5c, 0xf6],
   [0x3b, 0x82, 0xf6],
-  [0x22, 0xd3, 0xee]
+  [0x22, 0xd3, 0xee],
+  [0x8b, 0x5c, 0xf6]
 ];
-const LOGICAL_WIDTH = 32;
-const LOGICAL_HEIGHT = 24;
-const SCALE = 3;
+const LOGICAL_WIDTH = 24;
+const LOGICAL_HEIGHT = 16;
+const SCALE = 6;
+const FRAMES = 24;
 const FALLBACK_COLUMNS = 18;
-const FALLBACK_PIXEL_ROWS = 10; // 5 half-block cell rows
+const FALLBACK_PIXEL_ROWS = 12; // 6 half-block cell rows
 
 function ramp(t) {
-  const scaled = Math.min(0.9999, Math.max(0, t)) * (STOPS.length - 1);
+  const scaled = Math.min(0.9999, Math.max(0, t - Math.floor(t))) * (STOPS.length - 1);
   const index = Math.floor(scaled);
   const local = scaled - index;
   const a = STOPS[index];
@@ -56,13 +61,26 @@ const inkWidth = maxX - minX + 1;
 const inkHeight = maxY - minY + 1;
 
 // Binary silhouette at logical pixel centres: pixel art wants a hard edge, not coverage.
-function inkAt(x, y, columns, rows) {
+function sourceInkAt(x, y, columns, rows) {
   const sx = Math.max(minX, Math.min(maxX, Math.floor(minX + ((x + 0.5) * inkWidth) / columns)));
   const sy = Math.max(minY, Math.min(maxY, Math.floor(minY + ((y + 0.5) * inkHeight) / rows)));
   return png.data[(sy * png.width + sx) * 4 + 3] >= 128;
 }
 
-// One colour per logical pixel, then an exact 3x3 replication.
+function inkAt(x, y, columns, rows) {
+  // Restore the reference's separate small pupil without redrawing the rest of the silhouette.
+  if (columns === LOGICAL_WIDTH && rows === LOGICAL_HEIGHT && x === 12 && y === 7) return false;
+  return sourceInkAt(x, y, columns, rows);
+}
+const corrections = [];
+const logicalRows = Array.from({length: LOGICAL_HEIGHT}, (_, y) =>
+  Array.from({length: LOGICAL_WIDTH}, (_, x) => {
+    if (sourceInkAt(x, y, LOGICAL_WIDTH, LOGICAL_HEIGHT) !== inkAt(x, y, LOGICAL_WIDTH, LOGICAL_HEIGHT)) corrections.push([x,y]);
+    return inkAt(x, y, LOGICAL_WIDTH, LOGICAL_HEIGHT) ? '#' : '.';
+  }).join(''));
+if (JSON.stringify(corrections) !== '[[12,7]]') throw new Error('Unexpected non-eye silhouette change');
+
+// One colour per logical pixel, then an exact SCALE x SCALE replication.
 const palette = [];
 for (let stop = 0; stop < 64; stop++) palette.push(ramp(stop / 63));
 const nearest = (color) => {
@@ -83,28 +101,30 @@ const nearest = (color) => {
 
 const width = LOGICAL_WIDTH * SCALE;
 const height = LOGICAL_HEIGHT * SCALE;
-const rgba = Buffer.alloc(width * height * 4);
-for (let ly = 0; ly < LOGICAL_HEIGHT; ly++) {
-  for (let lx = 0; lx < LOGICAL_WIDTH; lx++) {
-    if (!inkAt(lx, ly, LOGICAL_WIDTH, LOGICAL_HEIGHT)) continue;
-    const color = nearest(ramp(0.6 * (lx / (LOGICAL_WIDTH - 1)) + 0.4 * (ly / (LOGICAL_HEIGHT - 1))));
-    for (let dy = 0; dy < SCALE; dy++) {
-      for (let dx = 0; dx < SCALE; dx++) {
-        const offset = ((ly * SCALE + dy) * width + lx * SCALE + dx) * 4;
-        rgba[offset] = color[0];
-        rgba[offset + 1] = color[1];
-        rgba[offset + 2] = color[2];
-        rgba[offset + 3] = 255;
+const payloads = [];
+for (let frame = 0; frame < FRAMES; frame++) {
+  const rgba = Buffer.alloc(width * height * 4);
+  for (let ly = 0; ly < LOGICAL_HEIGHT; ly++) {
+    for (let lx = 0; lx < LOGICAL_WIDTH; lx++) {
+      if (!inkAt(lx, ly, LOGICAL_WIDTH, LOGICAL_HEIGHT)) continue;
+      const t = 0.25 * (lx / (LOGICAL_WIDTH - 1) + ly / (LOGICAL_HEIGHT - 1)) - frame / FRAMES;
+      const color = nearest(ramp(t));
+      for (let dy = 0; dy < SCALE; dy++) {
+        for (let dx = 0; dx < SCALE; dx++) {
+          const offset = ((ly * SCALE + dy) * width + lx * SCALE + dx) * 4;
+          rgba[offset] = color[0];
+          rgba[offset + 1] = color[1];
+          rgba[offset + 2] = color[2];
+          rgba[offset + 3] = 255;
+        }
       }
     }
   }
+  payloads.push(sixelEncode(rgba, width, height, palette, true));
 }
 
-const payload = sixelEncode(rgba, width, height, palette, true);
-const base64 = Buffer.from(payload, "latin1").toString("base64");
-
-// Fallback for terminals without Sixel: the WHOLE silhouette resized to 18x10 binary pixels and
-// drawn as five rows of plain half-block glyphs. Colour is applied by the host per row, so no
+// Fallback for terminals without Sixel: the WHOLE silhouette resized to 18x12 binary pixels and
+// drawn as six rows of plain half-block glyphs. Colour is applied by the host per row, so no
 // ANSI is embedded in the generated strings.
 const fallbackRows = [];
 for (let row = 0; row < FALLBACK_PIXEL_ROWS / 2; row++) {
@@ -118,6 +138,12 @@ for (let row = 0; row < FALLBACK_PIXEL_ROWS / 2; row++) {
 }
 
 const chunk = (value, size) => value.match(new RegExp(`.{1,${size}}`, "g")) ?? [];
+const payloadLines = payloads.flatMap((payload, frame) => [
+  `        // frame ${frame}`,
+  ...chunk(Buffer.from(payload, "latin1").toString("base64"), 100).map(
+    (part, index, all) => `        "${part}"${index === all.length - 1 ? (frame === payloads.length - 1 ? "" : ",") : " +"}`
+  )
+]);
 const lines = [
   "// <auto-generated />",
   "// Derived from codex-controls-claude/assets/deepseek-color.png by native/logo-tools/generate-logo.mjs.",
@@ -130,9 +156,16 @@ const lines = [
   `    internal const int LogicalHeight = ${LOGICAL_HEIGHT};`,
   `    internal const int Scale = ${SCALE};`,
   `    internal const int FallbackColumns = ${FALLBACK_COLUMNS};`,
-  "    internal static readonly string Payload =",
-  ...chunk(base64, 100).map((part, index, all) => `        "${part}"${index === all.length - 1 ? ";" : " +"}`),
-  "    // Five plain half-block rows for terminals without Sixel support.",
+  "    // One cached answer per gradient phase; the host cycles them locally.",
+  "    internal static readonly string[] Payloads =",
+  "    [",
+  ...payloadLines,
+  "    ];",
+  "    internal static readonly string[] LogicalRows =",
+  "    [",
+  ...logicalRows.map(row => `        "${row}",`),
+  "    ];",
+  "    // Six plain half-block rows for terminals without Sixel support.",
   "    internal static readonly string[] FallbackRows =",
   "    [",
   ...fallbackRows.map((row) => `        ${JSON.stringify(row)},`),
@@ -140,4 +173,12 @@ const lines = [
   "}"
 ];
 writeFileSync(outPath, lines.join("\n") + "\n");
-console.log(JSON.stringify({ logical: [LOGICAL_WIDTH, LOGICAL_HEIGHT], scale: SCALE, width, height, payloadBytes: payload.length, fallbackRows: fallbackRows.length }));
+console.log(JSON.stringify({
+  logical: [LOGICAL_WIDTH, LOGICAL_HEIGHT],
+  scale: SCALE,
+  width,
+  height,
+  frames: payloads.length,
+  payloadBytes: payloads.reduce((total, payload) => total + payload.length, 0),
+  fallbackRows: fallbackRows.length
+}));
