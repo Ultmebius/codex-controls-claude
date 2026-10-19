@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -28,6 +28,7 @@ internal static class Program
                     return 0;
                 case "--dashboard-demo": await DashboardDemo(args.Contains("--multi"), args.Contains("--hold")); return 0;
                 case "--dashboard-input-test": return await DashboardInputTest(args[1], args.Contains("--in-console"));
+                case "--dashboard-mouse-probe": return await MouseProbe(args[1]);
                 case "--demo": Demo(args.Contains("--plain")); if (args.Contains("--hold")) await Task.Delay(120000); return 0;
                 default: throw new ArgumentException("Unknown terminal operation");
             }
@@ -393,6 +394,55 @@ internal static class Program
         await dashboard.RunAsync(cancel.Token);
     }
 
+    // Supervisor-runnable physical-mouse fixture. It paints the ordinary demo seed and, after a
+    // finite lifetime, writes AGGREGATE ONLY diagnostics: how many real console mouse/key records the
+    // host delivered, the last reported cell, the modes actually in force, the painted size, and the
+    // cell where the fixture text is drawn. It never records prompt/log/key/clipboard content.
+    private static async Task<int> MouseProbe(string reportPath)
+    {
+        var report = Path.GetFullPath(reportPath);
+        if (File.Exists(report)) File.Delete(report);
+        using var dashboard = new SessionDashboard();
+        using var cancel = new CancellationTokenSource();
+        // The same fixed seed the parent's 1300x900 capture inspected, so the text sits where it did.
+        Seed(dashboard, "demo-session-06", null, DemoModel);
+        dashboard.StopRequested += cancel.Cancel;
+        using var timer = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        timer.Token.Register(cancel.Cancel);
+        var pump = dashboard.RunAsync(cancel.Token);
+        await Task.Delay(700);
+        // PaintedWidth/Height are what the pump actually drew with, so the probe's cell numbers are
+        // directly comparable with the parent's screen coordinates.
+        var width = SessionDashboard.NativeConsole.PaintedWidth;
+        var height = SessionDashboard.NativeConsole.PaintedHeight;
+        var hit = dashboard.FindText("Console handles", Math.Max(1, width), Math.Max(1, height));
+        await pump;
+        var activeInput = SessionDashboard.NativeConsole.ActiveInputMode;
+        var result = new
+        {
+            status = hit is null ? "failed" : "passed",
+            mouseRecords = SessionDashboard.NativeConsole.MouseRecords,
+            keyRecords = SessionDashboard.NativeConsole.KeyRecords,
+            lastMouseColumn = SessionDashboard.NativeConsole.LastMouseColumn,
+            lastMouseRow = SessionDashboard.NativeConsole.LastMouseRow,
+            lastMouseButtons = SessionDashboard.NativeConsole.LastMouseButtons,
+            lastMouseFlags = SessionDashboard.NativeConsole.LastMouseFlags,
+            inputMode = activeInput,
+            outputMode = SessionDashboard.NativeConsole.ActiveOutputMode,
+            mouseInputEnabled = (activeInput & 0x0010) != 0,   // ENABLE_MOUSE_INPUT
+            quickEditEnabled = (activeInput & 0x0040) != 0,   // ENABLE_QUICK_EDIT_MODE
+            interactive = SessionDashboard.NativeConsole.PaintedInteractive,
+            columns = width,
+            rows = height,
+            fixtureRow = hit?.Row ?? -1,
+            fixtureColumn = hit?.Column ?? -1,
+            hasSelection = dashboard.HasSelection
+        };
+        await File.WriteAllTextAsync(report, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }), Utf8);
+        Console.WriteLine(JsonSerializer.Serialize(new { status = result.status, report }));
+        return result.status == "passed" ? 0 : 1;
+    }
+
     // Host's display routing, factored out so the startup-order regression exercises the real path.
     // A conversation is a native session_id, never a task phase or another terminal's worker.
     private static string Route(SessionDashboard view, HashSet<string> displayIds, string displayId, string effort, string effortSource, string[] secrets, JsonElement message)
@@ -498,6 +548,9 @@ internal static class Program
         var errors = new List<string>();
         void Check(string name, bool passed) { (passed ? checks : errors).Add(name); }
         using var dashboard = new SessionDashboard();
+        // Preserve whatever the user had on the clipboard; it is restored on every exit path and is
+        // never printed or otherwise inspected.
+        var clipboardBefore = SessionDashboard.Clipboard.Read();
         var stop = 0;
         dashboard.StopRequested += () => Interlocked.Increment(ref stop);
         Seed(dashboard, "one", null, "deepseek-v4.1-flash[1m]");
@@ -546,6 +599,35 @@ internal static class Program
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(25));
         try
         {
+            // Reproduce the real cold start: a placeholder divider is painted before the native
+            // conversation exists, then a transparent SIXEL logo enters at the SAME viewport size.
+            // The image transition must clear the old divider, while animation must leave it intact.
+            using (var startup = new SessionDashboard())
+            {
+                var startupConsole = new SessionDashboard.NativeConsole();
+                try
+                {
+                    startupConsole.Enter();
+                    var startupWidth = Math.Max(24, Console.WindowWidth);
+                    var startupHeight = Math.Max(8, Console.WindowHeight);
+                    startupConsole.Draw(startup, startupWidth, startupHeight, true);
+                    Check("startup-placeholder-text-only", !SessionDashboard.NativeConsole.PaintedImage);
+                    var clearsBeforeImage = startupConsole.FullClearCount;
+                    Seed(startup, "startup-image", null, DemoModel);
+                    startupConsole.Draw(startup, startupWidth, startupHeight, false);
+                    var imageEntered = SessionDashboard.NativeConsole.PaintedImage;
+                    Check("startup-first-image-clears-placeholder", !imageEntered
+                        || startupConsole.FullClearCount == clearsBeforeImage + 1);
+                    var clearsWithImage = startupConsole.FullClearCount;
+                    startupConsole.Draw(startup, startupWidth, startupHeight, false, animate: true);
+                    Check("startup-animation-keeps-image", startupConsole.FullClearCount == clearsWithImage);
+                    startup.Remove("startup-image");
+                    startupConsole.Draw(startup, startupWidth, startupHeight, false);
+                    Check("startup-image-exit-clears", !imageEntered
+                        || startupConsole.FullClearCount == clearsWithImage + 1);
+                }
+                finally { startupConsole.Restore(); }
+            }
             var pump = dashboard.RunAsync(cancel.Token);
             await Task.Delay(700, CancellationToken.None);
             var handle = SessionDashboard.NativeConsole.InputHandle();
@@ -556,7 +638,15 @@ internal static class Program
             // Screen coordinates come from the pump's own geometry, exactly what the hit test re-lays out.
             var width = SessionDashboard.NativeConsole.PaintedWidth;
             var height = SessionDashboard.NativeConsole.PaintedHeight;
-            var chipRow = 5;                                  // selectors live in the pinned top header
+            // Selectors live in the pinned top header: on the permissions row when the layout can
+            // share it, otherwise on their own row right below.
+            static int SelectorRow(string[] rows)
+            {
+                var rule = Array.FindIndex(rows, row => row.TrimStart().StartsWith('─'));
+                return Array.FindIndex(rows[..(rule < 0 ? rows.Length : rule)],
+                    row => row.Contains('◈') || row.Contains("1 conversation"));
+            }
+            var chipRow = SelectorRow(dashboard.Frame(width, height));
             // A chip starts at its marker cell ('│' unselected, '█' selected); the "◈ 2" count prefix
             // is not a chip. Convert the UTF-16 offset to display cells for CJK-safe coordinates.
             var chipLine = dashboard.Frame(width, height)[chipRow];
@@ -565,7 +655,9 @@ internal static class Program
                 if (chipLine[index] is '│' or '█' && chipLine[index + 1] == ' ' && chipLine[(index + 2)..].StartsWith("2 ", StringComparison.Ordinal))
                     second = SessionDashboard.CellWidth(chipLine[..index]);
             Check("chip-row-found", second >= 0);
-            SessionDashboard.NativeConsole.InjectMouse(handle, second, chipRow);
+            // A complete press/release gesture: a lone press would leave the console's left-button
+            // latch held, and the next scrollbar press would then be read as a drag and swallowed.
+            SessionDashboard.NativeConsole.InjectLeftClick(handle, second, chipRow);
             await Task.Delay(400, CancellationToken.None);
             Check("mouse-select", dashboard.SelectedId == "two");
             Check("history-isolated", dashboard.LogText("one") != dashboard.LogText("two"));
@@ -585,7 +677,14 @@ internal static class Program
             }
             static int RuleRow(string[] rows) => Array.FindIndex(rows, row => row.TrimStart().StartsWith('─'));
             var logoBefore = Header(painted);
-            Check("header-compact", logoBefore.Length == 6);
+            // The compact content band uses the observed terminal cell size.
+            Check("header-compact", logoBefore.Length == SixelLogo.RowSpan);
+            // Compact layout: the band starts on the header's first row, so the logo and metadata
+            // share row 0 and there is no manufactured blank margin above them.
+            Check("header-compact-band", logoBefore.Length > 0 && logoBefore[0].Trim().Length > 0);
+            Check("header-band-shared", logoBefore.Any(row => row.Contains("MODEL"))
+                && logoBefore[0].Contains("TIME")
+                && (logoBefore[0].Contains("●") || logoBefore[0].Contains("○")));
             Check("header-logo-painted", SessionDashboard.NativeConsole.PaintedImage
                 ? SessionDashboard.NativeConsole.ImagePaintCount > 0
                 : logoBefore.Any(row => row.IndexOfAny(['█', '▀', '▄']) >= 0));
@@ -598,8 +697,23 @@ internal static class Program
             Check("header-no-dot-logo", headerText.All(ch => ch is < '\u2800' or > '\u28FF'));
             // Top header carries the real conversation count / selectors; there is no bottom bar.
             Check("header-conversations", painted[chipRow].Contains(" 1 ") && painted[chipRow].Contains(" 2 "));
+            // Wide layout: the conversation count is pinned to the RIGHT of the Permissions entry.
+            // A narrow window keeps the selectors on the row directly below instead.
+            var permissionsRow = Array.FindIndex(painted, row => row.Contains("Permissions"));
+            var countAt = painted[chipRow].IndexOf('◈');
+            Check("conversation-selector-placement", permissionsRow >= 0 && countAt >= 0
+                && (chipRow == permissionsRow
+                    ? painted[chipRow].IndexOf("Permissions", StringComparison.Ordinal) < countAt
+                    : chipRow == permissionsRow + 1));
+            // A metadata repaint (the 1s clock tick) must not emit an erase over the logo's columns.
+            // Only image-mode header writes are tail writes; with the half-block fallback the logo
+            // lives in those same cells as text, so it is rewritten whole.
+            Check("logo-cells-never-erased", !SessionDashboard.NativeConsole.PaintedImage
+                || SessionDashboard.NativeConsole.LastRowUpdates
+                    .Where(update => update.Row >= dashboard.ImageRow - 1 && update.Row < dashboard.ImageRow - 1 + SixelLogo.RowSpan)
+                    .All(update => !update.Erased && update.Column > SixelLogo.ColumnSpan));
             Check("no-bottom-bar", !painted.Any(row => row.Contains("Ctrl+C close") || row.Contains("PgUp/PgDn history"))
-                && Header(painted).Length == 6);
+                && Header(painted).Length == SixelLogo.RowSpan);
             Check("header-title-painted", painted.Any(row => row.Contains("独立会话")));
             Check("header-time-painted", painted.Any(row => System.Text.RegularExpressions.Regex.IsMatch(row, @"TIME\s+\d\d:\d\d:\d\d")));
             SessionDashboard.NativeConsole.InjectKey(handle, 0x21, '\0');   // PageUp through populated history
@@ -661,12 +775,148 @@ internal static class Program
             var rowsAfter = SessionDashboard.NativeConsole.PaintedRows;
             Check("timer-repaint", SessionDashboard.NativeConsole.PaintedRevision > revisionBefore
                 && rowsAfter.Length > 0 && !rowsBefore.SequenceEqual(rowsAfter));
-            Check("timer-row-written", rowsBefore[0] != rowsAfter[0]);
-            Check("status-time-top-right", System.Text.RegularExpressions.Regex.IsMatch(Plain(rowsAfter[0]), @"TIME\s+\d\d:\d\d:\d\d\s*$"));
+            Check("timer-row-written", rowsBefore[0] != rowsAfter[0] || rowsBefore[1] != rowsAfter[1]);
+            Check("status-time-top-right", System.Text.RegularExpressions.Regex.IsMatch(Plain(rowsAfter[0]), @"TIME\s+\d\d:\d\d:\d\d\s*$")
+                || System.Text.RegularExpressions.Regex.IsMatch(Plain(rowsAfter[1]), @"TIME\s+\d\d:\d\d:\d\d\s*$"));
             Check("no-thinking-or-filler", rowsAfter.Select(Plain).All(row => !row.Contains("THINKING") && !row.Contains("tool result received")));
             // The gradient is local animation: cached payload phases are swapped, never encoded.
             if (SessionDashboard.NativeConsole.PaintedImage)
                 Check("animation-frames-painted", SessionDashboard.NativeConsole.PaintedImageFrames.Distinct().Count() > 1);
+
+            // ------------------------------------------------ scrollbar, middle browse and selection
+            // The painted body carries a track in its last column; clicking it pages the real view.
+            var barRule = RuleRow(SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray());
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x23, '\0');    // End: newest row
+            await Task.Delay(250, CancellationToken.None);
+            var barLatest = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            // An overflowing log has a gray half-block thumb in the rightmost content cell; every
+            // other body row ends in a plain space, so no track line is painted.
+            Check("scrollbar-drawn", barRule >= 0
+                && BodyRows(barLatest, barRule).All(row => row.Length > 0 && row[^1] is '▐' or ' ')
+                && BodyRows(barLatest, barRule).Any(row => row[^1] == '▐'));
+            var barX = width - 1;
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, barRule + 1, 0x0001);   // press near top
+            await Task.Delay(300, CancellationToken.None);
+            var barTop = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            Check("scrollbar-pages", !BodyRows(barLatest, barRule).SequenceEqual(BodyRows(barTop, RuleRow(barTop))));
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, barRule + 1, 0);        // release
+            await Task.Delay(200, CancellationToken.None);
+            // Middle click toggles free browsing; a plain movement record then scrolls vertically and
+            // the next middle click stops it. The view starts at the NEWEST row (End above), so the
+            // pointer must move UP from the anchor to reveal older content: moving down would scroll
+            // past the end and be clamped, which is a no-op rather than a broken gesture.
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x23, (char)0);                  // End: newest
+            await Task.Delay(250, CancellationToken.None);
+            var browseAnchor = barRule + 6;
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, browseAnchor, 0x0004);  // middle press
+            await Task.Delay(150, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, browseAnchor, 0);       // release
+            await Task.Delay(150, CancellationToken.None);
+            var browseStart = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            SessionDashboard.NativeConsole.InjectMove(handle, barX, barRule + 2);             // pointer up
+            await Task.Delay(300, CancellationToken.None);
+            var browseMoved = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            Check("middle-browse-scrolls", !BodyRows(browseStart, RuleRow(browseStart)).SequenceEqual(BodyRows(browseMoved, RuleRow(browseMoved))));
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, browseAnchor, 0x0004);  // middle: stop
+            await Task.Delay(150, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, browseAnchor, 0);
+            await Task.Delay(150, CancellationToken.None);
+            var browseStopped = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            SessionDashboard.NativeConsole.InjectMove(handle, barX, barRule + 12);
+            await Task.Delay(300, CancellationToken.None);
+            var browseIdle = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            Check("middle-browse-stops", BodyRows(browseStopped, RuleRow(browseStopped))
+                .SequenceEqual(BodyRows(browseIdle, RuleRow(browseIdle))));
+
+            // Drag selection over real painted body text, then ONE right click copies the exact text.
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x23, '\0');
+            await Task.Delay(250, CancellationToken.None);
+            var selectRows = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            var selectRule = RuleRow(selectRows);
+            // The newest painted row may be any History line; find whichever text row is visible.
+            // The painted row is padded with spaces, so the label is read up to the first non-text cell.
+            var textRow = -1;
+            var textLabel = "";
+            for (var row = selectRule + 1; row < selectRows.Length; row++)
+            {
+                var at = selectRows[row].IndexOf("History line ", StringComparison.Ordinal);
+                if (at < 0) continue;
+                textRow = row;
+                textLabel = selectRows[row][at..].TrimEnd();
+                break;
+            }
+            Check("selection-row-found", textRow > selectRule && textLabel.Length > 0);
+            var textAt = textRow > 0 ? selectRows[textRow].IndexOf(textLabel, StringComparison.Ordinal) : -1;
+            var textColumn = SessionDashboard.CellWidth(selectRows[textRow][..textAt]);
+            SessionDashboard.NativeConsole.InjectButton(handle, textColumn, textRow, 0x0001);                    // press
+            await Task.Delay(120, CancellationToken.None);
+            // A drag record is MOUSE_MOVED with the left button still held, exactly as Windows sends it.
+            SessionDashboard.NativeConsole.InjectButton(handle, textColumn + 10, textRow, 0x0001, moved: true);
+            await Task.Delay(250, CancellationToken.None);
+            var highlighted = SessionDashboard.NativeConsole.PaintedRows;
+            // The highlight is a real SGR background band, not just the text that was already there.
+            static bool SelectedBand(string row, string text)
+            {
+                var at = row.IndexOf(text, StringComparison.Ordinal);
+                if (at < 0) return false;
+                var before = row.LastIndexOf((char)27 + "[", at, StringComparison.Ordinal);
+                return before >= 0 && row[before..at].Contains(";48;2;", StringComparison.Ordinal);
+            }
+            Check("selection-highlight-painted", highlighted.Length > textRow
+                && SelectedBand(highlighted[textRow], "History li"));
+            SessionDashboard.NativeConsole.InjectButton(handle, textColumn + 10, textRow, 0);                    // release
+            await Task.Delay(150, CancellationToken.None);
+            var expected = dashboard.SelectedText();
+            Check("selection-text-exact", expected.Contains("History li") && !expected.Contains('│')
+                && !expected.Contains('\u001b'));
+            SessionDashboard.NativeConsole.InjectClick(handle, width / 2, textRow, 0x0002);                      // right click
+            await Task.Delay(300, CancellationToken.None);
+            Check("right-click-copies", SessionDashboard.Clipboard.Read() == expected);
+            // A right click with nothing selected must not replace the clipboard. A COMPLETE click is
+            // injected, so the second one really is a fresh press rather than a latched movement.
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x1B, '\u001b');                                   // Escape drops selection
+            await Task.Delay(200, CancellationToken.None);
+            Check("escape-clears-selection-only", dashboard.HasSelection == false && Volatile.Read(ref stop) == 0);
+            SessionDashboard.NativeConsole.InjectClick(handle, width / 2, textRow, 0x0002);
+            await Task.Delay(200, CancellationToken.None);
+            Check("empty-right-click-keeps-clipboard", SessionDashboard.Clipboard.Read() == expected);
+
+            // Regression: a scrollbar drag, then a TEXT drag, then a right click. Release must end the
+            // thumb drag, or the text drag would be swallowed and the copy would be empty.
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, barRule + 2, 0x0001);        // thumb/track press
+            await Task.Delay(120, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, barRule + 4, 0x0001, moved: true);
+            await Task.Delay(120, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, barX, barRule + 4, 0);              // release
+            await Task.Delay(200, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x23, (char)0);                          // End: latest rows
+            await Task.Delay(250, CancellationToken.None);
+            var afterBar = SessionDashboard.NativeConsole.PaintedRows.Select(Plain).ToArray();
+            var afterBarRule = RuleRow(afterBar);
+            var secondRow = -1;
+            var secondLabel = "";
+            for (var row = afterBarRule + 1; row < afterBar.Length; row++)
+            {
+                var at = afterBar[row].IndexOf("History line ", StringComparison.Ordinal);
+                if (at < 0) continue;
+                secondRow = row;
+                secondLabel = afterBar[row][at..].TrimEnd();
+                break;
+            }
+            var secondAt = secondRow > 0 ? afterBar[secondRow].IndexOf(secondLabel, StringComparison.Ordinal) : -1;
+            var secondColumn = secondAt > 0 ? SessionDashboard.CellWidth(afterBar[secondRow][..secondAt]) : 0;
+            Check("text-drag-after-scrollbar", secondRow > afterBarRule);
+            SessionDashboard.NativeConsole.InjectButton(handle, secondColumn, secondRow, 0x0001);
+            await Task.Delay(100, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, secondColumn + 10, secondRow, 0x0001, moved: true);
+            await Task.Delay(200, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, secondColumn + 10, secondRow, 0);
+            await Task.Delay(150, CancellationToken.None);
+            var secondText = dashboard.SelectedText();
+            Check("text-drag-after-scrollbar-text", secondLabel.Length > 0 && secondText.Contains("History li"));
+            SessionDashboard.NativeConsole.InjectClick(handle, width / 2, secondRow, 0x0002);
+            await Task.Delay(250, CancellationToken.None);
+            Check("copy-after-scrollbar-drag", secondText.Length > 0 && SessionDashboard.Clipboard.Read() == secondText);
 
             SessionDashboard.NativeConsole.InjectKey(handle, 0x09, '\t');
             await Task.Delay(400, CancellationToken.None);
@@ -689,6 +939,7 @@ internal static class Program
             {
                 Check("outer-modes-restored", RestoreCapturedModes());
             }
+            if (clipboardBefore is { Length: > 0 }) SessionDashboard.Clipboard.Write(clipboardBefore);
         }
         var report = new { status = errors.Count == 0 ? "passed" : "failed", checks, errors,
             graphics = new { enabled = SixelLogo.ImageCapable, cellWidth = SixelLogo.CellSize.Width,

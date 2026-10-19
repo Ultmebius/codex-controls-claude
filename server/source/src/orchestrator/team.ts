@@ -11,12 +11,8 @@ import {
 import path from "node:path";
 import { defaultWaitMs, inside } from "./runtime.js";
 import { budgetSummary } from "./execution.js";
-import {
-  claimFile,
-  acquireJsonLease,
-  releaseJsonLease,
-  processAlive as alive,
-} from "./ownership.js";
+import { claimFile, processAlive as alive } from "./ownership.js";
+import { MAX_WAIT_MS } from "./worker-slots.js";
 import type { Orchestrator, Run, TaskSpec } from "./controller.js";
 import {
   DEFAULT_SEGMENT_TURNS,
@@ -148,6 +144,9 @@ export class TeamCoordinator {
       (task) => task.starting || this.controllers.get(task.childRunId)?.hasActiveExecutions()
     );
   }
+  reviewActive() {
+    return this.ownedTasks().some((task) => this.controllers.get(task.childRunId)?.reviewActive());
+  }
 
   constructor(
     readonly dataDir: string,
@@ -262,8 +261,7 @@ export class TeamCoordinator {
         return this.summary(this.get(teamId));
       if (!team.ownerReleased && alive(team.ownerPid)) fail("OWNER_STILL_ACTIVE");
       if (this.hasActiveExecutions()) fail("EXECUTOR_BUSY");
-      this.acquireExecutor();
-      try {
+      {
         const orphaned = team.budget.reserved;
         team.ownerPid = process.pid;
         team.ownerId = this.ownerId;
@@ -293,8 +291,6 @@ export class TeamCoordinator {
           false
         );
         return this.summary(team);
-      } finally {
-        this.releaseExecutor();
       }
     } finally {
       releaseClaim();
@@ -343,7 +339,6 @@ export class TeamCoordinator {
           task
         );
         this.warnBudget(team, task);
-        this.releaseExecutor();
       })
     );
   }
@@ -416,7 +411,6 @@ export class TeamCoordinator {
       if (!task.contract.artifacts.length || !task.contract.checks.length)
         fail("TASK_REQUIRES_ARTIFACTS_AND_CHECKS");
     }
-    this.acquireExecutor();
     const subscriptionStart = this.subscriptions.length;
     try {
       for (const task of prepared) {
@@ -490,27 +484,7 @@ export class TeamCoordinator {
       .filter((task) => this.controllers.has(task.childRunId));
   }
   hasOccupied() {
-    const file = path.join(this.dataDir, "team-owner.lock");
-    if (existsSync(file)) {
-      const owner = JSON.parse(readFileSync(file, "utf8")) as { pid: number; id: string };
-      if (owner.id !== this.ownerId && alive(owner.pid)) return true;
-    }
     return this.ownedTasks().some((task) => this.occupied(task));
-  }
-  private acquireExecutor() {
-    const file = path.join(this.dataDir, "team-owner.lock");
-    acquireJsonLease(
-      file,
-      "id",
-      { pid: process.pid, id: this.ownerId },
-      "TEAM_EXECUTOR_BUSY",
-      true
-    );
-  }
-  private releaseExecutor() {
-    if (this.pending.size || this.starts.size || this.hasActiveExecutions()) return;
-    const file = path.join(this.dataDir, "team-owner.lock");
-    if (existsSync(file)) releaseJsonLease(file, "id", { pid: process.pid, id: this.ownerId });
   }
   canReview(childRunId: string): void {
     const own = this.ownedTasks().find((task) => task.childRunId === childRunId);
@@ -570,10 +544,7 @@ export class TeamCoordinator {
       )
     )
       fail("WRITE_SCOPE_CONFLICT");
-    if (
-      team.tasks.filter((candidate) => this.active(candidate)).length >= team.maxWorkers ||
-      all.filter((candidate) => this.active(candidate)).length >= 3
-    )
+    if (team.tasks.filter((candidate) => this.active(candidate)).length >= team.maxWorkers)
       fail("TEAM_WORKER_LIMIT");
     const requested = options.maxTurns ?? team.maxTurns;
     if (!Number.isSafeInteger(requested) || requested < 1 || requested > 1000)
@@ -583,8 +554,7 @@ export class TeamCoordinator {
     const run = this.run(task),
       controller = this.controllers.get(task.childRunId)!;
     const attemptsBefore = run.tasks[0].attempts;
-    this.acquireExecutor();
-    // Hold capacity and budget before the first await; concurrent dispatch cannot reuse them.
+    // Hold budget before the first await; the shared slot is acquired by the child dispatch.
     task.starting = true;
     task.reservation = {
       held: reserveGrant(team.budget, grant),
@@ -601,16 +571,15 @@ export class TeamCoordinator {
     this.warnBudget(team, task);
     const execution = (async () => {
       try {
-        for (const candidates of [team.tasks, all]) {
-          const limit = candidates === team.tasks ? team.maxWorkers : 3;
-          while (candidates.filter((candidate) => this.occupied(candidate)).length > limit) {
-            const idle = candidates.find(
-              (candidate) =>
-                candidate !== task && !this.active(candidate) && this.occupied(candidate)
-            );
-            if (!idle) fail("TEAM_WORKER_LIMIT");
-            await this.controllers.get(idle.childRunId)!.session(idle.childRunId, "close");
-          }
+        // Retained transcripts are not capacity; only this team's own maxWorkers is enforced here.
+        while (
+          team.tasks.filter((candidate) => this.occupied(candidate)).length > team.maxWorkers
+        ) {
+          const idle = team.tasks.find(
+            (candidate) => candidate !== task && !this.active(candidate) && this.occupied(candidate)
+          );
+          if (!idle) fail("TEAM_WORKER_LIMIT");
+          await this.controllers.get(idle.childRunId)!.session(idle.childRunId, "close");
         }
         if (!startup.valid || this.closed) fail("TEAM_DISPATCH_INTERRUPTED");
         receipt.receipt = await controller.dispatch(task.childRunId, taskId, requestId, signal, {
@@ -642,7 +611,6 @@ export class TeamCoordinator {
         }
         this.pending.delete(key);
         this.save(team);
-        this.releaseExecutor();
       }
     })();
     this.pending.set(key, execution);
@@ -717,7 +685,7 @@ export class TeamCoordinator {
         this.interrupt(teamId, "Host cancelled team wait");
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(600000, Math.max(1, timeoutMs)));
+      const timer = setTimeout(() => finish(true), Math.min(MAX_WAIT_MS, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -868,11 +836,6 @@ export class TeamCoordinator {
           errors++;
         }
       }
-    try {
-      this.releaseExecutor();
-    } catch {
-      errors++;
-    }
     for (const listener of [...this.listeners])
       for (const team of this.teams.values()) listener(team.id);
     this.listeners.clear();

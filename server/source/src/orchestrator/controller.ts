@@ -14,12 +14,18 @@ import type { Worker, WorkerEvent, ContextInfo } from "./worker.js";
 import { inside, executeCheck, defaultWaitMs, checkTimeoutMs } from "./runtime.js";
 import { workspaceSnapshot, changedSince, type WorkspaceSnapshot } from "./changes.js";
 import { settleExecution, budgetSummary, type ExecutionAccount } from "./execution.js";
+import { claimFile, processAlive as alive } from "./ownership.js";
 import {
-  claimFile,
-  acquireJsonLease,
-  releaseJsonLease,
-  processAlive as alive,
-} from "./ownership.js";
+  acquireWorkerSlot,
+  releaseWorkerSlot,
+  acquireWorkspaceReview,
+  releaseWorkspaceReview,
+  withAdmissionGuard,
+  activeExecutionInWorkspace,
+  workspaceReviewActive,
+  MAX_WAIT_MS,
+  type WorkerSlot,
+} from "./worker-slots.js";
 import { compactCapabilities, type WorkerCapabilities } from "./capabilities.js";
 import {
   DEFAULT_SEGMENT_TURNS,
@@ -170,6 +176,8 @@ function fail(message: string): never {
 }
 export class Orchestrator {
   private runs = new Map<string, Run>();
+  /** Execution-capacity records are memory-only so ledger reads never expose tokens. */
+  private slots = new Map<string, WorkerSlot>();
   private listeners = new Set<(runId: string) => void>();
   private seen = new Map<string, { epoch: number; id: number }>();
   private startups = new Map<string, { valid: boolean }>();
@@ -202,7 +210,9 @@ export class Orchestrator {
 
   constructor(
     readonly dataDir: string,
-    readonly worker: Worker
+    readonly worker: Worker,
+    /** Ledger root shared by ordinary runs and team child directories. */
+    readonly poolRoot = dataDir
   ) {
     mkdirSync(dataDir, { recursive: true });
     for (const file of readdirSync(dataDir).filter((f) => /^run-[\w-]+\.json$/.test(f))) {
@@ -1201,26 +1211,26 @@ export class Orchestrator {
   private acquire(run: Run) {
     // Stopped startup promises must drain before a shared worker can be reused.
     if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
-    const lock = path.join(this.dataDir, "executor.lock");
-    acquireJsonLease(
-      lock,
-      "token",
-      { pid: process.pid, runId: run.id, token: `${this.ownerId}:${run.id}` },
-      "EXECUTOR_BUSY"
-    );
+    if (this.slots.has(run.id)) return;
+    // Slot registration and overlapping-review admission share one OS-guarded section, so a
+    // started execution and a review cannot both win; disjoint workspaces stay independent.
+    withAdmissionGuard(this.poolRoot, () => {
+      if (workspaceReviewActive(this.poolRoot, run.cwd)) fail("WORKSPACE_REVIEW_IN_PROGRESS");
+      this.slots.set(run.id, acquireWorkerSlot(this.poolRoot, run.cwd, run.id));
+    });
+  }
+  private dropSlot(runId: string) {
+    const slot = this.slots.get(runId);
+    if (!slot) return;
+    this.slots.delete(runId);
+    releaseWorkerSlot(this.poolRoot, slot);
   }
   private release(run: Run) {
     const timer = this.timers.get(run.id);
     if (timer) clearTimeout(timer);
     this.timers.delete(run.id);
     if (this.startups.has(run.id)) return;
-    const lock = path.join(this.dataDir, "executor.lock");
-    if (existsSync(lock))
-      releaseJsonLease(lock, "token", {
-        pid: process.pid,
-        runId: run.id,
-        token: `${this.ownerId}:${run.id}`,
-      });
+    this.dropSlot(run.id);
   }
 
   async dispatch(
@@ -1712,7 +1722,8 @@ export class Orchestrator {
         }
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(600000, Math.max(1, timeoutMs)));
+      // One pending listener: completion, questions, permissions, errors and abort resolve it.
+      const timer = setTimeout(() => finish(true), Math.min(MAX_WAIT_MS, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -1809,7 +1820,6 @@ export class Orchestrator {
     )
       fail("TASK_NOT_RECONCILABLE");
     if (!this.dependenciesAccepted(run, task)) fail("DEPENDENCY_NOT_ACCEPTED");
-    this.acquire(run);
     try {
       if (run.sessionId && this.worker.model(run.sessionId)) this.worker.stop(run.sessionId);
       run.sessionState = "closed";
@@ -1867,7 +1877,13 @@ export class Orchestrator {
     if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
     if (this.reviewing.has(run.id) || this.interruptions.has(run.id) || run.activeTaskId)
       fail("EXECUTOR_BUSY");
-    this.acquire(run);
+    if (this.startups.size) fail("EXECUTOR_STARTUP_DRAINING");
+    // Brief, workspace-scoped admission: other projects keep executing. The shared guard makes
+    // the live-slot check and review registration atomic in both overlap directions.
+    const admission = acquireWorkspaceReview(this.poolRoot, run.cwd, () => {
+      if (activeExecutionInWorkspace(this.poolRoot, run.cwd))
+        fail("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
+    });
     this.reviewing.add(run.id);
     const abort = new AbortController();
     const hostCancel = () => {
@@ -1918,44 +1934,45 @@ export class Orchestrator {
         fail("REVIEW_INTERRUPTED");
       }
       this.open(run);
+      // Admission and `reviewing` stay held through the post-check hash, inventory and state
+      // persistence, so no overlapping dispatch can mutate the workspace after the final check.
+      if (this.hash(run, task) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
+      if (this.inventory(run, task).undeclaredChanges.length) {
+        this.save(run);
+        fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
+      }
+      const accepted =
+        input.decision === "accept" && checks.every((c) => c.exitCode === 0 && !c.error);
+      task.reviews.push({
+        at: new Date().toISOString(),
+        decision: accepted ? "accepted" : "rejected",
+        artifactHash: input.artifactHash,
+        taskRevision: task.revision,
+        evidence: input.evidence,
+        checks,
+      });
+      task.state = accepted ? "accepted" : "needs_revision";
+      task.feedback = accepted
+        ? undefined
+        : `${input.evidence}\nChecks: ${JSON.stringify(checks.map((c) => ({ exitCode: c.exitCode, stderr: c.stderr?.slice(0, 800) })))}`;
+      this.emit(
+        run,
+        accepted ? "task_accepted" : "task_rejected",
+        { checks, evidence: input.evidence, artifactHash: input.artifactHash },
+        task.id
+      );
+      return {
+        taskId: task.id,
+        state: task.state,
+        checks,
+        remainingRepairs: Math.max(0, run.maxRepairs - task.repairs),
+      };
     } finally {
       clearTimeout(deadline);
       signal?.removeEventListener("abort", hostCancel);
       this.reviewing.delete(run.id);
-      this.release(run);
+      releaseWorkspaceReview(admission);
     }
-    // Checks must not alter reviewed outputs while generating evidence.
-    if (this.hash(run, task) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
-    if (this.inventory(run, task).undeclaredChanges.length) {
-      this.save(run);
-      fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
-    }
-    const accepted =
-      input.decision === "accept" && checks.every((c) => c.exitCode === 0 && !c.error);
-    task.reviews.push({
-      at: new Date().toISOString(),
-      decision: accepted ? "accepted" : "rejected",
-      artifactHash: input.artifactHash,
-      taskRevision: task.revision,
-      evidence: input.evidence,
-      checks,
-    });
-    task.state = accepted ? "accepted" : "needs_revision";
-    task.feedback = accepted
-      ? undefined
-      : `${input.evidence}\nChecks: ${JSON.stringify(checks.map((c) => ({ exitCode: c.exitCode, stderr: c.stderr?.slice(0, 800) })))}`;
-    this.emit(
-      run,
-      accepted ? "task_accepted" : "task_rejected",
-      { checks, evidence: input.evidence, artifactHash: input.artifactHash },
-      task.id
-    );
-    return {
-      taskId: task.id,
-      state: task.state,
-      checks,
-      remainingRepairs: Math.max(0, run.maxRepairs - task.repairs),
-    };
   }
 
   respond(runId: string, requestId: string, decision: "allow" | "deny") {
@@ -1985,6 +2002,9 @@ export class Orchestrator {
         (run) => this.owns(run) && (run.activeTaskId || run.sessionOperation)
       )
     );
+  }
+  reviewActive() {
+    return this.reviewing.size > 0;
   }
 
   cancel(runId: string, reason = "Supervisor cancelled") {
@@ -2031,6 +2051,7 @@ export class Orchestrator {
         run.sessionOperation = undefined;
         run.sessionState = "closed";
         run.ownerReleased = true;
+        this.dropSlot(run.id);
         try {
           this.save(run);
         } catch {

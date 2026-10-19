@@ -10,9 +10,9 @@ import { localConfig, ownedProcessCount } from "./runtime.js";
 import { terminalInfo } from "./terminal.js";
 import { compactCapabilities, type WorkerCapabilities } from "./capabilities.js";
 import { EVIDENCE_SECTIONS, selectTaskEvidence } from "./evidence.js";
-import { existsSync, readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import { acquireJsonLease, releaseJsonLease, nativeHelperFile } from "./ownership.js";
+import { existsSync } from "node:fs";
+import { nativeHelperFile } from "./ownership.js";
+import { workerSlotStatus, activeExecutionInWorkspace, MAX_WAIT_MS } from "./worker-slots.js";
 import { budgetSummary } from "./execution.js";
 import {
   defaultWaitMs,
@@ -23,7 +23,7 @@ import {
 } from "./runtime.js";
 declare const __PLUGIN_VERSION__: string;
 
-export async function doctor() {
+export async function doctor(poolRoot = defaultDataDir()) {
   const config = localConfig();
   let gatewayStatus: number | null = null;
   let modelListed: boolean | null = null;
@@ -95,6 +95,8 @@ export async function doctor() {
     modelListed,
     actualInferenceVerified: false,
     ownedProcesses: ownedProcessCount(),
+    // Sanitized capacity only: slot pid/workspace/run, never tokens or prompts.
+    workerSlots: workerSlotStatus(poolRoot),
     executionWindow: process.platform === "win32" ? "Windows Terminal (starts minimized)" : "stdio",
     terminals: terminalInfo(),
     communication: "SDK stream -> event waiter -> current Codex tool result",
@@ -131,6 +133,14 @@ const task = z.object({
   artifacts: z.array(z.string().min(1)).min(1).max(100),
   checks: z.array(check).min(1).max(20),
 });
+
+function defaultDataDir() {
+  return (
+    process.env.PLUGIN_DATA ??
+    process.env.CCC_DATA_DIR ??
+    path.join(os.homedir(), ".local", "share", "codex-controls-claude")
+  );
+}
 
 function taskSummary(run: import("./controller.js").Run, task: import("./controller.js").Task) {
   const executable =
@@ -176,63 +186,27 @@ function taskSummary(run: import("./controller.js").Run, task: import("./control
 }
 
 export function createOrchestratorServer(
-  dataDir = process.env.PLUGIN_DATA ??
-    process.env.CCC_DATA_DIR ??
-    path.join(os.homedir(), ".local", "share", "codex-controls-claude"),
+  dataDir = defaultDataDir(),
   makeWorker: () => Worker = () => new ClaudeWorker()
 ) {
-  const controller = new Orchestrator(dataDir, makeWorker());
+  const controller = new Orchestrator(dataDir, makeWorker(), dataDir);
   const teams = new TeamCoordinator(
     path.join(dataDir, "teams"),
-    (directory) => new Orchestrator(directory, makeWorker())
+    (directory) => new Orchestrator(directory, makeWorker(), dataDir)
   );
   const route = (runId?: string) => (runId && teams.controllerFor(runId)) || controller;
-  let reviewInProgress = false;
+  // Checks are admitted in the controller by a short, workspace-scoped lock; only live
+  // executions in the same workspace (or an in-flight acceptance review) must be quiescent.
+  // Live worker slots are authoritative across processes; a run snapshot loaded at startup
+  // from another connection may still carry activeTaskId after that execution finished.
   const checkWorkspaceQuiescent = (runId: string) => {
     const run = route(runId).status(runId) as import("./controller.js").Run;
     if (teams.controllerFor(runId)) teams.canReview(runId);
     teams.canReviewWorkspace(run.cwd);
-    for (const other of controller.status() as import("./controller.js").Run[])
-      if (other.activeTaskId || other.sessionOperation)
-        throw new Error("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
+    if (activeExecutionInWorkspace(controller.poolRoot, run.cwd))
+      throw new Error("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
   };
-  const leasePath = path.join(dataDir, "supervisor.lock");
-  const connectionId = randomUUID();
-  let leaseOwned = false;
-  const acquireLease = () => {
-    if (
-      leaseOwned &&
-      existsSync(leasePath) &&
-      JSON.parse(readFileSync(leasePath, "utf8")).connectionId === connectionId
-    )
-      return;
-    leaseOwned = false;
-    acquireJsonLease(
-      leasePath,
-      "connectionId",
-      { pid: process.pid, connectionId },
-      "EXECUTION_OWNED_BY_ANOTHER_CONNECTION",
-      true
-    );
-    leaseOwned = true;
-  };
-  const releaseIdleLease = () => {
-    if (
-      !leaseOwned ||
-      reviewInProgress ||
-      teams.hasActiveExecutions() ||
-      controller.hasActiveExecutions()
-    )
-      return;
-    if (
-      existsSync(leasePath) &&
-      JSON.parse(readFileSync(leasePath, "utf8")).connectionId === connectionId
-    )
-      releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
-    leaseOwned = false;
-  };
-  controller.subscribeEvents(() => releaseIdleLease());
-  teams.subscribeActivity(releaseIdleLease);
+  const reviewInProgress = () => controller.reviewActive() || teams.reviewActive();
   const server = new McpServer(
     {
       name: "codex-controls-claude",
@@ -265,8 +239,6 @@ export function createOrchestratorServer(
         }),
         isError: true,
       };
-    } finally {
-      releaseIdleLease();
     }
   };
   server.registerTool(
@@ -354,12 +326,10 @@ export function createOrchestratorServer(
       guard(async () => {
         const { action, sessionAction, taskRevision, evidence, ...rest } = input;
         if (action === "attach") {
-          acquireLease();
           if (input.runId && teams.controllerFor(input.runId)) throw new Error("USE_TEAM_ATTACH");
           return controller.attach(input.runId ?? "");
         }
         if (action === "include_artifacts") {
-          acquireLease();
           checkWorkspaceQuiescent(input.runId ?? "");
           return route(input.runId).includeArtifacts(
             input.runId ?? "",
@@ -376,8 +346,7 @@ export function createOrchestratorServer(
         if (action === "reconcile") {
           if (!input.runId || !input.taskId || !taskRevision || !evidence)
             throw new Error("reconcile requires runId/taskId/taskRevision/evidence");
-          if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-          acquireLease();
+          if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
           checkWorkspaceQuiescent(input.runId);
           const candidate = route(input.runId).reconcile({
             runId: input.runId,
@@ -418,9 +387,7 @@ export function createOrchestratorServer(
               "TEAM_COMPACTION_NOT_SUPPORTED: use sessionAction=new to preserve checkpoint and shared budget"
             );
           if (sessionAction === "compact") {
-            if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-            if (teams.hasOccupied()) throw new Error("TEAM_EXECUTORS_OCCUPIED");
-            acquireLease();
+            if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
           }
           return await route(input.runId).session(input.runId ?? "", sessionAction ?? "retain");
         }
@@ -480,10 +447,7 @@ export function createOrchestratorServer(
     (input, extra) =>
       guard(() => {
         if (teams.controllerFor(input.runId)) throw new Error("USE_TEAM_DISPATCH");
-        if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-        if (teams.hasOccupied())
-          throw new Error("TEAM_EXECUTORS_OCCUPIED: continue through the team coordinator");
-        acquireLease();
+        if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         return controller.dispatch(input.runId, input.taskId, input.requestId, extra.signal, {
           mode: input.mode,
           maxTurns: input.maxTurns,
@@ -495,7 +459,7 @@ export function createOrchestratorServer(
     "orchestrator_wait",
     {
       description:
-        "Event-driven blocking wait, NOT status polling. Use previous nextCursor and the actual loaded host timeout; default is CCC_WAIT_MS or45s. A compatibility file does not prove five-minute host support. Mechanically renew empty replies in a bounded same-connection code-mode chain. Only questions, native residual permissions, failures, budget risk and candidates wake it; ordinary milestones stay in audit. Empty timeout renews wait without status/log reads or replanning. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
+        "Event-driven blocking wait, NOT status polling. Use previous nextCursor. One pending wait for up to20min (Default CCC_WAIT_MS or1200000ms): completion, questions, native residual permissions, failures, cancellation and budget risk wake it immediately; ordinary milestones stay in audit. No internal polling. If your host enforces a shorter tool timeout, pass a shorter timeoutMs rather than assuming this default fits. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
       inputSchema: {
         runId: id,
         afterSeq: z.number().int().min(0),
@@ -503,9 +467,9 @@ export function createOrchestratorServer(
           .number()
           .int()
           .min(1)
-          .max(600000)
+          .max(MAX_WAIT_MS)
           .describe(
-            "Bounded event wait; Default CCC_WAIT_MS or45s, maximum600s. Longer than45s requires host tool_timeout_sec above this duration. Timeout renews wait, never status/log polling."
+            "Event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Must not exceed your actual host tool timeout. Timeout returns timedOut=true; never poll status/logs."
           )
           .optional(),
       },
@@ -531,16 +495,9 @@ export function createOrchestratorServer(
     },
     (input, extra) =>
       guard(async () => {
-        if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-        acquireLease();
+        if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         checkWorkspaceQuiescent(input.runId);
-        reviewInProgress = true;
-        let review;
-        try {
-          review = await route(input.runId).review(input, extra.signal);
-        } finally {
-          reviewInProgress = false;
-        }
+        const review = await route(input.runId).review(input, extra.signal);
         return {
           ...review,
           checks: review.checks.map((c) => ({
@@ -669,7 +626,7 @@ export function createOrchestratorServer(
         "Read-only local prerequisites/model-list diagnostic. Model listing does not prove real inference; installed-plugin live test is separate.",
       inputSchema: {},
     },
-    () => guard(doctor)
+    () => guard(() => doctor(dataDir))
   );
   server.registerTool(
     "orchestrator_message",
@@ -689,7 +646,7 @@ export function createOrchestratorServer(
     "orchestrator_team",
     {
       description:
-        "Codex schedules up to3 Claude Code sessions with a shared1000-turn/2h budget. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout, acceptance or chat wakeup.",
+        "Codex schedules up to3 simultaneous Claude Code executions with a shared1000-turn/2h budget; the three execution slots are shared across all connected chats, while retained idle transcripts consume none. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait (up to20min, immediate actionable wakeup) for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout or acceptance.",
       inputSchema: {
         action: z.enum([
           "create",
@@ -728,7 +685,15 @@ export function createOrchestratorServer(
         mode: z.enum(["start", "continue"]).optional(),
         feedback: z.string().max(16000).optional(),
         afterSeq: z.number().int().min(0).optional(),
-        timeoutMs: z.number().int().min(1).max(600000).optional(),
+        timeoutMs: z
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_WAIT_MS)
+          .describe(
+            "Team event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Actionable events wake it immediately."
+          )
+          .optional(),
         reason: z.string().max(16000).optional(),
       },
     },
@@ -751,23 +716,16 @@ export function createOrchestratorServer(
         }
         const teamId = input.teamId ?? "";
         if (input.action === "attach") {
-          acquireLease();
           return teams.recover(teamId);
         }
         if (input.action === "dispatch") {
-          if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-          acquireLease();
-          for (const run of controller.status() as import("./controller.js").Run[]) {
-            if (run.activeTaskId || run.sessionOperation) throw new Error("SINGLE_EXECUTOR_BUSY");
-            if (run.sessionState === "retained") await controller.session(run.id, "close");
-          }
-          if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-          if (
-            (controller.status() as import("./controller.js").Run[]).some(
-              (run) => run.activeTaskId || run.sessionOperation
-            )
-          )
-            throw new Error("SINGLE_EXECUTOR_BUSY");
+          if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
+          // Independent projects may keep executing; capacity is shared through worker slots.
+          for (const run of controller.status() as import("./controller.js").Run[])
+            if (run.sessionState === "retained" && !run.activeTaskId && !run.sessionOperation)
+              await controller.session(run.id, "close");
+          // Re-check after the await: an acceptance review may have started meanwhile.
+          if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
           return teams.dispatch(
             teamId,
             input.taskId ?? "",
@@ -794,16 +752,7 @@ export function createOrchestratorServer(
       try {
         teams.close();
       } finally {
-        try {
-          controller.close();
-        } finally {
-          try {
-            if (leaseOwned && existsSync(leasePath))
-              releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
-          } finally {
-            leaseOwned = false;
-          }
-        }
+        controller.close();
       }
     },
   };

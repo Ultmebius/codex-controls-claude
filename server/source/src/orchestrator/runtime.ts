@@ -46,8 +46,8 @@ export function decisionTimeoutMs() {
 }
 
 export function defaultWaitMs() {
-  const value = Number(process.env.CCC_WAIT_MS ?? 45000);
-  return Number.isSafeInteger(value) && value >= 1 && value <= 600000 ? value : 45000;
+  const value = Number(process.env.CCC_WAIT_MS ?? 1200000);
+  return Number.isSafeInteger(value) && value >= 1 && value <= 1200000 ? value : 1200000;
 }
 export function startupTimeoutMs() {
   const value = Number(process.env.CCC_INIT_TIMEOUT_MS ?? 120000);

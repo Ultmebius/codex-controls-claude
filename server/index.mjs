@@ -3222,8 +3222,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path11) {
-      let input = path11;
+    function removeDotSegments(path12) {
+      let input = path12;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3422,8 +3422,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path11, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path11 && path11 !== "/" ? path11 : void 0;
+        const [path12, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -7568,10 +7568,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path11) {
-  if (!path11)
+function getElementAtPath(obj, path12) {
+  if (!path12)
     return obj;
-  return path11.reduce((acc, key) => acc?.[key], obj);
+  return path12.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -7954,11 +7954,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path11, issues) {
+function prefixIssues(path12, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path11);
+    iss.path.unshift(path12);
     return iss;
   });
 }
@@ -8141,7 +8141,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result2 = { errors: [] };
-  const processError = (error49, path11 = []) => {
+  const processError = (error49, path12 = []) => {
     var _a2, _b2;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -8151,7 +8151,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path11, ...issue2.path];
+        const fullpath = [...path12, ...issue2.path];
         if (fullpath.length === 0) {
           result2.errors.push(mapper(issue2));
           continue;
@@ -8183,8 +8183,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path11 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path11) {
+  const path12 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path12) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -20161,13 +20161,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path11 = ref.slice(1).split("/").filter(Boolean);
-  if (path11.length === 0) {
+  const path12 = ref.slice(1).split("/").filter(Boolean);
+  if (path12.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path11[0] === defsKey) {
-    const key = path11[1];
+  if (path12[0] === defsKey) {
+    const key = path12[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -22535,8 +22535,8 @@ function getErrorMap2() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path11, errorMaps, issueData } = params;
-  const fullPath = [...path11, ...issueData.path || []];
+  const { data, path: path12, errorMaps, issueData } = params;
+  const fullPath = [...path12, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -22651,11 +22651,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path11, key) {
+  constructor(parent, value, path12, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path11;
+    this._path = path12;
     this._key = key;
   }
   get path() {
@@ -30090,21 +30090,21 @@ var EMPTY_COMPLETION_RESULT = {
 
 // src/orchestrator/server.ts
 import os5 from "node:os";
-import path10 from "node:path";
+import path11 from "node:path";
 import { execFileSync as execFileSync5 } from "node:child_process";
 
 // src/orchestrator/controller.ts
-import { createHash as createHash3, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash3, randomUUID as randomUUID4 } from "node:crypto";
 import {
-  existsSync as existsSync6,
-  mkdirSync,
-  readFileSync as readFileSync6,
-  readdirSync as readdirSync2,
-  realpathSync as realpathSync2,
+  existsSync as existsSync7,
+  mkdirSync as mkdirSync2,
+  readFileSync as readFileSync7,
+  readdirSync as readdirSync3,
+  realpathSync as realpathSync3,
   renameSync,
-  writeFileSync
+  writeFileSync as writeFileSync2
 } from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 
 // src/orchestrator/runtime.ts
 import { existsSync as existsSync3, readFileSync as readFileSync3, realpathSync } from "node:fs";
@@ -30168,8 +30168,8 @@ if(r.release){if(matches)fs.unlinkSync(r.file);result={released:!!matches};}
 else if(alive)result=matches&&r.allowSame?{acquired:true}:{error:'LEASE_BUSY'};
 else{const temp=r.file+'.'+process.pid+'.tmp';fs.writeFileSync(temp,JSON.stringify(r.record),{mode:0o600});fs.renameSync(temp,r.file);result={acquired:true};}
 process.stdout.write(JSON.stringify(result));`;
-function leaseOperation(file2, identity, record2, release = false, allowSame = false) {
-  const input = JSON.stringify({ file: file2, identity, record: record2, release, allowSame });
+function leaseOperation(file2, identity, record3, release = false, allowSame = false) {
+  const input = JSON.stringify({ file: file2, identity, record: record3, release, allowSame });
   let output;
   if (process.platform === "win32") {
     const helper = nativeHelperFile();
@@ -30200,28 +30200,28 @@ function leaseOperation(file2, identity, record2, release = false, allowSame = f
   }
   return JSON.parse(output);
 }
-function acquireJsonLease(file2, identity, record2, busyError, allowSame = false) {
-  const result2 = leaseOperation(file2, identity, record2, false, allowSame);
+function acquireJsonLease(file2, identity, record3, busyError, allowSame = false) {
+  const result2 = leaseOperation(file2, identity, record3, false, allowSame);
   if (!result2.acquired)
     throw new Error(result2.error === "LEASE_BUSY" ? busyError : "LEASE_GUARD_BUSY");
 }
-function releaseJsonLease(file2, identity, record2) {
+function releaseJsonLease(file2, identity, record3) {
   try {
-    return leaseOperation(file2, identity, record2, true).released === true;
+    return leaseOperation(file2, identity, record3, true).released === true;
   } catch {
     if (!existsSync(file2)) return false;
     const owner = JSON.parse(readFileSync(file2, "utf8"));
-    if (record2.pid !== process.pid || owner.pid !== process.pid || owner[identity] !== record2[identity])
+    if (record3.pid !== process.pid || owner.pid !== process.pid || owner[identity] !== record3[identity])
       return false;
     unlinkSync(file2);
     return true;
   }
 }
 function claimFile(file2) {
-  const record2 = { pid: process.pid, token: randomUUID() };
-  acquireJsonLease(file2, "token", record2, "RECOVERY_CLAIM_BUSY");
+  const record3 = { pid: process.pid, token: randomUUID() };
+  acquireJsonLease(file2, "token", record3, "RECOVERY_CLAIM_BUSY");
   return () => {
-    const released = releaseJsonLease(file2, "token", record2);
+    const released = releaseJsonLease(file2, "token", record3);
     if (!released && existsSync(file2)) throw new Error("STALE_RECOVERY_CLAIM");
   };
 }
@@ -30562,8 +30562,8 @@ function decisionTimeoutMs() {
   return value;
 }
 function defaultWaitMs() {
-  const value = Number(process.env.CCC_WAIT_MS ?? 45e3);
-  return Number.isSafeInteger(value) && value >= 1 && value <= 6e5 ? value : 45e3;
+  const value = Number(process.env.CCC_WAIT_MS ?? 12e5);
+  return Number.isSafeInteger(value) && value >= 1 && value <= 12e5 ? value : 12e5;
 }
 function startupTimeoutMs() {
   const value = Number(process.env.CCC_INIT_TIMEOUT_MS ?? 12e4);
@@ -30899,11 +30899,159 @@ function budgetSummary(budget) {
   };
 }
 
+// src/orchestrator/worker-slots.ts
+import {
+  existsSync as existsSync5,
+  mkdirSync,
+  readFileSync as readFileSync5,
+  readdirSync as readdirSync2,
+  realpathSync as realpathSync2,
+  unlinkSync as unlinkSync2,
+  writeFileSync
+} from "node:fs";
+import path5 from "node:path";
+import { randomUUID as randomUUID3 } from "node:crypto";
+var WORKER_SLOT_LIMIT = 3;
+var MAX_WAIT_MS = 12e5;
+var BUSY = "WORKER_SLOT_BUSY";
+function slotFile(poolRoot, slot) {
+  return path5.join(poolRoot, "worker-slots", `slot-${slot}.json`);
+}
+function canonicalWorkspace(cwd) {
+  let resolved = path5.resolve(cwd);
+  try {
+    resolved = realpathSync2.native(resolved);
+  } catch {
+  }
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+function workspaceOverlaps(a3, b) {
+  const left = canonicalWorkspace(a3), right = canonicalWorkspace(b);
+  return left === right || left.startsWith(right + path5.sep) || right.startsWith(left + path5.sep);
+}
+function record2(slot) {
+  return {
+    pid: slot.pid,
+    token: slot.token,
+    runId: slot.runId,
+    cwd: slot.cwd,
+    startedAt: slot.startedAt
+  };
+}
+function acquireWorkerSlot(poolRoot, cwd, runId) {
+  mkdirSync(path5.join(poolRoot, "worker-slots"), { recursive: true });
+  const candidate = {
+    pid: process.pid,
+    token: randomUUID3(),
+    runId,
+    cwd,
+    startedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  for (let slot = 1; slot <= WORKER_SLOT_LIMIT; slot++) {
+    try {
+      acquireJsonLease(slotFile(poolRoot, slot), "token", candidate, BUSY);
+      return { ...candidate, slot };
+    } catch (error48) {
+      if (!(error48 instanceof Error) || error48.message !== BUSY) throw error48;
+    }
+  }
+  const status = workerSlotStatus(poolRoot);
+  throw new Error(
+    `WORKER_SLOTS_FULL: ${status.active}/${status.limit} worker execution slots are active across connections; retry after an owned execution finishes`
+  );
+}
+function releaseWorkerSlot(poolRoot, slot) {
+  const file2 = slotFile(poolRoot, slot.slot);
+  if (!existsSync5(file2)) return false;
+  return releaseJsonLease(file2, "token", record2(slot));
+}
+function workerSlotStatus(poolRoot) {
+  const slots = [];
+  for (let slot = 1; slot <= WORKER_SLOT_LIMIT; slot++) {
+    try {
+      const owner = JSON.parse(readFileSync5(slotFile(poolRoot, slot), "utf8"));
+      if (processAlive(owner.pid))
+        slots.push({
+          slot,
+          pid: owner.pid,
+          runId: owner.runId,
+          cwd: owner.cwd,
+          startedAt: owner.startedAt
+        });
+    } catch {
+    }
+  }
+  return { limit: WORKER_SLOT_LIMIT, active: slots.length, slots };
+}
+function activeExecutionInWorkspace(poolRoot, cwd) {
+  return workerSlotStatus(poolRoot).slots.some((slot) => workspaceOverlaps(slot.cwd, cwd));
+}
+function liveReviews(poolRoot, prune) {
+  const directory = path5.join(poolRoot, "reviews"), reviews = [];
+  let files = [];
+  try {
+    files = readdirSync2(directory).filter((file2) => file2.endsWith(".json"));
+  } catch {
+    return reviews;
+  }
+  for (const file2 of files) {
+    try {
+      const record3 = JSON.parse(readFileSync5(path5.join(directory, file2), "utf8"));
+      if (processAlive(record3.pid)) reviews.push({ file: file2, record: record3 });
+      else if (prune) unlinkSync2(path5.join(directory, file2));
+    } catch {
+    }
+  }
+  return reviews;
+}
+function withAdmissionGuard(poolRoot, action) {
+  const guardFile = path5.join(poolRoot, "reviews", "admission"), guard = { pid: process.pid, token: randomUUID3() }, deadline = Date.now() + 5e3;
+  mkdirSync(path5.dirname(guardFile), { recursive: true });
+  for (; ; ) {
+    try {
+      acquireJsonLease(guardFile, "token", guard, "ADMISSION_GUARD_BUSY");
+      break;
+    } catch (error48) {
+      if (!(error48 instanceof Error) || Date.now() >= deadline) throw error48;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  try {
+    return action();
+  } finally {
+    releaseJsonLease(guardFile, "token", guard);
+  }
+}
+function acquireWorkspaceReview(poolRoot, cwd, verify) {
+  return withAdmissionGuard(poolRoot, () => {
+    if (liveReviews(poolRoot, true).some(({ record: record4 }) => workspaceOverlaps(record4.cwd, cwd)))
+      throw new Error("WORKSPACE_REVIEW_IN_PROGRESS");
+    verify?.();
+    const directory = path5.join(poolRoot, "reviews"), record3 = {
+      pid: process.pid,
+      token: randomUUID3(),
+      cwd: canonicalWorkspace(cwd)
+    }, file2 = path5.join(directory, `${record3.token}.json`);
+    writeFileSync(file2, JSON.stringify(record3), { mode: 384 });
+    return { file: file2, slot: record3 };
+  });
+}
+function releaseWorkspaceReview(review) {
+  releaseJsonLease(review.file, "token", {
+    pid: review.slot.pid,
+    token: review.slot.token,
+    cwd: review.slot.cwd
+  });
+}
+function workspaceReviewActive(poolRoot, cwd) {
+  return liveReviews(poolRoot, false).some(({ record: record3 }) => workspaceOverlaps(record3.cwd, cwd));
+}
+
 // src/orchestrator/capabilities.ts
 import { createHash as createHash2 } from "node:crypto";
-import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync6 } from "node:fs";
 import os3 from "node:os";
-import path5 from "node:path";
+import path6 from "node:path";
 function capabilitiesFromInit(init) {
   return {
     source: "sdk_init",
@@ -30947,7 +31095,7 @@ var switches = [
   "enableAllProjectMcpServers"
 ];
 function json2(file2) {
-  return existsSync5(file2) ? JSON.parse(readFileSync5(file2, "utf8").replace(/^\uFEFF/, "")) : {};
+  return existsSync6(file2) ? JSON.parse(readFileSync6(file2, "utf8").replace(/^\uFEFF/, "")) : {};
 }
 function selected(value) {
   return Object.fromEntries(
@@ -30958,7 +31106,7 @@ function selected(value) {
   );
 }
 function normalize(file2) {
-  const resolved = path5.resolve(file2).replaceAll("\\", "/").replace(/\/$/, "");
+  const resolved = path6.resolve(file2).replaceAll("\\", "/").replace(/\/$/, "");
   return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 function stable(value) {
@@ -30970,17 +31118,17 @@ function stable(value) {
   return value;
 }
 function nativeMcpSignature(cwd, home = os3.homedir()) {
-  const config2 = json2(path5.join(home, ".claude.json"));
+  const config2 = json2(path6.join(home, ".claude.json"));
   const projects = config2.projects;
   const target = normalize(cwd);
   const scopes2 = Object.entries(projects ?? {}).filter(([dir]) => target === normalize(dir) || target.startsWith(normalize(dir) + "/")).map(([dir, value]) => [normalize(dir), selected(value)]);
   const sources = [
     selected(config2),
     scopes2,
-    selected(json2(path5.join(home, ".claude/settings.json"))),
-    json2(path5.join(cwd, ".mcp.json")),
-    selected(json2(path5.join(cwd, ".claude/settings.json"))),
-    selected(json2(path5.join(cwd, ".claude/settings.local.json")))
+    selected(json2(path6.join(home, ".claude/settings.json"))),
+    json2(path6.join(cwd, ".mcp.json")),
+    selected(json2(path6.join(cwd, ".claude/settings.json"))),
+    selected(json2(path6.join(cwd, ".claude/settings.local.json")))
   ];
   return createHash2("sha256").update(JSON.stringify(stable(sources))).digest("hex");
 }
@@ -30994,12 +31142,13 @@ function fail(message) {
   throw new Error(message);
 }
 var Orchestrator = class {
-  constructor(dataDir, worker) {
+  constructor(dataDir, worker, poolRoot = dataDir) {
     this.dataDir = dataDir;
     this.worker = worker;
-    mkdirSync(dataDir, { recursive: true });
-    for (const file2 of readdirSync2(dataDir).filter((f6) => /^run-[\w-]+\.json$/.test(f6))) {
-      const run = JSON.parse(readFileSync6(path6.join(dataDir, file2), "utf8"));
+    this.poolRoot = poolRoot;
+    mkdirSync2(dataDir, { recursive: true });
+    for (const file2 of readdirSync3(dataDir).filter((f6) => /^run-[\w-]+\.json$/.test(f6))) {
+      const run = JSON.parse(readFileSync7(path7.join(dataDir, file2), "utf8"));
       this.migrate(run);
       this.runs.set(run.id, run);
     }
@@ -31044,6 +31193,8 @@ var Orchestrator = class {
     });
   }
   runs = /* @__PURE__ */ new Map();
+  /** Execution-capacity records are memory-only so ledger reads never expose tokens. */
+  slots = /* @__PURE__ */ new Map();
   listeners = /* @__PURE__ */ new Set();
   seen = /* @__PURE__ */ new Map();
   startups = /* @__PURE__ */ new Map();
@@ -31052,7 +31203,7 @@ var Orchestrator = class {
   unsubscribeMessages;
   pendingMessages = /* @__PURE__ */ new Map();
   closed = false;
-  ownerId = randomUUID3();
+  ownerId = randomUUID4();
   interruptions = /* @__PURE__ */ new Map();
   reviewing = /* @__PURE__ */ new Set();
   idleTimers = /* @__PURE__ */ new Map();
@@ -31143,10 +31294,10 @@ var Orchestrator = class {
     return Object.fromEntries(
       this.artifactPaths(task2).map((file2) => {
         if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
-        const absolute = path6.resolve(run.cwd, file2);
+        const absolute = path7.resolve(run.cwd, file2);
         return [
           file2,
-          existsSync6(absolute) ? createHash3("sha256").update(readFileSync6(absolute)).digest("hex") : null
+          existsSync7(absolute) ? createHash3("sha256").update(readFileSync7(absolute)).digest("hex") : null
         ];
       })
     );
@@ -31178,19 +31329,19 @@ var Orchestrator = class {
       (file2) => this.worker.permitsArtifact?.(run.cwd, file2) !== false
     );
     const included = new Set(
-      this.artifactPaths(task2).map((file2) => path6.resolve(run.cwd, file2).toLowerCase())
+      this.artifactPaths(task2).map((file2) => path7.resolve(run.cwd, file2).toLowerCase())
     );
     for (const peer of run.tasks.filter((peer2) => peer2.id !== task2.id && peer2.state === "accepted"))
       for (const file2 of this.artifactPaths(peer))
-        included.add(path6.resolve(run.cwd, file2).toLowerCase());
+        included.add(path7.resolve(run.cwd, file2).toLowerCase());
     for (const file2 of run.peerArtifacts ?? [])
-      included.add(path6.resolve(run.cwd, file2).toLowerCase());
+      included.add(path7.resolve(run.cwd, file2).toLowerCase());
     task2.changeInventory = {
       ...changes,
       changedFiles: changes.changedFiles,
       outsideScopeObservations: changes.changedFiles.filter((file2) => !owned.includes(file2)),
       undeclaredChanges: changes.changedFiles.filter(
-        (file2) => !included.has(path6.resolve(run.cwd, file2).toLowerCase())
+        (file2) => !included.has(path7.resolve(run.cwd, file2).toLowerCase())
       )
     };
     return task2.changeInventory;
@@ -31339,15 +31490,15 @@ var Orchestrator = class {
     }
   }
   save(run) {
-    const dest = path6.join(this.dataDir, `run-${run.id}.json`);
-    if (existsSync6(dest)) {
-      const disk = JSON.parse(readFileSync6(dest, "utf8"));
+    const dest = path7.join(this.dataDir, `run-${run.id}.json`);
+    if (existsSync7(dest)) {
+      const disk = JSON.parse(readFileSync7(dest, "utf8"));
       if (disk.ownerId && disk.ownerId !== run.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
         fail("STALE_SUPERVISOR_OWNER");
       if ((disk.ownerGeneration ?? 0) > (run.ownerGeneration ?? 0)) fail("STALE_SUPERVISOR_OWNER");
     }
     const tmp = `${dest}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(run, null, 2), { mode: 384 });
+    writeFileSync2(tmp, JSON.stringify(run, null, 2), { mode: 384 });
     renameSync(tmp, dest);
   }
   emit(run, type, data, taskId, actionable = true) {
@@ -31387,19 +31538,19 @@ var Orchestrator = class {
   owns(run) {
     if (run.ownerPid !== process.pid || run.ownerReleased || run.ownerId && run.ownerId !== this.ownerId)
       return false;
-    const file2 = path6.join(this.dataDir, `run-${run.id}.json`);
-    if (!existsSync6(file2)) return true;
-    const disk = JSON.parse(readFileSync6(file2, "utf8"));
+    const file2 = path7.join(this.dataDir, `run-${run.id}.json`);
+    if (!existsSync7(file2)) return true;
+    const disk = JSON.parse(readFileSync7(file2, "utf8"));
     return !disk.ownerReleased && disk.ownerPid === process.pid && disk.ownerId === run.ownerId && disk.ownerGeneration === run.ownerGeneration;
   }
   attach(runId) {
     if (this.closed) fail("CONNECTION_CLOSED");
-    const file2 = path6.join(this.dataDir, `run-${runId}.json`);
-    if (!existsSync6(file2)) fail("RUN_NOT_FOUND");
+    const file2 = path7.join(this.dataDir, `run-${runId}.json`);
+    if (!existsSync7(file2)) fail("RUN_NOT_FOUND");
     const claim = `${file2}.claim`;
     const releaseClaim = claimFile(claim);
     try {
-      const run = JSON.parse(readFileSync6(file2, "utf8"));
+      const run = JSON.parse(readFileSync7(file2, "utf8"));
       if (!run.ownerReleased && processAlive(run.ownerPid) && (run.ownerPid !== process.pid || run.ownerId && run.ownerId !== this.ownerId))
         fail("OWNER_STILL_ACTIVE: no takeover of a live supervisor");
       if (this.startups.size || [...this.runs.values()].some((r3) => this.owns(r3) && (r3.activeTaskId || r3.sessionOperation)))
@@ -31554,7 +31705,7 @@ var Orchestrator = class {
     if (input.action === "create") {
       if (!input.cwd || !input.goal || !input.design || !input.tasks)
         fail("create requires cwd, goal, design, tasks");
-      const cwd = realpathSync2.native(input.cwd);
+      const cwd = realpathSync3.native(input.cwd);
       this.validateTasks(cwd, input.tasks);
       if ([...this.runs.values()].some((r3) => this.owns(r3) && r3.status === "open"))
         fail("OPEN_RUN_EXISTS: finish or cancel the current run before creating another");
@@ -31562,7 +31713,7 @@ var Orchestrator = class {
         if (this.owns(previous) && previous.status === "awaiting_user_review")
           this.closeSession(previous);
       const run2 = {
-        id: randomUUID3(),
+        id: randomUUID4(),
         goal: input.goal,
         design: input.design,
         cwd,
@@ -31879,26 +32030,24 @@ var Orchestrator = class {
   }
   acquire(run) {
     if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
-    const lock = path6.join(this.dataDir, "executor.lock");
-    acquireJsonLease(
-      lock,
-      "token",
-      { pid: process.pid, runId: run.id, token: `${this.ownerId}:${run.id}` },
-      "EXECUTOR_BUSY"
-    );
+    if (this.slots.has(run.id)) return;
+    withAdmissionGuard(this.poolRoot, () => {
+      if (workspaceReviewActive(this.poolRoot, run.cwd)) fail("WORKSPACE_REVIEW_IN_PROGRESS");
+      this.slots.set(run.id, acquireWorkerSlot(this.poolRoot, run.cwd, run.id));
+    });
+  }
+  dropSlot(runId) {
+    const slot = this.slots.get(runId);
+    if (!slot) return;
+    this.slots.delete(runId);
+    releaseWorkerSlot(this.poolRoot, slot);
   }
   release(run) {
     const timer = this.timers.get(run.id);
     if (timer) clearTimeout(timer);
     this.timers.delete(run.id);
     if (this.startups.has(run.id)) return;
-    const lock = path6.join(this.dataDir, "executor.lock");
-    if (existsSync6(lock))
-      releaseJsonLease(lock, "token", {
-        pid: process.pid,
-        runId: run.id,
-        token: `${this.ownerId}:${run.id}`
-      });
+    this.dropSlot(run.id);
   }
   async dispatch(runId, taskId, requestId, signal, options = {}) {
     const run = this.get(runId);
@@ -31940,7 +32089,7 @@ var Orchestrator = class {
     this.acquire(run);
     reserveGrant(run.turnBudget, nativeLimit);
     const execution = {
-      id: randomUUID3(),
+      id: randomUUID4(),
       taskId,
       attempt: task2.attempts + 1,
       startedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -32074,10 +32223,10 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
       hash2.update(file2);
       hash2.update("\0");
-      const absolute = path6.resolve(run.cwd, file2);
-      if (task2.additionalArtifacts?.includes(file2) && !existsSync6(absolute))
+      const absolute = path7.resolve(run.cwd, file2);
+      if (task2.additionalArtifacts?.includes(file2) && !existsSync7(absolute))
         hash2.update("<deleted>");
-      else hash2.update(readFileSync6(absolute));
+      else hash2.update(readFileSync7(absolute));
     }
     return hash2.digest("hex");
   }
@@ -32297,7 +32446,7 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
         }
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(6e5, Math.max(1, timeoutMs)));
+      const timer = setTimeout(() => finish(true), Math.min(MAX_WAIT_MS, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -32385,7 +32534,6 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     ].includes(task2.state))
       fail("TASK_NOT_RECONCILABLE");
     if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
-    this.acquire(run);
     try {
       if (run.sessionId && this.worker.model(run.sessionId)) this.worker.stop(run.sessionId);
       run.sessionState = "closed";
@@ -32428,7 +32576,11 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
     if (this.reviewing.has(run.id) || this.interruptions.has(run.id) || run.activeTaskId)
       fail("EXECUTOR_BUSY");
-    this.acquire(run);
+    if (this.startups.size) fail("EXECUTOR_STARTUP_DRAINING");
+    const admission = acquireWorkspaceReview(this.poolRoot, run.cwd, () => {
+      if (activeExecutionInWorkspace(this.poolRoot, run.cwd))
+        fail("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
+    });
     this.reviewing.add(run.id);
     const abort = new AbortController();
     const hostCancel = () => {
@@ -32477,41 +32629,41 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
         fail("REVIEW_INTERRUPTED");
       }
       this.open(run);
+      if (this.hash(run, task2) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
+      if (this.inventory(run, task2).undeclaredChanges.length) {
+        this.save(run);
+        fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
+      }
+      const accepted = input.decision === "accept" && checks.every((c3) => c3.exitCode === 0 && !c3.error);
+      task2.reviews.push({
+        at: (/* @__PURE__ */ new Date()).toISOString(),
+        decision: accepted ? "accepted" : "rejected",
+        artifactHash: input.artifactHash,
+        taskRevision: task2.revision,
+        evidence: input.evidence,
+        checks
+      });
+      task2.state = accepted ? "accepted" : "needs_revision";
+      task2.feedback = accepted ? void 0 : `${input.evidence}
+Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3.stderr?.slice(0, 800) })))}`;
+      this.emit(
+        run,
+        accepted ? "task_accepted" : "task_rejected",
+        { checks, evidence: input.evidence, artifactHash: input.artifactHash },
+        task2.id
+      );
+      return {
+        taskId: task2.id,
+        state: task2.state,
+        checks,
+        remainingRepairs: Math.max(0, run.maxRepairs - task2.repairs)
+      };
     } finally {
       clearTimeout(deadline);
       signal?.removeEventListener("abort", hostCancel);
       this.reviewing.delete(run.id);
-      this.release(run);
+      releaseWorkspaceReview(admission);
     }
-    if (this.hash(run, task2) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
-    if (this.inventory(run, task2).undeclaredChanges.length) {
-      this.save(run);
-      fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
-    }
-    const accepted = input.decision === "accept" && checks.every((c3) => c3.exitCode === 0 && !c3.error);
-    task2.reviews.push({
-      at: (/* @__PURE__ */ new Date()).toISOString(),
-      decision: accepted ? "accepted" : "rejected",
-      artifactHash: input.artifactHash,
-      taskRevision: task2.revision,
-      evidence: input.evidence,
-      checks
-    });
-    task2.state = accepted ? "accepted" : "needs_revision";
-    task2.feedback = accepted ? void 0 : `${input.evidence}
-Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3.stderr?.slice(0, 800) })))}`;
-    this.emit(
-      run,
-      accepted ? "task_accepted" : "task_rejected",
-      { checks, evidence: input.evidence, artifactHash: input.artifactHash },
-      task2.id
-    );
-    return {
-      taskId: task2.id,
-      state: task2.state,
-      checks,
-      remainingRepairs: Math.max(0, run.maxRepairs - task2.repairs)
-    };
   }
   respond(runId, requestId, decision) {
     const run = this.get(runId);
@@ -32533,6 +32685,9 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
     return this.startups.size > 0 || this.interruptions.size > 0 || [...this.runs.values()].some(
       (run) => this.owns(run) && (run.activeTaskId || run.sessionOperation)
     );
+  }
+  reviewActive() {
+    return this.reviewing.size > 0;
   }
   cancel(runId, reason = "Supervisor cancelled") {
     const run = this.get(runId);
@@ -32577,6 +32732,7 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
         run.sessionOperation = void 0;
         run.sessionState = "closed";
         run.ownerReleased = true;
+        this.dropSlot(run.id);
         try {
           this.save(run);
         } catch {
@@ -32603,7 +32759,7 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
 };
 
 // src/utils/normalize-windows-path.ts
-import path7 from "node:path";
+import path8 from "node:path";
 import os4 from "node:os";
 var TOOL_INPUT_PATH_FIELDS = [
   "file_path",
@@ -32619,7 +32775,7 @@ var TOOL_INPUT_PATH_FIELDS = [
 function maybeAddWindowsLongPathPrefix(value) {
   if (value.startsWith("\\\\?\\") || value.startsWith("\\\\.\\") || value.length < 240)
     return value;
-  return path7.win32.toNamespacedPath(value);
+  return path8.win32.toNamespacedPath(value);
 }
 function expandTilde(value, platform) {
   if (value === "~") return os4.homedir();
@@ -32627,7 +32783,7 @@ function expandTilde(value, platform) {
   const next = value[1];
   if (next !== "/" && next !== "\\") return value;
   const rest = value.slice(2);
-  const join2 = platform === "win32" ? path7.win32.join : path7.posix.join;
+  const join2 = platform === "win32" ? path8.win32.join : path8.posix.join;
   return join2(os4.homedir(), rest);
 }
 function convertMsysToWindowsPath(rawPath) {
@@ -32655,7 +32811,7 @@ function convertMsysToWindowsPath(rawPath) {
 function normalizeMsysToWindowsPath(rawPath) {
   const converted = convertMsysToWindowsPath(rawPath);
   if (!converted) return void 0;
-  return path7.win32.normalize(converted);
+  return path8.win32.normalize(converted);
 }
 function isUnsupportedPosixAbsolutePath(value, platform = process.platform) {
   if (platform !== "win32") return false;
@@ -32684,7 +32840,7 @@ function normalizeWindowsPathLike(value, platform = process.platform) {
   if (platform !== "win32") return expanded;
   const converted = normalizeMsysToWindowsPath(expanded);
   if (!converted && expanded.startsWith("/")) return expanded;
-  const normalized = path7.win32.normalize(converted ?? expanded);
+  const normalized = path8.win32.normalize(converted ?? expanded);
   return maybeAddWindowsLongPathPrefix(normalized);
 }
 function normalizeWindowsPathArray(values, platform = process.platform) {
@@ -33097,7 +33253,7 @@ var SessionManager = class _SessionManager {
         return false;
       }
       const inferredExpiresAt = new Date(Date.now() + timeoutMs).toISOString();
-      const record2 = {
+      const record3 = {
         ...req,
         timeoutMs,
         expiresAt: inferredExpiresAt
@@ -33105,7 +33261,7 @@ var SessionManager = class _SessionManager {
       const timeoutId = setTimeout(() => {
         this.finishRequest(
           sessionId,
-          record2.requestId,
+          record3.requestId,
           {
             behavior: "deny",
             message: `Permission request timed out after ${timeoutMs}ms.`,
@@ -33114,12 +33270,12 @@ var SessionManager = class _SessionManager {
           "timeout"
         );
       }, timeoutMs);
-      state.pendingPermissions.set(record2.requestId, { record: record2, finish, timeoutId });
+      state.pendingPermissions.set(record3.requestId, { record: record3, finish, timeoutId });
       info.status = "waiting_permission";
       info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
       this.pushEvent(sessionId, {
         type: "permission_request",
-        data: record2,
+        data: record3,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       });
       return true;
@@ -51066,8 +51222,8 @@ async function Bs($, X) {
 var DEFAULT_SETTING_SOURCES = ["user", "project", "local"];
 
 // src/utils/windows.ts
-import path8 from "node:path";
-var { join, dirname, normalize: normalize2, isAbsolute } = path8.win32;
+import path9 from "node:path";
+var { join, dirname, normalize: normalize2, isAbsolute } = path9.win32;
 function isWindows() {
   return process.platform === "win32";
 }
@@ -51449,7 +51605,7 @@ function consumeQuery(params) {
     const createdAt = (/* @__PURE__ */ new Date()).toISOString();
     const timeoutMs = permissionRequestTimeoutMs;
     const expiresAt = new Date(Date.now() + timeoutMs).toISOString();
-    const record2 = {
+    const record3 = {
       requestId,
       toolName,
       input: normalizedInput,
@@ -51484,7 +51640,7 @@ function consumeQuery(params) {
       };
       const registered = params.sessionManager.setPendingPermission(
         sessionId,
-        record2,
+        record3,
         finish,
         permissionRequestTimeoutMs
       );
@@ -51962,7 +52118,7 @@ var InputQueue = class {
 };
 
 // src/orchestrator/messaging.ts
-import { randomUUID as randomUUID4 } from "node:crypto";
+import { randomUUID as randomUUID5 } from "node:crypto";
 var MAX_TEXT = 16e3;
 var MAX_MESSAGES = 128;
 var MAX_QUESTIONS = 16;
@@ -52016,25 +52172,25 @@ var SupervisorMailbox = class {
   }
   respond(id2, answer) {
     if (this.closedReason !== void 0 || !text.safeParse(answer).success) return false;
-    const record2 = this.messages.get(id2);
-    if (!record2?.finish) return false;
-    record2.finish(
-      result({ messageId: id2, clientMessageId: record2.clientMessageId, status: "answered", answer })
+    const record3 = this.messages.get(id2);
+    if (!record3?.finish) return false;
+    record3.finish(
+      result({ messageId: id2, clientMessageId: record3.clientMessageId, status: "answered", answer })
     );
     return true;
   }
   close(reason = "Attempt ended") {
     if (this.closedReason !== void 0) return;
     this.closedReason = reason.slice(0, MAX_TEXT);
-    for (const record2 of this.messages.values())
-      record2.finish?.(this.error("SUPERVISOR_MAILBOX_CLOSED", record2.id, this.closedReason));
+    for (const record3 of this.messages.values())
+      record3.finish?.(this.error("SUPERVISOR_MAILBOX_CLOSED", record3.id, this.closedReason));
     this.listeners.clear();
   }
   /** Release the previous attempt before reusing the query's SDK server. */
   reset(reason = "A new attempt started") {
     if (this.closedReason !== void 0) return;
-    for (const record2 of this.messages.values())
-      record2.finish?.(this.error("SUPERVISOR_ATTEMPT_RESET", record2.id, reason.slice(0, MAX_TEXT)));
+    for (const record3 of this.messages.values())
+      record3.finish?.(this.error("SUPERVISOR_ATTEMPT_RESET", record3.id, reason.slice(0, MAX_TEXT)));
     this.messages.clear();
     this.deduplicated.clear();
   }
@@ -52045,7 +52201,7 @@ var SupervisorMailbox = class {
     );
   }
   send(kind, value, suppliedId) {
-    const id2 = randomUUID4();
+    const id2 = randomUUID5();
     if (this.closedReason !== void 0)
       return Promise.resolve(this.error("SUPERVISOR_MAILBOX_CLOSED", id2, this.closedReason));
     const prior = suppliedId === void 0 ? void 0 : this.deduplicated.get(suppliedId);
@@ -52061,7 +52217,7 @@ var SupervisorMailbox = class {
       text: value,
       ...kind === "question" ? { expiresAt: new Date(Date.now() + this.timeoutMs).toISOString() } : {}
     };
-    const record2 = {
+    const record3 = {
       ...event,
       clientMessageId: suppliedId,
       outcome: Promise.resolve(
@@ -52070,28 +52226,28 @@ var SupervisorMailbox = class {
     };
     if (kind === "question") {
       this.pendingQuestions++;
-      record2.outcome = new Promise((resolve) => {
+      record3.outcome = new Promise((resolve) => {
         const timer = setTimeout(() => {
-          record2.finish?.(this.error("SUPERVISOR_QUESTION_TIMEOUT", id2));
+          record3.finish?.(this.error("SUPERVISOR_QUESTION_TIMEOUT", id2));
         }, this.timeoutMs);
         timer.unref();
-        record2.finish = (outcome) => {
+        record3.finish = (outcome) => {
           clearTimeout(timer);
-          record2.finish = void 0;
+          record3.finish = void 0;
           this.pendingQuestions--;
           resolve(outcome);
         };
       });
     }
-    this.messages.set(id2, record2);
-    if (suppliedId !== void 0) this.deduplicated.set(suppliedId, record2);
+    this.messages.set(id2, record3);
+    if (suppliedId !== void 0) this.deduplicated.set(suppliedId, record3);
     for (const listener of [...this.listeners]) {
       try {
         listener({ ...event });
       } catch {
       }
     }
-    return record2.outcome;
+    return record3.outcome;
   }
 };
 
@@ -52463,30 +52619,30 @@ var ClaudeWorker = class {
 };
 
 // src/orchestrator/team.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
+import { randomUUID as randomUUID6 } from "node:crypto";
 import {
-  existsSync as existsSync8,
-  mkdirSync as mkdirSync3,
-  readFileSync as readFileSync8,
-  readdirSync as readdirSync4,
-  realpathSync as realpathSync4,
+  existsSync as existsSync9,
+  mkdirSync as mkdirSync4,
+  readFileSync as readFileSync9,
+  readdirSync as readdirSync5,
+  realpathSync as realpathSync5,
   renameSync as renameSync3,
-  writeFileSync as writeFileSync2
+  writeFileSync as writeFileSync3
 } from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 function fail2(message) {
   throw new Error(message);
 }
 function canonical(file2) {
-  let existing = path9.resolve(file2);
+  let existing = path10.resolve(file2);
   const suffix = [];
-  while (!existsSync8(existing)) {
-    const parent = path9.dirname(existing);
+  while (!existsSync9(existing)) {
+    const parent = path10.dirname(existing);
     if (parent === existing) fail2("WORKSPACE_PATH_UNRESOLVED");
-    suffix.unshift(path9.basename(existing));
+    suffix.unshift(path10.basename(existing));
     existing = parent;
   }
-  const result2 = path9.join(realpathSync4.native(existing), ...suffix).replaceAll("\\", "/").replace(/\/$/, "");
+  const result2 = path10.join(realpathSync5.native(existing), ...suffix).replaceAll("\\", "/").replace(/\/$/, "");
   return process.platform === "win32" ? result2.toLowerCase() : result2;
 }
 function overlaps(a3, b) {
@@ -52497,7 +52653,7 @@ function scopes(task2) {
   if (!task2.writeScope?.length) return [root];
   return task2.writeScope.map((file2) => {
     if (!file2.trim() || /[*?]/.test(file2)) fail2("WRITE_SCOPE_REQUIRES_LITERAL_PATH");
-    const resolved = canonical(path9.resolve(task2.cwd, file2));
+    const resolved = canonical(path10.resolve(task2.cwd, file2));
     if (resolved !== root && !resolved.startsWith(root + "/"))
       fail2("WRITE_SCOPE_OUTSIDE_WORKSPACE");
     return resolved;
@@ -52507,9 +52663,9 @@ var TeamCoordinator = class {
   constructor(dataDir, factory) {
     this.dataDir = dataDir;
     this.factory = factory;
-    mkdirSync3(dataDir, { recursive: true });
-    for (const file2 of readdirSync4(dataDir).filter((file3) => /^team-[\w-]+\.json$/.test(file3))) {
-      const team = JSON.parse(readFileSync8(path9.join(dataDir, file2), "utf8"));
+    mkdirSync4(dataDir, { recursive: true });
+    for (const file2 of readdirSync5(dataDir).filter((file3) => /^team-[\w-]+\.json$/.test(file3))) {
+      const team = JSON.parse(readFileSync9(path10.join(dataDir, file2), "utf8"));
       this.teams.set(team.id, team);
     }
   }
@@ -52520,7 +52676,7 @@ var TeamCoordinator = class {
   pending = /* @__PURE__ */ new Map();
   starts = /* @__PURE__ */ new Map();
   closed = false;
-  ownerId = randomUUID5();
+  ownerId = randomUUID6();
   activityListeners = /* @__PURE__ */ new Set();
   subscribeActivity(listener) {
     this.activityListeners.add(listener);
@@ -52531,15 +52687,18 @@ var TeamCoordinator = class {
       (task2) => task2.starting || this.controllers.get(task2.childRunId)?.hasActiveExecutions()
     );
   }
+  reviewActive() {
+    return this.ownedTasks().some((task2) => this.controllers.get(task2.childRunId)?.reviewActive());
+  }
   save(team) {
-    const dest = path9.join(this.dataDir, `team-${team.id}.json`);
-    if (existsSync8(dest)) {
-      const disk = JSON.parse(readFileSync8(dest, "utf8"));
+    const dest = path10.join(this.dataDir, `team-${team.id}.json`);
+    if (existsSync9(dest)) {
+      const disk = JSON.parse(readFileSync9(dest, "utf8"));
       if ((disk.generation ?? 0) > (team.generation ?? 0) || disk.ownerId && disk.ownerId !== team.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
         fail2("STALE_TEAM_OWNER");
     }
     const tmp = `${dest}.${process.pid}.tmp`;
-    writeFileSync2(tmp, JSON.stringify(team, null, 2), { mode: 384 });
+    writeFileSync3(tmp, JSON.stringify(team, null, 2), { mode: 384 });
     renameSync3(tmp, dest);
   }
   emit(team, type, data, actionable = true, task2) {
@@ -52597,24 +52756,23 @@ var TeamCoordinator = class {
     for (const task2 of team.tasks) {
       const files = team.tasks.filter((peer) => peer !== task2).flatMap((peer) => {
         const contract = this.run(peer).tasks[0];
-        return [...contract.artifacts, ...contract.additionalArtifacts ?? []].map((file2) => path9.resolve(peer.cwd, file2)).filter((file2) => inside(task2.cwd, file2)).map((file2) => path9.relative(realpathSync4.native(task2.cwd), canonical(file2)));
+        return [...contract.artifacts, ...contract.additionalArtifacts ?? []].map((file2) => path10.resolve(peer.cwd, file2)).filter((file2) => inside(task2.cwd, file2)).map((file2) => path10.relative(realpathSync5.native(task2.cwd), canonical(file2)));
       });
       this.controllers.get(task2.childRunId).setPeerArtifacts(task2.childRunId, files);
     }
   }
   recover(teamId) {
     if (this.closed) fail2("TEAM_COORDINATOR_CLOSED");
-    const file2 = path9.join(this.dataDir, `team-${teamId}.json`);
-    if (!existsSync8(file2)) fail2("TEAM_NOT_FOUND");
+    const file2 = path10.join(this.dataDir, `team-${teamId}.json`);
+    if (!existsSync9(file2)) fail2("TEAM_NOT_FOUND");
     const releaseClaim = claimFile(`${file2}.claim`);
     try {
-      const team = JSON.parse(readFileSync8(file2, "utf8"));
+      const team = JSON.parse(readFileSync9(file2, "utf8"));
       if (team.ownerId === this.ownerId && !team.ownerReleased)
         return this.summary(this.get(teamId));
       if (!team.ownerReleased && processAlive(team.ownerPid)) fail2("OWNER_STILL_ACTIVE");
       if (this.hasActiveExecutions()) fail2("EXECUTOR_BUSY");
-      this.acquireExecutor();
-      try {
+      {
         const orphaned = team.budget.reserved;
         team.ownerPid = process.pid;
         team.ownerId = this.ownerId;
@@ -52644,8 +52802,6 @@ var TeamCoordinator = class {
           false
         );
         return this.summary(team);
-      } finally {
-        this.releaseExecutor();
       }
     } finally {
       releaseClaim();
@@ -52683,7 +52839,6 @@ var TeamCoordinator = class {
           task2
         );
         this.warnBudget(team, task2);
-        this.releaseExecutor();
       })
     );
   }
@@ -52717,11 +52872,11 @@ var TeamCoordinator = class {
     };
     ids.forEach(visit);
     const team = {
-      id: randomUUID5(),
+      id: randomUUID6(),
       ownerPid: process.pid,
       ownerId: this.ownerId,
       generation: 1,
-      cwd: realpathSync4(input.cwd),
+      cwd: realpathSync5(input.cwd),
       goal: input.goal,
       design: input.design,
       status: "open",
@@ -52738,11 +52893,11 @@ var TeamCoordinator = class {
       const task2 = {
         contract: structuredClone(contract),
         workerName: workerName2,
-        cwd: realpathSync4(cwd ?? team.cwd),
+        cwd: realpathSync5(cwd ?? team.cwd),
         writeScope: writeScope ? [...writeScope] : void 0,
         state: "pending",
         childRunId: "",
-        directory: path9.join(this.dataDir, team.id, contract.id)
+        directory: path10.join(this.dataDir, team.id, contract.id)
       };
       scopes(task2);
       return task2;
@@ -52752,7 +52907,6 @@ var TeamCoordinator = class {
       if (!task2.contract.artifacts.length || !task2.contract.checks.length)
         fail2("TASK_REQUIRES_ARTIFACTS_AND_CHECKS");
     }
-    this.acquireExecutor();
     const subscriptionStart = this.subscriptions.length;
     try {
       for (const task2 of prepared) {
@@ -52812,27 +52966,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
     ).flatMap((team) => team.tasks).filter((task2) => this.controllers.has(task2.childRunId));
   }
   hasOccupied() {
-    const file2 = path9.join(this.dataDir, "team-owner.lock");
-    if (existsSync8(file2)) {
-      const owner = JSON.parse(readFileSync8(file2, "utf8"));
-      if (owner.id !== this.ownerId && processAlive(owner.pid)) return true;
-    }
     return this.ownedTasks().some((task2) => this.occupied(task2));
-  }
-  acquireExecutor() {
-    const file2 = path9.join(this.dataDir, "team-owner.lock");
-    acquireJsonLease(
-      file2,
-      "id",
-      { pid: process.pid, id: this.ownerId },
-      "TEAM_EXECUTOR_BUSY",
-      true
-    );
-  }
-  releaseExecutor() {
-    if (this.pending.size || this.starts.size || this.hasActiveExecutions()) return;
-    const file2 = path9.join(this.dataDir, "team-owner.lock");
-    if (existsSync8(file2)) releaseJsonLease(file2, "id", { pid: process.pid, id: this.ownerId });
   }
   canReview(childRunId) {
     const own = this.ownedTasks().find((task2) => task2.childRunId === childRunId);
@@ -52873,7 +53007,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       (other) => other !== task2 && this.active(other) && scopes(task2).some((a3) => scopes(other).some((b) => overlaps(a3, b)))
     ))
       fail2("WRITE_SCOPE_CONFLICT");
-    if (team.tasks.filter((candidate) => this.active(candidate)).length >= team.maxWorkers || all.filter((candidate) => this.active(candidate)).length >= 3)
+    if (team.tasks.filter((candidate) => this.active(candidate)).length >= team.maxWorkers)
       fail2("TEAM_WORKER_LIMIT");
     const requested = options.maxTurns ?? team.maxTurns;
     if (!Number.isSafeInteger(requested) || requested < 1 || requested > 1e3)
@@ -52882,7 +53016,6 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
     if (!grant) fail2("RUN_TURN_BUDGET_EXHAUSTED");
     const run = this.run(task2), controller = this.controllers.get(task2.childRunId);
     const attemptsBefore = run.tasks[0].attempts;
-    this.acquireExecutor();
     task2.starting = true;
     task2.reservation = {
       held: reserveGrant(team.budget, grant),
@@ -52899,15 +53032,12 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
     this.warnBudget(team, task2);
     const execution = (async () => {
       try {
-        for (const candidates of [team.tasks, all]) {
-          const limit = candidates === team.tasks ? team.maxWorkers : 3;
-          while (candidates.filter((candidate) => this.occupied(candidate)).length > limit) {
-            const idle = candidates.find(
-              (candidate) => candidate !== task2 && !this.active(candidate) && this.occupied(candidate)
-            );
-            if (!idle) fail2("TEAM_WORKER_LIMIT");
-            await this.controllers.get(idle.childRunId).session(idle.childRunId, "close");
-          }
+        while (team.tasks.filter((candidate) => this.occupied(candidate)).length > team.maxWorkers) {
+          const idle = team.tasks.find(
+            (candidate) => candidate !== task2 && !this.active(candidate) && this.occupied(candidate)
+          );
+          if (!idle) fail2("TEAM_WORKER_LIMIT");
+          await this.controllers.get(idle.childRunId).session(idle.childRunId, "close");
         }
         if (!startup.valid || this.closed) fail2("TEAM_DISPATCH_INTERRUPTED");
         receipt.receipt = await controller.dispatch(task2.childRunId, taskId, requestId, signal, {
@@ -52934,7 +53064,6 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
         }
         this.pending.delete(key);
         this.save(team);
-        this.releaseExecutor();
       }
     })();
     this.pending.set(key, execution);
@@ -52998,7 +53127,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
         this.interrupt(teamId, "Host cancelled team wait");
         finish();
       };
-      const timer = setTimeout(() => finish(true), Math.min(6e5, Math.max(1, timeoutMs)));
+      const timer = setTimeout(() => finish(true), Math.min(MAX_WAIT_MS, Math.max(1, timeoutMs)));
       this.listeners.add(listener);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
@@ -53135,11 +53264,6 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
           errors++;
         }
       }
-    try {
-      this.releaseExecutor();
-    } catch {
-      errors++;
-    }
     for (const listener of [...this.listeners])
       for (const team of this.teams.values()) listener(team.id);
     this.listeners.clear();
@@ -53266,9 +53390,8 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
 }
 
 // src/orchestrator/server.ts
-import { existsSync as existsSync9, readFileSync as readFileSync9 } from "node:fs";
-import { randomUUID as randomUUID6 } from "node:crypto";
-async function doctor() {
+import { existsSync as existsSync10 } from "node:fs";
+async function doctor(poolRoot = defaultDataDir()) {
   const config2 = localConfig();
   let gatewayStatus = null;
   let modelListed = null;
@@ -53295,7 +53418,7 @@ async function doctor() {
     }
   }
   let terminalAvailable = true, dotnet10Available = true;
-  const nativeHelperPresent = process.platform !== "win32" || existsSync9(nativeHelperFile());
+  const nativeHelperPresent = process.platform !== "win32" || existsSync10(nativeHelperFile());
   if (process.platform === "win32") {
     try {
       execFileSync5("where.exe", ["wt.exe"], { windowsHide: true, stdio: "ignore" });
@@ -53311,7 +53434,7 @@ async function doctor() {
     }
   }
   return {
-    pluginVersion: false ? "0.0.0-dev" : "0.8.2",
+    pluginVersion: false ? "0.0.0-dev" : "0.8.9",
     node: process.version,
     platform: process.platform,
     claude: execFileSync5(config2.executable, ["--version"], {
@@ -53338,6 +53461,8 @@ async function doctor() {
     modelListed,
     actualInferenceVerified: false,
     ownedProcesses: ownedProcessCount(),
+    // Sanitized capacity only: slot pid/workspace/run, never tokens or prompts.
+    workerSlots: workerSlotStatus(poolRoot),
     executionWindow: process.platform === "win32" ? "Windows Terminal (starts minimized)" : "stdio",
     terminals: terminalInfo(),
     communication: "SDK stream -> event waiter -> current Codex tool result",
@@ -53363,6 +53488,9 @@ var task = external_exports.object({
   artifacts: external_exports.array(external_exports.string().min(1)).min(1).max(100),
   checks: external_exports.array(check2).min(1).max(20)
 });
+function defaultDataDir() {
+  return process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path11.join(os5.homedir(), ".local", "share", "codex-controls-claude");
+}
 function taskSummary(run, task2) {
   const executable = Date.now() < run.deadline && run.turnBudget.limit - run.turnBudget.used - run.turnBudget.reserved > 1;
   const actions = task2.state === "awaiting_review" ? ["review"] : task2.state === "accepted" ? ["dispatch_ready_downstream"] : task2.state === "running" ? ["wait"] : task2.state === "pending" ? executable ? ["dispatch_if_dependencies_accepted"] : ["budget_exhausted"] : executable ? ["continue_with_feedback", "reconcile"] : ["reconcile"];
@@ -53386,51 +53514,25 @@ function taskSummary(run, task2) {
     }
   };
 }
-function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path10.join(os5.homedir(), ".local", "share", "codex-controls-claude"), makeWorker = () => new ClaudeWorker()) {
-  const controller = new Orchestrator(dataDir, makeWorker());
+function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () => new ClaudeWorker()) {
+  const controller = new Orchestrator(dataDir, makeWorker(), dataDir);
   const teams = new TeamCoordinator(
-    path10.join(dataDir, "teams"),
-    (directory) => new Orchestrator(directory, makeWorker())
+    path11.join(dataDir, "teams"),
+    (directory) => new Orchestrator(directory, makeWorker(), dataDir)
   );
   const route = (runId) => runId && teams.controllerFor(runId) || controller;
-  let reviewInProgress = false;
   const checkWorkspaceQuiescent = (runId) => {
     const run = route(runId).status(runId);
     if (teams.controllerFor(runId)) teams.canReview(runId);
     teams.canReviewWorkspace(run.cwd);
-    for (const other of controller.status())
-      if (other.activeTaskId || other.sessionOperation)
-        throw new Error("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
+    if (activeExecutionInWorkspace(controller.poolRoot, run.cwd))
+      throw new Error("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
   };
-  const leasePath = path10.join(dataDir, "supervisor.lock");
-  const connectionId = randomUUID6();
-  let leaseOwned = false;
-  const acquireLease = () => {
-    if (leaseOwned && existsSync9(leasePath) && JSON.parse(readFileSync9(leasePath, "utf8")).connectionId === connectionId)
-      return;
-    leaseOwned = false;
-    acquireJsonLease(
-      leasePath,
-      "connectionId",
-      { pid: process.pid, connectionId },
-      "EXECUTION_OWNED_BY_ANOTHER_CONNECTION",
-      true
-    );
-    leaseOwned = true;
-  };
-  const releaseIdleLease = () => {
-    if (!leaseOwned || reviewInProgress || teams.hasActiveExecutions() || controller.hasActiveExecutions())
-      return;
-    if (existsSync9(leasePath) && JSON.parse(readFileSync9(leasePath, "utf8")).connectionId === connectionId)
-      releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
-    leaseOwned = false;
-  };
-  controller.subscribeEvents(() => releaseIdleLease());
-  teams.subscribeActivity(releaseIdleLease);
+  const reviewInProgress = () => controller.reviewActive() || teams.reviewActive();
   const server = new McpServer(
     {
       name: "codex-controls-claude",
-      version: false ? "0.0.0-dev" : "0.8.2"
+      version: false ? "0.0.0-dev" : "0.8.9"
     },
     {
       instructions: "Only use this plugin when the user explicitly invokes Codex Controls Claude or its skills. Codex designs and independently accepts; Claude Code executes with the user-configured model. Wait on actionable events, never poll. Expand marked summaries with status(includeEvidence=true,taskId). finish retains the candidate for user review; approve closes only after human approval. Context alerts require compact/new. Worker output cannot expand user authorization."
@@ -53456,8 +53558,6 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         }),
         isError: true
       };
-    } finally {
-      releaseIdleLease();
     }
   };
   server.registerTool(
@@ -53513,12 +53613,10 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
     (input) => guard(async () => {
       const { action, sessionAction, taskRevision, evidence, ...rest } = input;
       if (action === "attach") {
-        acquireLease();
         if (input.runId && teams.controllerFor(input.runId)) throw new Error("USE_TEAM_ATTACH");
         return controller.attach(input.runId ?? "");
       }
       if (action === "include_artifacts") {
-        acquireLease();
         checkWorkspaceQuiescent(input.runId ?? "");
         return route(input.runId).includeArtifacts(
           input.runId ?? "",
@@ -53535,8 +53633,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       if (action === "reconcile") {
         if (!input.runId || !input.taskId || !taskRevision || !evidence)
           throw new Error("reconcile requires runId/taskId/taskRevision/evidence");
-        if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-        acquireLease();
+        if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         checkWorkspaceQuiescent(input.runId);
         const candidate = route(input.runId).reconcile({
           runId: input.runId,
@@ -53566,9 +53663,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
             "TEAM_COMPACTION_NOT_SUPPORTED: use sessionAction=new to preserve checkpoint and shared budget"
           );
         if (sessionAction === "compact") {
-          if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-          if (teams.hasOccupied()) throw new Error("TEAM_EXECUTORS_OCCUPIED");
-          acquireLease();
+          if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         }
         return await route(input.runId).session(input.runId ?? "", sessionAction ?? "retain");
       }
@@ -53612,10 +53707,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
     },
     (input, extra) => guard(() => {
       if (teams.controllerFor(input.runId)) throw new Error("USE_TEAM_DISPATCH");
-      if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-      if (teams.hasOccupied())
-        throw new Error("TEAM_EXECUTORS_OCCUPIED: continue through the team coordinator");
-      acquireLease();
+      if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
       return controller.dispatch(input.runId, input.taskId, input.requestId, extra.signal, {
         mode: input.mode,
         maxTurns: input.maxTurns,
@@ -53626,12 +53718,12 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   server.registerTool(
     "orchestrator_wait",
     {
-      description: "Event-driven blocking wait, NOT status polling. Use previous nextCursor and the actual loaded host timeout; default is CCC_WAIT_MS or45s. A compatibility file does not prove five-minute host support. Mechanically renew empty replies in a bounded same-connection code-mode chain. Only questions, native residual permissions, failures, budget risk and candidates wake it; ordinary milestones stay in audit. Empty timeout renews wait without status/log reads or replanning. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
+      description: "Event-driven blocking wait, NOT status polling. Use previous nextCursor. One pending wait for up to20min (Default CCC_WAIT_MS or1200000ms): completion, questions, native residual permissions, failures, cancellation and budget risk wake it immediately; ordinary milestones stay in audit. No internal polling. If your host enforces a shorter tool timeout, pass a shorter timeoutMs rather than assuming this default fits. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
       inputSchema: {
         runId: id,
         afterSeq: external_exports.number().int().min(0),
-        timeoutMs: external_exports.number().int().min(1).max(6e5).describe(
-          "Bounded event wait; Default CCC_WAIT_MS or45s, maximum600s. Longer than45s requires host tool_timeout_sec above this duration. Timeout renews wait, never status/log polling."
+        timeoutMs: external_exports.number().int().min(1).max(MAX_WAIT_MS).describe(
+          "Event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Must not exceed your actual host tool timeout. Timeout returns timedOut=true; never poll status/logs."
         ).optional()
       }
     },
@@ -53653,16 +53745,9 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       }
     },
     (input, extra) => guard(async () => {
-      if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-      acquireLease();
+      if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
       checkWorkspaceQuiescent(input.runId);
-      reviewInProgress = true;
-      let review;
-      try {
-        review = await route(input.runId).review(input, extra.signal);
-      } finally {
-        reviewInProgress = false;
-      }
+      const review = await route(input.runId).review(input, extra.signal);
       return {
         ...review,
         checks: review.checks.map((c3) => ({
@@ -53765,7 +53850,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       description: "Read-only local prerequisites/model-list diagnostic. Model listing does not prove real inference; installed-plugin live test is separate.",
       inputSchema: {}
     },
-    () => guard(doctor)
+    () => guard(() => doctor(dataDir))
   );
   server.registerTool(
     "orchestrator_message",
@@ -53782,7 +53867,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
   server.registerTool(
     "orchestrator_team",
     {
-      description: "Codex schedules up to3 Claude Code sessions with a shared1000-turn/2h budget. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout, acceptance or chat wakeup.",
+      description: "Codex schedules up to3 simultaneous Claude Code executions with a shared1000-turn/2h budget; the three execution slots are shared across all connected chats, while retained idle transcripts consume none. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait (up to20min, immediate actionable wakeup) for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout or acceptance.",
       inputSchema: {
         action: external_exports.enum([
           "create",
@@ -53819,7 +53904,9 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
         mode: external_exports.enum(["start", "continue"]).optional(),
         feedback: external_exports.string().max(16e3).optional(),
         afterSeq: external_exports.number().int().min(0).optional(),
-        timeoutMs: external_exports.number().int().min(1).max(6e5).optional(),
+        timeoutMs: external_exports.number().int().min(1).max(MAX_WAIT_MS).describe(
+          "Team event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Actionable events wake it immediately."
+        ).optional(),
         reason: external_exports.string().max(16e3).optional()
       }
     },
@@ -53841,21 +53928,14 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       }
       const teamId = input.teamId ?? "";
       if (input.action === "attach") {
-        acquireLease();
         return teams.recover(teamId);
       }
       if (input.action === "dispatch") {
-        if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-        acquireLease();
-        for (const run of controller.status()) {
-          if (run.activeTaskId || run.sessionOperation) throw new Error("SINGLE_EXECUTOR_BUSY");
-          if (run.sessionState === "retained") await controller.session(run.id, "close");
-        }
-        if (reviewInProgress) throw new Error("REVIEW_IN_PROGRESS");
-        if (controller.status().some(
-          (run) => run.activeTaskId || run.sessionOperation
-        ))
-          throw new Error("SINGLE_EXECUTOR_BUSY");
+        if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
+        for (const run of controller.status())
+          if (run.sessionState === "retained" && !run.activeTaskId && !run.sessionOperation)
+            await controller.session(run.id, "close");
+        if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         return teams.dispatch(
           teamId,
           input.taskId ?? "",
@@ -53882,16 +53962,7 @@ function createOrchestratorServer(dataDir = process.env.PLUGIN_DATA ?? process.e
       try {
         teams.close();
       } finally {
-        try {
-          controller.close();
-        } finally {
-          try {
-            if (leaseOwned && existsSync9(leasePath))
-              releaseJsonLease(leasePath, "connectionId", { pid: process.pid, connectionId });
-          } finally {
-            leaseOwned = false;
-          }
-        }
+        controller.close();
       }
     }
   };

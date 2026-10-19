@@ -35,6 +35,9 @@ export function displayEffort(
   }
   let effort = "unknown",
     effortSource = "not reported";
+  // Model keys are matched EXACTLY, after only the documented [1m] context suffix is stripped from
+  // the configured name. A configured `deepseek-flash[1m]` therefore resolves a `deepseek-flash`
+  // entry; any other spelling stays unknown rather than borrowing another model's level.
   const model = env.ANTHROPIC_MODEL?.replace(/\[1m\]$/i, "");
   for (const file of files) {
     if (!existsSync(file)) continue;

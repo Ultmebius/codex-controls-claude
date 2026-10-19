@@ -2,7 +2,7 @@
 
 After one meaningful dispatch, keep an event wait pending. Only questions, residual native permission decisions, failures, budget/context warnings and review candidates need Codex reasoning. Ordinary work stays with Claude. Never accompany an empty wait with status, logs, filesystem discovery, replanning or repeated commentary.
 
-Use the actual loaded host configuration. The portable desktop connection was observed at45seconds. A separate compatibility file's five-minute wait/660-second timeout is not proof that the portable host loaded either value. Do not extend one call beyond a verified host timeout. A bounded code-mode chain can renew empty responses automatically on the same connection, avoiding a model decision on each empty timeout.
+The server default and maximum are both 20 minutes (1200000ms, `CCC_WAIT_MS` may lower the default). One wait is one pending event promise: a completion, question, residual permission, failure, budget warning or cancellation wakes it at once; only an idle run reaches the timeout. A full 20-minute call also needs the host's MCP tool timeout to be configured above 1200s — the compatibility projection declares `tool_timeout_sec=1260`. Portable Agent Plugins `mcp.json` cannot carry a timeout. If the current host reports a shorter bound (45s and 300s limits were observed), pass that shorter `timeoutMs` instead of assuming the default fits; a shorter wait is an honest host limitation, not a reason to poll. A bounded code-mode chain can renew empty responses automatically on the same connection, avoiding a model decision on each empty timeout.
 
 ## Codex code mode
 
@@ -52,4 +52,4 @@ The helper preserves the reply and evidence references and returns actionable/te
 
 Claude chooses its enabled native/MCP tools by task need. Literal-file fixtures can legitimately use built-ins; previous live communication tests called `codex_supervisor` notify/ask tools. Connected/pending/failed snapshots do not prove actual tool invocation. Preserve native switches and configuration; never force Codex-specific server names into a worker task.
 
-Current scheduling does not mix an active ordinary run with team dispatch on one MCP connection, and team task graphs are fixed. Choose a team upfront when planned independent tasks need parallelism. A blocked mixed-mode dispatch is a planning limitation, not permission to retry repeatedly or reset a budget. More workers do not inherently reduce total tokens.
+Three active executions are shared across all connected chats, ordinary runs and team children; retained idle transcripts consume no slot and a fourth execution is rejected cleanly until an owned one finishes. Team task graphs are fixed. Choose a team upfront when planned independent tasks need parallelism. More workers do not inherently reduce total tokens.

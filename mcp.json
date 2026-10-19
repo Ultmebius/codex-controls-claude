@@ -5,7 +5,10 @@
       "type": "stdio",
       "command": "node",
       "args": ["${PLUGIN_ROOT}/server/index.mjs"],
-      "cwd": "${PLUGIN_ROOT}"
+      "cwd": "${PLUGIN_ROOT}",
+      "env": {
+        "CCC_WAIT_MS": "1200000"
+      }
     }
   }
 }

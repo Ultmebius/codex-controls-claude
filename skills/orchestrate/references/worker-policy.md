@@ -26,7 +26,7 @@ These govern dispatch, evidence and owned process lifetime, not individual nativ
 
 | Control | Default / behavior |
 | --- | --- |
-| Managed concurrency | Up to3 sessions; dependencies and conflicting declared reservations gate dispatch. |
+| Managed concurrency | Exactly3 active executions shared across every connected chat, ordinary run, team child, continuation and model-executing maintenance; retained idle transcripts consume none. A fourth waits for an owned slot to finish. Dependencies and conflicting declared reservations also gate dispatch. |
 | Segment/run turns | 200 native agentic rounds per segment;1000 persistent SDK-reported turns per run/team. Explicit create overrides and same-task continuation remain supported; provisional charges are disclosed separately. |
 | Model execution time | Segment/run2h; no silent reset on resume/rework/append. Acceptance/reconciliation may finish after model budget expires. |
 | Acceptance | Immutable dispatched contract/checks, fresh artifact/revision hash, independent Codex evidence, fixed-check rerun and dependency acceptance. Additional artifacts inside the task workspace need explicit acknowledgement. This evidence boundary does not prevent Claude from accessing files elsewhere. |
@@ -35,7 +35,7 @@ These govern dispatch, evidence and owned process lifetime, not individual nativ
 | Native startup handshake | Default120s; CCC_INIT_TIMEOUT_MS configures1s..10min. |
 | Fixed acceptance checks | Default5min overall per review; CCC_CHECK_TIMEOUT_MS configures1s..10min. |
 | Residual native decisions / supervisor questions | Default5min; CCC_DECISION_TIMEOUT_MS configures1s..30min. Expired content remains available and requires fresh evaluation on explicit continuation. |
-| Event wait transport | Use the loaded CCC_WAIT_MS or45s default; compatibility-file settings are not proof of a longer portable-host timeout. Prefer bounded same-connection empty-wait chaining. No worker status/log polling; ordinary milestones are audited without waking Codex. |
+| Event wait transport | One pending event promise, default and maximum1200000ms (20min), overridable downward with CCC_WAIT_MS. Completion, questions, residual permissions, failures, budget risk and cancellation resolve it immediately. A full twenty-minute call requires a host MCP tool timeout configured above1200s; otherwise pass a shorter timeoutMs. No worker status/log polling; ordinary milestones are audited without waking Codex. |
 | Communication resource bounds |16K characters/message,128 message IDs/attempt,16 pending questions. Explicit errors on limits; no silent loss of decision evidence. |
 | Idle review lifecycle | Useful session retained for user review, suspended after30min idle with transcript preserved. Explicit close/cancel affects owned processes only. |
 | Connection ownership | Unique owner/generation, atomic explicit attach, no live-owner takeover. Idle execution leases are released. |
