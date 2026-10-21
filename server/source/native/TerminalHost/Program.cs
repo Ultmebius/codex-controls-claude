@@ -29,6 +29,9 @@ internal static class Program
                 case "--dashboard-demo": await DashboardDemo(args.Contains("--multi"), args.Contains("--hold")); return 0;
                 case "--dashboard-input-test": return await DashboardInputTest(args[1], args.Contains("--in-console"));
                 case "--dashboard-mouse-probe": return await MouseProbe(args[1]);
+                case "--dashboard-stream-test": return await DashboardStreamTest(args[1], args.Contains("--in-console"), args.Contains("--headless"));
+                case "--dashboard-perf-test": return DashboardPerformanceTest(args[1]);
+                case "--dashboard-preview-test": return await DashboardPreviewTest(args[1], args.Contains("--headless"), args.Contains("--in-console"));
                 case "--demo": Demo(args.Contains("--plain")); if (args.Contains("--hold")) await Task.Delay(120000); return 0;
                 default: throw new ArgumentException("Unknown terminal operation");
             }
@@ -47,10 +50,19 @@ internal static class Program
     private static async Task Launch(string pipe, string token, string title, string cwd, string nonce)
     {
         var watch = Stopwatch.StartNew();
+        // Baseline for "did the user act at all since launch?". Windows Terminal's own startup
+        // activation is not user input, so this separates a real restore from self-activation later.
+        var inputBaseline = Window.LastInputTick();
         // The spawn title carries this launch's private nonce so the window is unambiguous even
         // between equal display names; the host renames the visible title to the pure worker name.
         // Application title changes must be allowed for that rename, so no suppression flag.
         var spawnTitle = Window.SpawnTitle(title, nonce);
+        // The tab is created minimized so Windows Terminal itself never takes focus. A minimized
+        // window is composed by DWM from the last frame it painted, so it must NOT stay minimized:
+        // it is claimed, then restored without activation and pushed to the bottom of the Z order,
+        // where the console paints its real dashboard behind whatever the user is looking at. The
+        // host minimizes it exactly once after the first conversation frame, so the minimized
+        // composition is that dashboard instead of the empty startup chrome.
         var start = new ProcessStartInfo("wt.exe") { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Minimized };
         foreach (var arg in new[] { "-w", "new", "new-tab", "--title", spawnTitle, "--useApplicationTitle", "-d", cwd, Environment.ProcessPath!, System.Reflection.Assembly.GetExecutingAssembly().Location, "--host", pipe, token })
             start.ArgumentList.Add(arg);
@@ -63,14 +75,29 @@ internal static class Program
             await Task.Delay(50);
         }
         if (window == 0) throw new InvalidOperationException("Dedicated window not found");
-        Window.ShowWindowAsync(window, 6);
-        // WT can deliver its initial activation after the HWND first appears.
-        // Settle this one startup transition; never keep minimizing a user-restored window.
+        // Burying changes the Z order, so it must never override a user who already took the window.
+        // A restore is "in front AND user input since the launch baseline" — the same rule the host
+        // applies before its single minimization; Windows Terminal's own startup activation has no
+        // input behind it, so it does not count and the window is still buried. The rule is
+        // deliberately conservative: if it cannot prove the user acted, the window is not touched.
+        var userRestored = Window.UserTookOver(window, inputBaseline);
+        var buried = !userRestored && Window.Bury(window);
+        // Windows Terminal can deliver its initial activation after the HWND first appears. Re-assert
+        // the bottom, non-activating position once for this startup transition — unless that settle
+        // shows the window in front with user input, in which case the user owns its placement now.
         await Task.Delay(250);
-        Window.ShowWindowAsync(window, 6);
-        for (var attempt = 0; attempt < 20 && !Window.IsIconic(window); attempt++) await Task.Delay(25);
+        if (!userRestored)
+        {
+            userRestored = Window.UserTookOver(window, inputBaseline);
+            if (!userRestored) buried = Window.Bury(window) || buried;
+        }
         Window.GetWindowThreadProcessId(window, out var owner);
-        Console.WriteLine(JsonSerializer.Serialize(new { handle = window.ToInt64().ToString(), pid = owner, minimized = Window.IsIconic(window), launchMs = watch.ElapsedMilliseconds }));
+        // `launchedMinimized` is the spawn intent (no focus steal); `minimized` is the live state now
+        // (false: the window is painting behind the user), and the host reports the single startup
+        // minimization over the authenticated pipe when the first conversation frame exists.
+        // `inputBaseline` lets the host tell a real user restore from Windows Terminal's own startup
+        // activation: a restore is always preceded by user input, self-activation is not.
+        Console.WriteLine(JsonSerializer.Serialize(new { handle = window.ToInt64().ToString(), pid = owner, launchedMinimized = true, minimized = Window.IsIconic(window), launchMs = watch.ElapsedMilliseconds, stage = "painting", buried, userRestoredAtLaunch = userRestored, inputBaseline }));
     }
     // FileShare.None is an OS lock. The permanent guard is never deleted for stale recovery.
     private static object Lease(JsonElement request)
@@ -189,8 +216,27 @@ internal static class Program
                         secrets = start.Environment.Where(e => Regex.IsMatch(e.Key, "TOKEN|KEY|PASSWORD|SECRET", RegexOptions.IgnoreCase) && e.Value?.Length > 0).Select(e => e.Value!).OrderByDescending(value => value.Length).ToArray();
                         effort = Value(message, "effort"); effortSource = Value(message, "effortSource");
                         view.Add(displayId, "Starting Claude Code", effort, effortSource, secrets);
+                        // The launcher recorded the system last-input tick from before this launch.
+                        // Comparing it at first-frame time separates a real user restore from Windows
+                        // Terminal's own startup activation. Missing/invalid input means "not known",
+                        // which is treated as no user restore only when the window is not in front.
+                        uint? inputBaseline = message.TryGetProperty("inputBaseline", out var baseline)
+                            && baseline.ValueKind == JsonValueKind.Number && baseline.TryGetUInt32(out var tick)
+                            ? tick : null;
+                        // The launcher's own decision: it saw the user take the window during the
+                        // startup settle and refused to bury it again. That is a user decision, so it
+                        // must not be undone by the minimization below.
+                        var restoredAtLaunch = message.TryGetProperty("windowRestoredAtLaunch", out var taken)
+                            && taken.ValueKind == JsonValueKind.True;
                         worker = Process.Start(start) ?? throw new InvalidOperationException("Claude Code did not start");
                         await Send(new { type = "spawned", pid = worker.Id });
+                        // Startup order: the tab was created minimized (no focus steal), then restored
+                        // without activation and buried, so the pump is already painting the real
+                        // dashboard on screen. This task waits for the first frame that carries a
+                        // conversation, then minimizes exactly ONCE — the taskbar preview is composed
+                        // from that frame instead of the empty startup one. It never gates the SDK
+                        // handshake: the worker is spawned and streamed above regardless.
+                        _ = StartupMinimize(view, Send, cancel.Token, new nint(owned), inputBaseline, restoredAtLaunch);
                         var current = worker;
                         execution = Task.Run(async () =>
                         {
@@ -230,6 +276,61 @@ internal static class Program
             }
             try { await rendering; } catch (OperationCanceledException) { }
         }
+    }
+
+    // First-conversation-frame-before-minimize startup. The launcher creates the tab minimized (so
+    // Windows Terminal cannot steal focus), claims it, then shows it WITHOUT activation and buries
+    // it at the bottom of the Z order. The window therefore paints its dashboard on screen while the
+    // worker starts. This task waits for the first frame that carries a conversation, then minimizes
+    // exactly ONCE, so the taskbar preview is composed from the real dashboard rather than the empty
+    // startup frame. A window the user brought forward is left alone and reported instead; nothing
+    // is ever re-minimized, hidden, activated or faked. Bounded (20 s) and cancel-aware: the worker
+    // is spawned and streamed independently, so readiness can never deadlock startup.
+    private static async Task StartupMinimize(SessionDashboard view, Func<object, Task> send, CancellationToken cancel, nint window, uint? inputBaseline, bool restoredAtLaunch)
+    {
+        var watch = Stopwatch.StartNew();
+        var painted = false;
+        var minimized = false;
+        var userRestored = false;
+        try
+        {
+            var firstFrame = view.FirstConversationFrame;
+            var finished = await Task.WhenAny(firstFrame, Task.Delay(TimeSpan.FromSeconds(20), cancel));
+            painted = finished == firstFrame && firstFrame.IsCompletedSuccessfully;
+            // The host may already be torn down; then there is no window to minimize and no pipe to
+            // report on. Everything below is best-effort and never delays teardown.
+            if (cancel.IsCancellationRequested) return;
+            // A window the user brought forward is their choice and is left alone. Windows Terminal's
+            // own startup activation is NOT that: it happens with no user input at all, so a
+            // foreground window is only a restore when input has been seen since the launch baseline.
+            // When the readiness cap is reached without a painted conversation (a worker that failed
+            // before streaming), the launch still ends minimized exactly once — "starts minimized"
+            // must not depend on content — and `firstFramePainted: false` records why the preview
+            // cannot contain a dashboard.
+            // The launcher already saw the user take the window during its startup settle. Honour that
+            // even if the user has since focused another window: a restore is a decision, not a state.
+            userRestored = restoredAtLaunch || Window.UserTookOver(window, inputBaseline);
+            if (!userRestored) minimized = await Window.MinimizeOnceAsync(window);
+            var summary = view.PaintedSummary;
+            await send(new
+            {
+                type = "ready",
+                firstFrameMs = watch.ElapsedMilliseconds,
+                firstFramePainted = painted,
+                minimized,
+                userRestored,
+                paintedRevision = summary.Revision,
+                columns = summary.Width,
+                rows = summary.Height,
+                conversations = summary.Conversations,
+                windowHandle = window.ToInt64().ToString()
+            });
+        }
+        // Readiness is advisory: a closed pipe, a cancelled host or a torn-down console must never
+        // turn into an unobserved task fault on the host's main path.
+        catch (Exception error) when (error is OperationCanceledException or ObjectDisposedException
+            or IOException or InvalidOperationException) { }
+        catch (Exception) { }
     }
 
     private static async Task PumpOutput(Stream output, Func<object, Task> send, Action<JsonElement> show, CancellationToken cancel)
@@ -441,6 +542,435 @@ internal static class Program
         await File.WriteAllTextAsync(report, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }), Utf8);
         Console.WriteLine(JsonSerializer.Serialize(new { status = result.status, report }));
         return result.status == "passed" ? 0 : 1;
+    }
+
+    // Deterministic LIVE-STREAM fixture: it runs no model. The dashboard receives real native
+    // `stream_event` envelopes, paints the streamed body, and deliberately holds BEFORE the
+    // assistant snapshot / message_stop / result so a supervisor can capture the actual terminal
+    // while text has arrived but completion is still pending. Progress is signalled through files,
+    // never by timing guesses:
+    //
+    //   <report>.phase-streaming  painted with text streaming and no completion
+    //   <report>.phase-complete   painted after the completed snapshot and the result
+    //   <report>                  final JSON report (written last)
+    //
+    // The parent invocation opens its own dedicated minimized Windows Terminal tab and re-runs
+    // itself there with --in-console, exactly like the existing input fixture.
+    private static async Task<int> DashboardStreamTest(string reportPath, bool inConsole, bool headless)
+    {
+        var report = Path.GetFullPath(reportPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(report)!);
+        foreach (var suffix in new[] { "", ".phase-streaming", ".phase-complete", ".phase-release" })
+            if (File.Exists(report + suffix)) File.Delete(report + suffix);
+        if (headless) return await RunStreamTest(report, headless: true);
+        if (inConsole) return await RunStreamTest(report, headless: false);
+        var start = new ProcessStartInfo("wt.exe") { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Minimized };
+        foreach (var argument in new[] { "-w", "new", "new-tab", "--suppressApplicationTitle", "-d", Environment.CurrentDirectory })
+            start.ArgumentList.Add(argument);
+        var entry = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        if (!string.Equals(entry, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase))
+        {
+            start.ArgumentList.Add(Environment.ProcessPath!);
+            start.ArgumentList.Add(entry);
+        }
+        else start.ArgumentList.Add(entry);
+        foreach (var argument in new[] { "--dashboard-stream-test", report, "--in-console" })
+            start.ArgumentList.Add(argument);
+        try
+        {
+            using var spawn = Process.Start(start) ?? throw new InvalidOperationException("Windows Terminal did not start");
+            if (!await WaitForReport(report, TimeSpan.FromSeconds(90))) throw new TimeoutException();
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
+        {
+            Console.WriteLine("{\"status\":\"failed\",\"errors\":[\"no-console: a dedicated Windows Terminal tab could not complete\"]}");
+            return 1;
+        }
+        var text = File.ReadAllText(report, Utf8);
+        Console.WriteLine(text.Trim());
+        return text.Contains("\"status\": \"passed\"", StringComparison.Ordinal) ? 0 : 1;
+    }
+
+    // Runs the real pump and paints the fixture in this process's own console. `--headless` skips
+    // the console pump entirely (no window, no console modes) so the same phase protocol can be
+    // validated noninteractively; a console-less run must never claim painted evidence.
+    private static async Task<int> RunStreamTest(string reportPath, bool headless)
+    {
+        using var dashboard = new SessionDashboard();
+        using var cancel = new CancellationTokenSource();
+        dashboard.StopRequested += cancel.Cancel;
+        // Deliberately generous: the hold is released by the phase file, not by this timer.
+        using var timer = new CancellationTokenSource(headless ? TimeSpan.FromSeconds(20) : TimeSpan.FromSeconds(90));
+        timer.Token.Register(cancel.Cancel);
+        dashboard.Add("stream-fixture", "Stream · first token before completion", "high", "config", []);
+        using (var init = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"stream-fixture\",\"model\":\"demo-no-model-running\",\"permissionMode\":\"bypassPermissions\"}"))
+            dashboard.Observe("stream-fixture", init.RootElement);
+        using (var prompt = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "user", message = new { content = "Task Stream body fixture\nPainted with real stream events; no model runs." } })))
+            dashboard.Observe("stream-fixture", prompt.RootElement);
+        // A headless run is a protocol check only: it never enters a console or paints a frame.
+        var pump = headless ? Task.CompletedTask : dashboard.RunAsync(cancel.Token);
+
+        using (var start = JsonDocument.Parse("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"fixture-1\",\"usage\":{\"input_tokens\":12,\"output_tokens\":0}}}}"))
+            dashboard.Observe("stream-fixture", start.RootElement);
+        using (var block = JsonDocument.Parse("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}"))
+            dashboard.Observe("stream-fixture", block.RootElement);
+        // The visible body, split over several real text_delta envelopes including a newline and CJK.
+        var pieces = new[]
+        {
+            "Streamed body is visible ",
+            "BEFORE completion.",
+            "\n\n    const answer = 42;   // indentation survives\n",
+            "中文正文也会即时显示；",
+            " thinking stays hidden and",
+            " secrets never flash."
+        };
+        foreach (var piece in pieces)
+            using (var delta = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "stream_event", @event = new { type = "content_block_delta", index = 0, delta = new { type = "text_delta", text = piece } } })))
+            {
+                dashboard.Observe("stream-fixture", delta.RootElement);
+                await Task.Delay(180, CancellationToken.None);
+            }
+        // The block is still OPEN: no message_stop, no assistant snapshot, no result.
+        var body = dashboard.LogText("stream-fixture");
+        bool HasBody(string text) => text.Contains("Streamed body is visible BEFORE completion.")
+            && text.Contains("中文正文也会即时显示；")
+            && text.Contains("const answer = 42;");
+        var protocolVisible = HasBody(body);
+        // Non-headless: wait for the PUMP to have physically painted the streamed body. The phase
+        // file is written only after that observation, and it carries the observed result, so a
+        // capture can never mistake a protocol-level claim for a painted one.
+        var paintedVisible = false;
+        if (!headless)
+        {
+            for (var attempt = 0; attempt < 200 && !paintedVisible && !cancel.IsCancellationRequested; attempt++)
+            {
+                var rows = string.Join("\n", SessionDashboard.NativeConsole.PaintedRows.Select(SessionDashboard.StripAnsi));
+                paintedVisible = HasBody(rows);
+                if (!paintedVisible) await Task.Delay(50, CancellationToken.None);
+            }
+        }
+        // Headless proves the protocol only: it never claims painted evidence, so it is not reported
+        // as a body-visible result. Non-headless requires the pump to have painted the body.
+        var visible = !headless && paintedVisible;
+        var phase = JsonSerializer.Serialize(new
+        {
+            phase = "streaming",
+            mode = headless ? "headless" : "console",
+            protocolBodyVisible = protocolVisible,
+            paintedBodyVisible = paintedVisible,
+            paintedRevision = headless ? -1 : SessionDashboard.NativeConsole.PaintedRevision
+        });
+        await File.WriteAllTextAsync(reportPath + ".phase-streaming", phase, Utf8);
+        var release = reportPath + ".phase-release";
+        // Bounded wait: the supervisor creates the release file after its capture. The fixture
+        // proceeds on its own after 45 s so an unattended run always produces a report. A headless
+        // run has no capture to wait for, so it completes immediately.
+        var waitForRelease = headless ? 0 : 450;
+        for (var attempt = 0; attempt < waitForRelease && !File.Exists(release) && !cancel.IsCancellationRequested; attempt++)
+            await Task.Delay(100, CancellationToken.None);
+        if (cancel.IsCancellationRequested) { await pump; return 1; }
+
+        // Completion: the assistant snapshot repeats the streamed body, then the result echoes it.
+        var full = "Streamed body is visible BEFORE completion.\n\n    const answer = 42;   // indentation survives\n中文正文也会即时显示； thinking stays hidden and secrets never flash.";
+        var completedJson = "{\"type\":\"assistant\",\"message\":{\"id\":\"fixture-1\",\"content\":["
+            + "{\"type\":\"thinking\",\"thinking\":\"HIDDEN-REASONING-MARKER\"},"
+            + JsonSerializer.Serialize(new { type = "text", text = full }) + "]}}";
+        using (var completed = JsonDocument.Parse(completedJson))
+            dashboard.Observe("stream-fixture", completed.RootElement);
+        using (var stop = JsonDocument.Parse("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_stop\"}}"))
+            dashboard.Observe("stream-fixture", stop.RootElement);
+        using (var result = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "result", is_error = false, num_turns = 1, result = full })))
+            dashboard.Observe("stream-fixture", result.RootElement);
+        await Task.Delay(700, CancellationToken.None);
+
+        var final = dashboard.LogText("stream-fixture");
+        var duplicates = Regex.Matches(final, "Streamed body is visible BEFORE completion.").Count;
+        // A headless run proves the protocol (body reached the model before completion, dedup, hidden
+        // reasoning) and is reported as such; only a console run can prove painting.
+        var passed = headless
+            ? protocolVisible && duplicates == 1 && !final.Contains("HIDDEN-REASONING-MARKER")
+            : visible && duplicates == 1 && !final.Contains("HIDDEN-REASONING-MARKER");
+        var report = new
+        {
+            status = passed ? "passed" : "failed",
+            evidence = headless ? "protocol-only" : "painted",
+            mode = headless ? "headless" : "console",
+            bodyVisibleBeforeCompletion = visible,
+            protocolBodyVisible = protocolVisible,
+            paintedBodyVisible = paintedVisible,
+            duplicateBodies = duplicates,
+            thinkingHidden = !final.Contains("HIDDEN-REASONING-MARKER"),
+            logItems = dashboard.LogItemCount("stream-fixture"),
+            phaseStreaming = reportPath + ".phase-streaming",
+            phaseComplete = reportPath + ".phase-complete",
+            releaseFile = release,
+            // Painted geometry is meaningful only for a real console run.
+            columns = headless ? -1 : SessionDashboard.NativeConsole.PaintedWidth,
+            rows = headless ? -1 : SessionDashboard.NativeConsole.PaintedHeight,
+            interactive = !headless && SessionDashboard.NativeConsole.PaintedInteractive
+        };
+        await File.WriteAllTextAsync(reportPath + ".phase-complete", "{\"phase\":\"complete\"}", Utf8);
+        await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }), Utf8);
+        Console.WriteLine(JsonSerializer.Serialize(new { status = report.status, report = reportPath }));
+        cancel.Cancel();
+        await pump;
+        return report.status == "passed" ? 0 : 1;
+    }
+
+    // Deterministic MINIMIZED-STARTUP fixture. It launches its own dedicated Windows Terminal window
+    // minimized through the production launcher, then paints a real conversation BEFORE the entry
+    // reports readiness. It never activates, never restores and never re-minimizes anything by
+    // process name; the supervisor captures the taskbar preview with its own tooling.
+    //
+    // Phases are files beside the report (no sleep guesses):
+    //   <report>.hwnd            owned HWND + PID + nonce, published by the parent for the supervisor
+    //   <report>.phase-ready     a real painted conversation frame exists (pre-capture barrier)
+    //   <report>.window          SUPERVISOR-written HWND the fixture should inspect and refresh
+    //   <report>                 report (painted geometry, minimized state, refresh result)
+    //   <report>.phase-complete  report written; the run then holds until <report>.phase-release
+    // The report records only what this process can actually observe. It never claims the preview
+    // PIXELS are correct — only a supervisor capture can show that.
+    private static async Task<int> DashboardPreviewTest(string reportPath, bool headless, bool inConsole)
+    {
+        var report = Path.GetFullPath(reportPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(report)!);
+        // `.window` and `.phase-release` belong to the SUPERVISOR; both are only read here.
+        if (!inConsole) foreach (var suffix in new[] { "", ".hwnd", ".phase-ready", ".phase-complete" })
+            if (File.Exists(report + suffix)) File.Delete(report + suffix);
+        // Headless never opens a console; a parent run only delegates to its own minimized tab.
+        var paints = inConsole;
+        if (headless && inConsole) throw new ArgumentException("--headless never enters a console");
+        if (!headless && !inConsole) return await StartPreviewTab(report);
+        using var dashboard = new SessionDashboard();
+        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(headless ? 20 : 120));
+        dashboard.StopRequested += cancel.Cancel;
+        // The same fixed conversation the other fixtures use; no model runs.
+        dashboard.Add("preview-fixture", "Preview · first real frame", "high", "config", []);
+        using (var init = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"preview-fixture\",\"model\":\"demo-no-model-running\",\"permissionMode\":\"bypassPermissions\"}"))
+            dashboard.Observe("preview-fixture", init.RootElement);
+        using (var prompt = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "user", message = new { content = "Task Preview first real frame\nBody seeded before readiness." } })))
+            dashboard.Observe("preview-fixture", prompt.RootElement);
+        using (var body = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "## Preview\n\n- painted before the entry reports ready\n- **no** activation, no restore" } } } })))
+            dashboard.Observe("preview-fixture", body.RootElement);
+        var pump = paints ? dashboard.RunAsync(cancel.Token) : Task.CompletedTask;
+        // The barrier is satisfied only by a frame the pump actually painted with a conversation.
+        var ready = false;
+        var seededClaimsReady = dashboard.FirstConversationFrame.IsCompletedSuccessfully;
+        if (paints)
+        {
+            var painted = await Task.WhenAny(dashboard.FirstConversationFrame, Task.Delay(TimeSpan.FromSeconds(30), cancel.Token));
+            ready = painted == dashboard.FirstConversationFrame && dashboard.FirstConversationFrame.IsCompletedSuccessfully;
+        }
+        else
+        {
+            // Headless logic check of the startup ORDER only (never painting evidence): seeding a
+            // conversation must not claim a painted frame, the paint signal must, and the single
+            // startup minimization must fail closed on anything that is not a real window.
+            var refused = !await Window.MinimizeOnceAsync(nint.Zero) && !await Window.MinimizeOnceAsync(Window.Bogus);
+            var buryRefused = !Window.Bury(nint.Zero) && !Window.Bury(Window.Bogus);
+            // A pane registered with no observed entry is not a dashboard yet; a seeded conversation is.
+            using var empty = new SessionDashboard();
+            empty.Add("empty", "Starting Claude Code", "high", "config", []);
+            var paneWithoutEntryClaimsReady = empty.HasConversation;
+            var paintedBeforeFrame = dashboard.FirstConversationFrame.IsCompletedSuccessfully;
+            dashboard.MarkConversationFrame();
+            var afterSignal = dashboard.FirstConversationFrame.IsCompletedSuccessfully;
+            await File.WriteAllTextAsync(report, JsonSerializer.Serialize(new
+            {
+                status = !seededClaimsReady && !paintedBeforeFrame && afterSignal && refused && buryRefused
+                    && !paneWithoutEntryClaimsReady ? "protocol-only" : "failed",
+                evidence = "protocol-only",
+                seededClaimsReady,
+                paintedBeforeFrame,
+                paintSignalMarksReady = afterSignal,
+                minimizeWithoutWindowRefused = refused,
+                buryWithoutWindowRefused = buryRefused,
+                emptyPaneClaimsConversation = paneWithoutEntryClaimsReady,
+                paintedRevision = -1,
+                conversations = dashboard.PaintedSummary.Conversations,
+                reportPath = report
+            }, new JsonSerializerOptions { WriteIndented = true }), Utf8);
+            await File.WriteAllTextAsync(report + ".phase-ready", "{\"phase\":\"ready\"}", Utf8);
+            await File.WriteAllTextAsync(report + ".phase-complete", "{\"phase\":\"complete\"}", Utf8);
+            Console.WriteLine(JsonSerializer.Serialize(new { status = "protocol-only", report }));
+            return 0;
+        }
+        var summary = dashboard.PaintedSummary;
+        // The parent published the claimed HWND; the fixture minimizes THAT window exactly once,
+        // after the first conversation frame it just painted — the same order as production. The
+        // parent also recorded whether Windows Terminal owned the foreground before this process
+        // painted anything, which is startup self-activation rather than a user restore.
+        var (window, inputBaseline, restoredAtLaunch) = await WaitForOwnedWindow(report, TimeSpan.FromSeconds(60));
+        var minimized = false;
+        var userRestored = false;
+        var launchState = false;
+        if (window != 0)
+        {
+            launchState = Window.IsForeground(window);
+            userRestored = restoredAtLaunch || Window.UserTookOver(window, inputBaseline);
+            if (!userRestored) minimized = await Window.MinimizeOnceAsync(window);
+        }
+        // Readiness is published BEFORE any capture, so a supervisor captures a frame that is known
+        // to be complete instead of racing the first paint.
+        await File.WriteAllTextAsync(report + ".phase-ready", JsonSerializer.Serialize(new
+        {
+            phase = "ready",
+            firstFramePainted = ready,
+            minimizedAfterFirstFrame = minimized,
+            userRestored,
+            windowHandle = window.ToInt64().ToString(),
+            paintedRevision = summary.Revision,
+            columns = summary.Width,
+            rows = summary.Height,
+            conversations = summary.Conversations
+        }), Utf8);
+        // A console run that never obtained its owned window cannot claim painted evidence.
+        var result = new
+        {
+            status = paints && ready && window != 0 && (minimized || userRestored) ? "passed" : "failed",
+            evidence = "painted",
+            windowHandleAvailable = window != 0,
+            launchedMinimized = window != 0,
+            firstFramePainted = ready,
+            minimizedAfterFirstFrame = minimized,
+            foregroundAtMinimize = launchState,
+            userRestored,
+            paintedRevision = summary.Revision,
+            conversations = summary.Conversations,
+            columns = summary.Width,
+            rows = summary.Height,
+            reportPath = report
+        };
+        await File.WriteAllTextAsync(report, JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }), Utf8);
+        await File.WriteAllTextAsync(report + ".phase-complete", "{\"phase\":\"complete\"}", Utf8);
+        Console.WriteLine(JsonSerializer.Serialize(new { status = result.status, report }));
+        // Hold the minimized window while the supervisor captures its DWM preview, then exit on its
+        // release file. A bounded 90 s fallback keeps an unattended run terminating on its own; the
+        // window is never hidden, restored, activated or re-minimized during the hold.
+        for (var attempt = 0; attempt < 900 && !File.Exists(report + ".phase-release") && !cancel.IsCancellationRequested; attempt++)
+            await Task.Delay(100);
+        cancel.Cancel();
+        await pump;
+        return result.status == "passed" ? 0 : 1;
+    }
+
+    // The parent publishes `<report>.hwnd` after claiming the window; the supervisor's `.window`
+    // file is still honoured as an override so an external capture can address a specific HWND.
+    // The returned tick is the parent's launch-time input baseline, used exactly like production to
+    // tell a user restore from Windows Terminal's own startup activation.
+    private static async Task<(nint Window, uint? InputBaseline, bool RestoredAtLaunch)> WaitForOwnedWindow(string report, TimeSpan timeout)
+    {
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < timeout)
+        {
+            foreach (var file in new[] { report + ".window", report + ".hwnd" })
+            {
+                if (!File.Exists(file)) continue;
+                var text = File.ReadAllText(file).Trim();
+                try
+                {
+                    using var document = JsonDocument.Parse(text);
+                    var root = document.RootElement;
+                    uint? baseline = root.TryGetProperty("inputBaseline", out var value)
+                        && value.ValueKind == JsonValueKind.Number && value.TryGetUInt32(out var tick) ? tick : null;
+                    var restored = root.TryGetProperty("userRestoredAtLaunch", out var taken)
+                        && taken.ValueKind == JsonValueKind.True;
+                    if (root.TryGetProperty("handle", out var handle)
+                        && long.TryParse(handle.ValueKind == JsonValueKind.String ? handle.GetString() : handle.ToString(), out var parsed))
+                        return (new nint(parsed), baseline, restored);
+                }
+                catch (JsonException)
+                {
+                    if (long.TryParse(text, out var parsed)) return (new nint(parsed), null, false);
+                }
+            }
+            await Task.Delay(100);
+        }
+        return (nint.Zero, null, false);
+    }
+
+    // Opens this fixture's own dedicated, initially minimized Windows Terminal tab and mirrors the
+    // production launch order: create minimized (no focus steal), claim THAT window with a private
+    // nonce, then Bury it so the dashboard paints behind the foreground window. The in-console child
+    // performs the single startup minimization once its first conversation frame is painted, before it
+    // publishes `.phase-ready`. The parent itself never captures, activates or closes anything; it
+    // publishes `.hwnd` (handle, ownership nonce, input baseline) so the child can address the window.
+    private static async Task<int> StartPreviewTab(string report)
+    {
+        var entry = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        var start = new ProcessStartInfo("wt.exe") { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Minimized };
+        var nonce = Guid.NewGuid().ToString("N");
+        var spawnTitle = Window.SpawnTitle("Preview fixture", nonce);
+        foreach (var argument in new[] { "-w", "new", "new-tab", "--title", spawnTitle, "--useApplicationTitle", "-d", Environment.CurrentDirectory })
+            start.ArgumentList.Add(argument);
+        if (!string.Equals(entry, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase))
+        {
+            start.ArgumentList.Add(Environment.ProcessPath!);
+            start.ArgumentList.Add(entry);
+        }
+        else start.ArgumentList.Add(entry);
+        foreach (var argument in new[] { "--dashboard-preview-test", report, "--in-console" })
+            start.ArgumentList.Add(argument);
+        nint window = 0;
+        var inputBaseline = Window.LastInputTick();
+        try
+        {
+            using var spawn = Process.Start(start) ?? throw new InvalidOperationException("Windows Terminal did not start");
+            for (var attempt = 0; attempt < 200 && window == 0; attempt++)
+            {
+                window = Window.Claim(spawnTitle, nonce);
+                if (window == 0) await Task.Delay(50);
+            }
+            if (window == 0) throw new TimeoutException();
+            Window.GetWindowThreadProcessId(window, out var owner);
+            // Same order as production, including its restore rule: never bury a window the user has
+            // taken over (in front with user input since the baseline). The child then applies the
+            // identical rule before its single minimization.
+            var restoredAtLaunch = Window.UserTookOver(window, inputBaseline);
+            if (!restoredAtLaunch) Window.Bury(window);
+            await Task.Delay(250);
+            if (!restoredAtLaunch)
+            {
+                restoredAtLaunch = Window.UserTookOver(window, inputBaseline);
+                if (!restoredAtLaunch) Window.Bury(window);
+            }
+            // `inputBaseline` and `userRestoredAtLaunch` are the same discriminators production sends
+            // in its `start` message, so the child applies the identical rule to this fixture window.
+            await File.WriteAllTextAsync(report + ".hwnd", JsonSerializer.Serialize(new
+            {
+                handle = window.ToInt64().ToString(),
+                pid = owner,
+                nonce,
+                launchedMinimized = true,
+                minimized = Window.IsIconic(window),
+                foregroundAtSettle = Window.IsForeground(window),
+                inputBaseline,
+                userRestoredAtLaunch = restoredAtLaunch,
+                title = spawnTitle
+            }), Utf8);
+            if (!await WaitForPhase(report + ".phase-complete", TimeSpan.FromSeconds(120))) throw new TimeoutException();
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
+        {
+            Console.WriteLine("{\"status\":\"failed\",\"errors\":[\"no-console: a dedicated Windows Terminal tab could not complete\"]}");
+            return 1;
+        }
+        var text = File.ReadAllText(report, Utf8);
+        Console.WriteLine(text.Trim());
+        return text.Contains("\"status\": \"passed\"", StringComparison.Ordinal) ? 0 : 1;
+    }
+
+    // Waits for a phase file with a filesystem watcher, so a capture never races a sleep.
+    private static async Task<bool> WaitForPhase(string path, TimeSpan timeout)
+    {
+        if (File.Exists(path)) return true;
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < timeout)
+        {
+            if (File.Exists(path)) return true;
+            await Task.Delay(50);
+        }
+        return false;
     }
 
     // Host's display routing, factored out so the startup-order regression exercises the real path.
@@ -872,14 +1402,26 @@ internal static class Program
             SessionDashboard.NativeConsole.InjectClick(handle, width / 2, textRow, 0x0002);                      // right click
             await Task.Delay(300, CancellationToken.None);
             Check("right-click-copies", SessionDashboard.Clipboard.Read() == expected);
+            // A successful copy CLEARS the highlight and the gesture, so nothing keeps looking selected
+            // after the text already reached the clipboard, and the next drag starts fresh.
+            Check("right-click-clears-selection", !dashboard.HasSelection);
             // A right click with nothing selected must not replace the clipboard. A COMPLETE click is
             // injected, so the second one really is a fresh press rather than a latched movement.
-            SessionDashboard.NativeConsole.InjectKey(handle, 0x1B, '\u001b');                                   // Escape drops selection
-            await Task.Delay(200, CancellationToken.None);
-            Check("escape-clears-selection-only", dashboard.HasSelection == false && Volatile.Read(ref stop) == 0);
             SessionDashboard.NativeConsole.InjectClick(handle, width / 2, textRow, 0x0002);
             await Task.Delay(200, CancellationToken.None);
             Check("empty-right-click-keeps-clipboard", SessionDashboard.Clipboard.Read() == expected);
+            // Escape still owns its stop meaning only when nothing is selected: select again, prove
+            // one Escape drops just the highlight, and leave the conversation running.
+            SessionDashboard.NativeConsole.InjectButton(handle, textColumn, textRow, 0x0001);
+            await Task.Delay(120, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, textColumn + 10, textRow, 0x0001, moved: true);
+            await Task.Delay(200, CancellationToken.None);
+            SessionDashboard.NativeConsole.InjectButton(handle, textColumn + 10, textRow, 0);
+            await Task.Delay(150, CancellationToken.None);
+            Check("reselected-for-escape", dashboard.HasSelection);
+            SessionDashboard.NativeConsole.InjectKey(handle, 0x1B, '\u001b');                                   // Escape drops selection
+            await Task.Delay(200, CancellationToken.None);
+            Check("escape-clears-selection-only", dashboard.HasSelection == false && Volatile.Read(ref stop) == 0);
 
             // Regression: a scrollbar drag, then a TEXT drag, then a right click. Release must end the
             // thumb drag, or the text drag would be swallowed and the copy would be empty.
@@ -950,6 +1492,152 @@ internal static class Program
         return errors.Count == 0 ? 0 : 1;
     }
 
+    // Headless interaction/render benchmark. It never paints a console and never touches a window:
+    // it builds a realistic long streaming history (CJK, Markdown, tool rows), then measures how long
+    // the view-model takes for the operations a user actually performs — a repaint at a fixed width,
+    // a wheel step, a scrollbar drag record, and a drag-selection record — and counts how often the
+    // wrapped log had to be rebuilt. Those counts are the evidence that a repaint, a scroll step and a
+    // drag reuse the cached layout instead of re-wrapping history; they are CPU timings for THIS
+    // process, so they say nothing about guaranteed GUI frame rate.
+    private static int DashboardPerformanceTest(string reportPath)
+    {
+        var report = Path.GetFullPath(reportPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(report)!);
+        using var view = new SessionDashboard();
+        view.Add("perf", "Performance fixture · 性能基线", "high", "config", []);
+        const int history = 400;
+        var text = new System.Text.StringBuilder();
+        // The fixture envelopes are kept so a second view can replay exactly the same history.
+        var replay = new List<string>();
+        for (var index = 0; index < history; index++)
+        {
+            // A realistic mix: headings, prose, a code fence, a table and CJK, so wrapping and the
+            // markdown pass do the work a real conversation makes them do.
+            var body = (index % 17) switch
+            {
+                0 => "## Stage " + index + "\n\nAssistant output with **bold**, `inline code` and a list:\n- first item\n- 第二项内容\n",
+                5 => "| Key | Value |\n| --- | --- |\n| 名称 | row " + index + " |\n| path | /work/" + index + "/file.cs |\n",
+                11 => "```csharp\nvar x = " + index + "; // 注释\nConsole.WriteLine(x);\n```\n",
+                _ => "Streaming body line " + index + "：中文说明、mixed text and a long tail "
+                    + new string('x', index % 40) + "\n"
+            };
+            text.Append(body);
+            var raw = JsonSerializer.Serialize(new
+            {
+                type = "assistant",
+                message = new { id = "perf-" + index, content = new[] { new { type = "text", text = body } } }
+            });
+            replay.Add(raw);
+            using var doc = JsonDocument.Parse(raw);
+            view.Observe("perf", doc.RootElement);
+        }
+        var width = 120;
+        var height = 34;
+        var rows = view.Frame(width, height);
+        var rule = Array.FindIndex(rows, row => row.TrimStart().StartsWith('─'));
+        var rebuildsAfterLayout = view.RebuildsForTest;
+
+        static (double Ms, int Ops) Measure(int iterations, Action action)
+        {
+            var watch = Stopwatch.StartNew();
+            for (var index = 0; index < iterations; index++) action();
+            watch.Stop();
+            return (watch.Elapsed.TotalMilliseconds / iterations, iterations);
+        }
+
+        // A plain repaint (clock tick, animation frame, new output row) must reuse the cached wrap.
+        var repaint = Measure(60, () => _ = view.Frame(width, height));
+        // Scrolling moves the viewport through the SAME cached lines.
+        var wheel = Measure(60, () => view.Wheel(up: true));
+        var wheelBack = Measure(60, () => view.Wheel(up: false));
+        // A scrollbar drag record maps one pointer row onto the log.
+        var bar = Measure(60, () => view.ScrollbarDrag(rule + 4, width, height));
+        var barEnd = Measure(60, () => view.ScrollbarDrag(rule + 20, width, height));
+        // A selection drag adds or clears one focus row on the visible slice.
+        view.Frame(width, height);
+        var dragAt = rule + 2;
+        var pressAt = 12;
+        var selectionDrag = view.PressBegin(pressAt, dragAt, width, height)
+            ? Measure(40, () => _ = view.DragMove(pressAt + 20, dragAt, width, height))
+            : (Ms: 0.0, Ops: 0);
+        view.PressEnd();
+        // Growing the streamed block is the operation that must re-parse; measure it explicitly, with
+        // the real envelope shape (message_start, then content_block_delta on its own content index).
+        // The delta fixture is generated once and replayed, so both measurements do identical work.
+        var deltas = new List<string>();
+        for (var index = 0; index < 40; index++)
+            deltas.Add(JsonSerializer.Serialize(new
+            {
+                type = "stream_event",
+                @event = new
+                {
+                    type = "content_block_delta",
+                    index = 0,
+                    delta = new { type = "text_delta", text = "delta " + index + " 流式文本\n" }
+                }
+            }));
+        using (var start = JsonDocument.Parse("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"perf-stream\",\"usage\":{\"input_tokens\":10}}}}"))
+            view.Observe("perf", start.RootElement);
+        var streamWatch = Stopwatch.StartNew();
+        var streamFrames = 0;
+        foreach (var raw in deltas)
+        {
+            using var delta = JsonDocument.Parse(raw);
+            view.Observe("perf", delta.RootElement);
+            view.Frame(width, height);
+            streamFrames++;
+        }
+        streamWatch.Stop();
+        var rebuildsFinal = view.RebuildsForTest;
+        // The same streamed frames with the per-entry cache dropped every time: this is exactly the
+        // work the old whole-log re-wrap did on every delta, measured on this machine and fixture.
+        using var uncached = new SessionDashboard();
+        uncached.Add("perf", "Performance fixture · 性能基线", "high", "config", []);
+        foreach (var raw in replay) { using var doc = JsonDocument.Parse(raw); uncached.Observe("perf", doc.RootElement); }
+        using (var start = JsonDocument.Parse("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"perf-stream\",\"usage\":{\"input_tokens\":10}}}}"))
+            uncached.Observe("perf", start.RootElement);
+        var uncachedWatch = Stopwatch.StartNew();
+        foreach (var raw in deltas)
+        {
+            using var delta = JsonDocument.Parse(raw);
+            uncached.Observe("perf", delta.RootElement);
+            uncached.InvalidateWrapCachesForBenchmark();
+            uncached.Frame(width, height);
+        }
+        uncachedWatch.Stop();
+        var reportBody = new
+        {
+            status = "passed",
+            evidence = "cpu-microbenchmark",
+            note = "Headless CPU timings for the view model only; not a GUI frame-rate guarantee.",
+            history,
+            width,
+            height,
+            bodyRows = rows.Length - rule - 1,
+            rebuildsAfterLayout,
+            rebuildsFinal,
+            repaintMs = Math.Round(repaint.Ms, 4),
+            wheelStepMs = Math.Round(wheel.Ms, 4),
+            wheelBackMs = Math.Round(wheelBack.Ms, 4),
+            scrollbarDragMs = Math.Round(bar.Ms, 4),
+            scrollbarEndMs = Math.Round(barEnd.Ms, 4),
+            selectionDragMs = Math.Round(selectionDrag.Ms, 4),
+            selectionDragSamples = selectionDrag.Ops,
+            streamedFrameMs = Math.Round(streamWatch.Elapsed.TotalMilliseconds / streamFrames, 4),
+            // The same 40 streamed frames with the per-entry cache dropped every time, i.e. the work
+            // the previous whole-log re-wrap did on every delta on this machine and fixture.
+            streamedFrameUncachedMs = Math.Round(uncachedWatch.Elapsed.TotalMilliseconds / streamFrames, 4),
+            // The invariant the cache exists for: repaints, wheel steps, scrollbar drags and selection
+            // drags never rebuild the log. Only the growing streamed block does.
+            rebuildsDuringInteraction = rebuildsFinal - rebuildsAfterLayout,
+            streamFrames,
+            totalChars = text.Length
+        };
+        File.WriteAllText(report, JsonSerializer.Serialize(reportBody, new JsonSerializerOptions { WriteIndented = true }), Utf8);
+        Console.WriteLine(JsonSerializer.Serialize(reportBody));
+        return 0;
+    }
+
     private static void Demo(bool plain)
     {
         var view = new TerminalView(plain); view.Header();
@@ -977,6 +1665,46 @@ internal static class Program
         var found = 0; AppendLines(new StringBuilder(), "{\"type\":\"result\"}\n", _ => found++); Require(found == 1);
         Require(TaskExcerpt(new string('x', 2000)).Contains("Display excerpt"));
         Require(string.Join("", TerminalView.Wrap("中文abcdef", 4)) == "中文abcdef");
+        // The startup window operations must fail closed on anything that is not a real window, so a
+        // stale/zero handle can never be reported as buried or minimized.
+        Require(!Window.Bury(nint.Zero));
+        Require(!Window.Bury(Window.Bogus));
+        Require(!Window.IsForeground(nint.Zero));
+        // A handle that is not a window must never be "minimized": the single startup minimization is
+        // reported only when Windows actually made the window iconic.
+        Require(!Window.MinimizeOnceAsync(nint.Zero).GetAwaiter().GetResult());
+        Require(!Window.MinimizeOnceAsync(Window.Bogus).GetAwaiter().GetResult());
+        // The launch baseline must be a real input tick, and time only ever moves forward from it
+        // (the comparison is signed so the 32-bit wrap does not read as "input seen").
+        var baselineTick = Window.LastInputTick();
+        Require(baselineTick != 0);
+        Require(!Window.InputSince(unchecked(baselineTick + 1000)));
+        Require(Window.InputSince(unchecked(baselineTick - 1000)));
+        // The restore rule gates BOTH the launcher's Bury and the host's single minimization: a window
+        // is the user's only when it is in front AND input followed the launch baseline. Startup
+        // self-activation (in front, no input) must still be buried/minimized; unknown input (null)
+        // is never treated as a restore; the 32-bit tick wrap is compared signed, so input that
+        // crosses zero still counts as later input.
+        Require(Window.UserTookOver(true, 1000, 1200));                    // in front + real input
+        Require(!Window.UserTookOver(true, 1000, 900));                    // in front, no input yet
+        Require(!Window.UserTookOver(true, 1000, 1000));                   // exactly the baseline
+        Require(!Window.UserTookOver(false, 1000, 1200));                  // input, but not in front
+        Require(!Window.UserTookOver(true, null, 1200));                   // baseline unknown
+        Require(Window.UserTookOver(true, 0xFFFFFFF6, 5));                 // input crosses the wrap
+        // Readiness is an EDGE, not the mere existence of a pane: a registered "Starting Claude Code"
+        // pane carries no entry yet and must not claim a painted conversation frame.
+        using (var readiness = new SessionDashboard())
+        {
+            readiness.Add("starting", "Starting Claude Code", "high", "config", []);
+            Require(!readiness.HasConversation);
+            Require(!readiness.FirstConversationFrame.IsCompletedSuccessfully);
+            using (var prompt = JsonDocument.Parse("{\"type\":\"user\",\"message\":{\"content\":\"Task First real frame\"}}"))
+                readiness.Observe("starting", prompt.RootElement);
+            Require(readiness.HasConversation);
+            Require(!readiness.FirstConversationFrame.IsCompletedSuccessfully);   // still unpainted
+            readiness.MarkConversationFrame();
+            Require(readiness.FirstConversationFrame.IsCompletedSuccessfully);
+        }
         using var failed = JsonDocument.Parse("{\"type\":\"result\",\"is_error\":true,\"subtype\":\"error_max_turns\",\"errors\":[\"limit\"]}");
         Require(Display(failed.RootElement).Single().Contains("[failed] error_max_turns"));
         // The reported defect end-to-end through Host's own routing: the initial user prompt arrives
@@ -1065,8 +1793,72 @@ internal static class Window
     [DllImport("user32.dll")] internal static extern bool IsWindow(nint window);
     [DllImport("user32.dll")] internal static extern bool IsIconic(nint window);
     [DllImport("user32.dll")] internal static extern bool ShowWindowAsync(nint window, int command);
+    [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint window, out uint pid);
     [DllImport("user32.dll")] internal static extern bool PostMessage(nint window, uint message, nint wParam, nint lParam);
+    [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(nint window, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(nint window, nint insertAfter, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] private static extern bool RedrawWindow(nint window, nint update, nint region, uint flags);
+
+    // Startup sequence, all NON-ACTIVATING. The tab is created minimized (no focus steal), then
+    // Bury restores it with SW_SHOWNOACTIVATE and pushes it to the bottom of the Z order so the
+    // console can paint its real dashboard behind the foreground window. SWP_NOACTIVATE and
+    // SWP_NOOWNERZORDER keep the user's foreground window in front, and nothing is ever hidden —
+    // a hidden window would not paint, and hiding is not supported for the preview either.
+    internal static bool IsForeground(nint window) => window != 0 && GetForegroundWindow() == window;
+
+    [StructLayout(LayoutKind.Sequential)] private struct LastInput { public uint Size; public uint Tick; }
+    [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LastInput info);
+
+    // Windows Terminal can activate itself shortly after its HWND appears, so "our window is in
+    // front" alone cannot distinguish that from the user bringing it forward. A user restore is
+    // always preceded by user input, so the system-wide last-input tick is the discriminator: if no
+    // input was seen since the launch baseline, a foreground change can only be self-activation.
+    internal static uint LastInputTick()
+    {
+        var info = new LastInput { Size = (uint)Marshal.SizeOf<LastInput>() };
+        return GetLastInputInfo(ref info) ? info.Tick : 0;
+    }
+
+    // Ticks are 32-bit and wrap; only the signed difference matters.
+    internal static bool InputSince(uint baseline) => unchecked((int)(LastInputTick() - baseline)) > 0;
+
+    // One rule for "the user owns this window now": it is in front AND real user input has been seen
+    // since the launch baseline. Windows Terminal's own startup activation has no input behind it, so
+    // it never counts. Both the launcher's Bury and the host's single minimization consult this, so a
+    // restored window is neither pushed to the bottom of the Z order nor minimized.
+    internal static bool UserTookOver(nint window, uint? inputBaseline)
+        => window != 0 && IsForeground(window) && inputBaseline is { } baseline && InputSince(baseline);
+
+    // Pure predicate for the same rule, so the self-test can prove the decision without a real window.
+    internal static bool UserTookOver(bool foreground, uint? inputBaseline, uint lastInput)
+        => foreground && inputBaseline is { } baseline && unchecked((int)(lastInput - baseline)) > 0;
+
+    internal static bool Bury(nint window)
+    {
+        if (window == 0 || !IsWindow(window)) return false;
+        // SW_SHOWNOACTIVATE (4) restores a minimized window without activating it; it is a no-op
+        // when the window is already visible.
+        ShowWindowAsync(window, 4);
+        var placed = SetWindowPos(window, new nint(1) /* HWND_BOTTOM */, 0, 0, 0, 0,
+            0x0001 /* SWP_NOSIZE */ | 0x0002 /* SWP_NOMOVE */ | 0x0010 /* SWP_NOACTIVATE */
+            | 0x0200 /* SWP_NOOWNERZORDER */);
+        var redrawn = RedrawWindow(window, 0, 0, 0x0001 /* RDW_INVALIDATE */ | 0x0100 /* RDW_UPDATENOW */);
+        return placed || redrawn;
+    }
+
+    // The one startup minimization, performed only after the first conversation frame is on screen.
+    // Bounded: if the window never reports iconic, the failure is reported as `minimized: false`
+    // rather than being retried into a minimize loop. A window the user restored is never touched
+    // again because this runs exactly once, at startup.
+    internal static async Task<bool> MinimizeOnceAsync(nint window)
+    {
+        if (window == 0 || !IsWindow(window)) return false;
+        ShowWindowAsync(window, 6 /* SW_MINIMIZE */);
+        for (var attempt = 0; attempt < 40 && !IsIconic(window); attempt++) await Task.Delay(25);
+        return IsIconic(window);
+    }
     // SetProp replaces a property; serialize claiming and explicitly reject an owned HWND.
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SetPropW(nint window, string name, nint value);
@@ -1075,6 +1867,8 @@ internal static class Window
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern nint RemovePropW(nint window, string name);
 
+    // A handle that is recognisably not a window, for refusal checks that must never touch a real HWND.
+    internal static readonly nint Bogus = new(1);
     internal const string OwnerProperty = "CodexControlsClaude.Owner";
     private static readonly nint Marker = 1;
 

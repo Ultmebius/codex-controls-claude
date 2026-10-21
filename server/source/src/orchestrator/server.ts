@@ -86,7 +86,8 @@ export async function doctor(poolRoot = defaultDataDir()) {
     workerPolicy: {
       hooks: "native_untouched",
       ordinaryTools: "native_permission_evaluation",
-      blockedTools: ["Agent", "TeamCreate", "TeamDelete"],
+      blockedTools: [],
+      userQuestions: "codex_supervisor_question_reply",
       fileInterception: false,
       pathRewriting: false,
       terminalTitle: "native_claude",
@@ -245,7 +246,7 @@ export function createOrchestratorServer(
     "orchestrator_plan",
     {
       description:
-        "Plan goal/design, dependencies and fixed checks. attach(runId) explicitly refreshes and recovers a released/dead-owner run; never steals a live owner or replays work. include_artifacts(runId,taskId,artifacts,evidence) acknowledges necessary in-scope files for hashing without changing fixed checks. reconcile captures supervisor-completed artifacts, then independent review is required. interrupt gracefully drains the native result before bounded fallback stop. append/supersede never reset budgets. finish retains the candidate for human review; approve closes only after human approval. sessionAction retain/close/resume/compact/new manages context. Execution deadlines default2h.",
+        "Plan goal/design, dependencies and fixed checks. attach(runId) explicitly refreshes and recovers a released/dead-owner run; never steals a live owner or replays work. include_artifacts(runId,taskId,artifacts,evidence) acknowledges necessary in-scope files for hashing without changing fixed checks. reconcile captures supervisor-completed artifacts, then independent review is required. interrupt gracefully drains the native result before bounded fallback stop. append/supersede never reset budgets. finish retains the candidate for human review; approve closes only after human approval. sessionAction retain/close/resume/compact/new manages context: an explicit sessionAction=resume plus evidence (user-authorized continuation) renews only the model-execution window, default2h or runTimeoutMs, without resetting the native session, task contracts/checks or turn budget; resume without evidence, reopen, append, compact and new never move the deadline. Execution deadlines default2h.",
       inputSchema: {
         action: z.enum([
           "create",
@@ -287,7 +288,7 @@ export function createOrchestratorServer(
           .min(1000)
           .max(7200000)
           .describe(
-            "Model-execution run deadline from creation, 1000..7200000ms; Default: 7200000 (2h). Reopen/append/resume do not reset it; verification can still run after it."
+            "Model-execution run deadline, 1000..7200000ms; Default: 7200000 (2h). On create it starts the initial window. Otherwise accepted only with action=session, sessionAction=resume and evidence: it sets the renewed window without shortening a current one. Reopen/append and resume without evidence never reset it; verification can still run after it."
           )
           .optional(),
         maxTurns: z
@@ -296,7 +297,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(1000)
           .describe(
-            "Native agentic-turn cap per execution segment, 1..1000. Default: 200 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
+            "Native agentic-turn cap per execution segment, 1..1000. Default: 500 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
           )
           .optional(),
         maxTotalTurns: z
@@ -309,7 +310,14 @@ export function createOrchestratorServer(
           )
           .optional(),
         taskRevision: z.number().int().positive().optional(),
-        evidence: z.string().min(1).max(16000).optional(),
+        evidence: z
+          .string()
+          .min(1)
+          .max(16000)
+          .describe(
+            "Supervisor/user evidence for reconcile, interrupt or an explicit session resume. A resume renewal requires non-empty evidence; it is recorded with the old and new deadline in the durable audit."
+          )
+          .optional(),
         artifacts: z.array(z.string().min(1)).min(1).max(100).optional(),
         maxRepairs: z
           .number()
@@ -367,13 +375,13 @@ export function createOrchestratorServer(
         if (
           action !== "create" &&
           (input.maxTotalTurns !== undefined ||
-            input.runTimeoutMs !== undefined ||
             input.taskTimeoutMs !== undefined ||
             input.maxTurns !== undefined ||
-            input.maxRepairs !== undefined)
+            input.maxRepairs !== undefined ||
+            (input.runTimeoutMs !== undefined && action !== "session"))
         )
           throw new Error(
-            "BUDGET_CONFIG_CREATE_ONLY: use dispatch.maxTurns for an explicit continuation cap"
+            "BUDGET_CONFIG_CREATE_ONLY: use dispatch.maxTurns for an explicit continuation cap; runTimeoutMs is accepted only on create or an evidence-backed session resume"
           );
         if (
           input.runId &&
@@ -386,10 +394,22 @@ export function createOrchestratorServer(
             throw new Error(
               "TEAM_COMPACTION_NOT_SUPPORTED: use sessionAction=new to preserve checkpoint and shared budget"
             );
+          if (
+            input.runId &&
+            teams.controllerFor(input.runId) &&
+            (input.runTimeoutMs !== undefined ||
+              (sessionAction === "resume" && (evidence?.trim() ?? "") !== ""))
+          )
+            throw new Error(
+              "TEAM_RESUME_REQUIRED: renew a team child window through orchestrator_team action=resume"
+            );
           if (sessionAction === "compact") {
             if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
           }
-          return await route(input.runId).session(input.runId ?? "", sessionAction ?? "retain");
+          return await route(input.runId).session(input.runId ?? "", sessionAction ?? "retain", {
+            evidence,
+            runTimeoutMs: input.runTimeoutMs,
+          });
         }
         const run = route(input.runId).plan({ ...rest, action });
         return {
@@ -431,7 +451,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(1000)
           .describe(
-            "Optional native cap for this segment (default run.maxTurns=200), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
+            "Optional native cap for this segment (default run.maxTurns=500), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
           )
           .optional(),
         feedback: z
@@ -459,7 +479,7 @@ export function createOrchestratorServer(
     "orchestrator_wait",
     {
       description:
-        "Event-driven blocking wait, NOT status polling. Use previous nextCursor. One pending wait for up to20min (Default CCC_WAIT_MS or1200000ms): completion, questions, native residual permissions, failures, cancellation and budget risk wake it immediately; ordinary milestones stay in audit. No internal polling. If your host enforces a shorter tool timeout, pass a shorter timeoutMs rather than assuming this default fits. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
+        "Event-driven blocking wait, NOT status polling. Use previous nextCursor. One pending wait for up to20min (Default CCC_WAIT_MS or1200000ms): completion, questions, native residual permissions, failures, cancellation and budget risk wake it immediately; ordinary milestones stay in audit. No internal polling. Omit timeoutMs; only an actual observed host tool-timeout failure justifies a shorter value, never progress updates or a speculative bound. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
       inputSchema: {
         runId: id,
         afterSeq: z.number().int().min(0),
@@ -469,7 +489,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(MAX_WAIT_MS)
           .describe(
-            "Event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Must not exceed your actual host tool timeout. Timeout returns timedOut=true; never poll status/logs."
+            "Event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Omit it: the20-minute default applies, and it must not be shortened for progress updates, speculative host limits or an outer tool yield/wait bound. Pass a shorter value only after an actual observed host tool-timeout failure that cut a wait short, and record that exact error and bound. Timeout returns timedOut=true; never poll status/logs."
           )
           .optional(),
       },
@@ -546,7 +566,7 @@ export function createOrchestratorServer(
           .array(z.enum(EVIDENCE_SECTIONS))
           .min(1)
           .describe(
-            "Evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. Contract and usage are opt-in. Requires runId."
+            "Evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions,guidance. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. guidance shows queued/interruption_requested/delivering/delivered/failed/cancelled scoped messages and their transport reason. Contract and usage are opt-in. Requires runId."
           )
           .optional(),
       },
@@ -601,8 +621,24 @@ export function createOrchestratorServer(
           status: r.status,
           sessionId: r.sessionId,
           sessionState: r.sessionState,
+          // Effective model-execution window; renewals are visible without expanding evidence.
+          deadline: r.deadline,
+          renewalCount: r.renewals?.length ?? 0,
           context: r.lastContext,
           budget: budgetSummary(r.turnBudget),
+          guidance: (r.guidance ?? [])
+            .filter((record) =>
+              ["queued", "interruption_requested", "delivering"].includes(record.state)
+            )
+            .map((record) => ({
+              guidanceId: record.id,
+              requestId: record.requestId,
+              taskId: record.taskId,
+              mode: record.mode,
+              state: record.state,
+              // Audit only; never a claim that the model read the text.
+              textPreview: record.text.slice(0, 200),
+            })),
           workerCapabilities: compactCapabilities(
             (r as typeof r & { workerCapabilities?: WorkerCapabilities }).workerCapabilities
           ),
@@ -632,21 +668,82 @@ export function createOrchestratorServer(
     "orchestrator_message",
     {
       description:
-        "Answer a worker_question from an active Claude tool call. This is supervisor guidance within the task, not human permission. Use messageId from the event and its childRunId for teams. Stale, wrong-task or expired IDs are rejected. Updates already have transport receipts; no polling inbox.",
+        "Talk to the active Claude turn. action=reply answers a worker_question (runId,messageId,answer): supervisor guidance within the task, not human permission; use the event's messageId and its childRunId for teams; stale, wrong-task or expired IDs are rejected; updates already have transport receipts, so there is no inbox to poll. action=queue delivers scoped guidance (runId,requestId,text) without interrupting: it is accepted now and sent as exactly one input after the current native turn reaches its result boundary, FIFO with other queued guidance. action=interrupt additionally asks the native runtime to end the current turn promptly and, once that segment's result drains, sends the guidance into the same saved native conversation; it outranks unsent queued messages, which stay pending. Both require an active running task and reject foreign/stale run/task/revision/session scope. Returned states are truthful and distinct: queued, interruption_requested, delivering (native startup pending), delivered (input accepted, never a claim the model read it), failed, cancelled. Queue re-reserves the persistent turn budget before the follow-on input; exhaustion, cancellation, disconnect, an expired deadline or a failed interrupt report failure instead of delivering late.",
       inputSchema: {
+        action: z
+          .enum(["reply", "queue", "interrupt"])
+          .describe(
+            "reply answers a pending question; queue adds scoped guidance for the next native boundary; interrupt ends the current turn and delivers guidance into the same conversation. Default: reply."
+          )
+          .optional(),
         runId: id,
-        messageId: z.string().min(1),
-        answer: z.string().min(1).max(16000),
+        messageId: z.string().min(1).optional().describe("Required for action=reply."),
+        answer: z.string().min(1).max(16000).optional().describe("Required for action=reply."),
+        requestId: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[a-zA-Z0-9_-]+$/)
+          .describe(
+            "Stable caller idempotency key for queue/interrupt. Repeating it with the same text returns the same record; different text is a conflict."
+          )
+          .optional(),
+        text: z
+          .string()
+          .min(1)
+          .max(4000)
+          .describe("Scoped guidance for action=queue/interrupt; at most 4000 characters.")
+          .optional(),
+        taskId: z
+          .string()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Optional assertion of the active task; a mismatch is rejected."),
+        taskRevision: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Optional assertion of the active task contract revision."),
+        sessionId: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("Optional assertion of the run's current native session id."),
       },
     },
     (input) =>
-      guard(() => route(input.runId).respondMessage(input.runId, input.messageId, input.answer))
+      guard(() => {
+        const controller = route(input.runId);
+        const action = input.action ?? "reply";
+        if (action === "reply") {
+          if (!input.messageId || !input.answer)
+            throw new Error("REPLY_REQUIRES_MESSAGE_ID_AND_ANSWER");
+          if (input.text !== undefined || input.requestId !== undefined)
+            throw new Error("REPLY_TAKES_NO_GUIDANCE_FIELDS");
+          return controller.respondMessage(input.runId, input.messageId, input.answer);
+        }
+        if (!input.requestId || !input.text)
+          throw new Error("GUIDANCE_REQUIRES_REQUEST_ID_AND_TEXT");
+        if (input.messageId !== undefined || input.answer !== undefined)
+          throw new Error("GUIDANCE_TAKES_NO_ANSWER_FIELDS");
+        return controller.sendGuidance(input.runId, {
+          requestId: input.requestId,
+          mode: action,
+          text: input.text,
+          taskId: input.taskId,
+          taskRevision: input.taskRevision,
+          sessionId: input.sessionId,
+        });
+      })
   );
   server.registerTool(
     "orchestrator_team",
     {
       description:
-        "Codex schedules up to3 simultaneous Claude Code executions with a shared1000-turn/2h budget; the three execution slots are shared across all connected chats, while retained idle transcripts consume none. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait (up to20min, immediate actionable wakeup) for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout or acceptance.",
+        "Codex schedules up to3 simultaneous Claude Code executions with a shared1000-turn/2h budget; the three execution slots are shared across all connected chats, while retained idle transcripts consume none. action=resume(teamId,evidence,runTimeoutMs?) explicitly renews only the shared/child model-execution window after user authorization while every worker is idle; contracts, revisions, native conversations and the shared turn budget are retained, and children cannot renew past an expired parent by ordinary resume. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait (up to20min, immediate actionable wakeup) for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout or acceptance.",
       inputSchema: {
         action: z.enum([
           "create",
@@ -659,6 +756,7 @@ export function createOrchestratorServer(
           "approve",
           "close",
           "attach",
+          "resume",
         ]),
         teamId: id.optional(),
         taskId: id.optional(),
@@ -678,7 +776,15 @@ export function createOrchestratorServer(
           )
           .optional(),
         maxWorkers: z.number().int().min(1).max(3).optional(),
-        maxTurns: z.number().int().min(1).max(1000).optional(),
+        maxTurns: z
+          .number()
+          .int()
+          .min(1)
+          .max(1000)
+          .describe(
+            "Native agentic-turn cap per team segment, 1..1000; Default: 500. Bounded by the shared persistent run allowance."
+          )
+          .optional(),
         maxTotalTurns: z.number().int().min(1).max(10000).optional(),
         runTimeoutMs: z.number().int().min(1000).max(7200000).optional(),
         taskTimeoutMs: z.number().int().min(1000).max(7200000).optional(),
@@ -691,10 +797,18 @@ export function createOrchestratorServer(
           .min(1)
           .max(MAX_WAIT_MS)
           .describe(
-            "Team event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Actionable events wake it immediately."
+            "Team event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Omit it: the20-minute default applies unless an actual observed host tool-timeout failure requires a shorter value (record the exact error and bound). Actionable events wake it immediately."
           )
           .optional(),
         reason: z.string().max(16000).optional(),
+        evidence: z
+          .string()
+          .min(1)
+          .max(16000)
+          .describe(
+            "User-authorized continuation evidence for action=resume; accepted as the renewal record. reason is accepted as a fallback."
+          )
+          .optional(),
       },
     },
     (input, extra) =>
@@ -718,11 +832,20 @@ export function createOrchestratorServer(
         if (input.action === "attach") {
           return teams.recover(teamId);
         }
+        if (input.action === "resume")
+          return teams.resume(teamId, input.reason ?? input.evidence ?? "", input.runTimeoutMs);
         if (input.action === "dispatch") {
           if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
           // Independent projects may keep executing; capacity is shared through worker slots.
+          // Only idle runs owned by this connection may be suspended: a peer connection's
+          // retained transcript is not this dispatcher's capacity and must not be touched.
           for (const run of controller.status() as import("./controller.js").Run[])
-            if (run.sessionState === "retained" && !run.activeTaskId && !run.sessionOperation)
+            if (
+              controller.isOwned(run.id) &&
+              run.sessionState === "retained" &&
+              !run.activeTaskId &&
+              !run.sessionOperation
+            )
               await controller.session(run.id, "close");
           // Re-check after the await: an acceptance review may have started meanwhile.
           if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");

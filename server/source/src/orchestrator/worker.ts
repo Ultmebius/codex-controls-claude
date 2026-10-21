@@ -3,6 +3,7 @@ import { consumeQuery, type ConsumeQueryHandle } from "../tools/query-consumer.j
 import { buildOptions } from "../utils/build-options.js";
 import { toSessionCreateParams } from "../utils/session-create.js";
 import { raceWithAbort } from "../utils/race-with-abort.js";
+import { DEFAULT_SETTING_SOURCES } from "../types.js";
 import type { AgentResult, PermissionRequestRecord, SessionEvent } from "../types.js";
 import {
   localConfig,
@@ -16,6 +17,7 @@ import {
 import { InputQueue } from "./input-queue.js";
 import { DEFAULT_SEGMENT_TURNS } from "./budget.js";
 import { SupervisorMailbox, type SupervisorMessage } from "./messaging.js";
+import { askCodex } from "./user-question.js";
 import { getSessionMessages, type SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
   capabilitiesFromInit,
@@ -68,6 +70,18 @@ export interface Worker {
   isLive?(sessionId: string): boolean;
   maintenanceComplete?(sessionId: string): void;
   interrupt?(sessionId: string, timeoutMs?: number): Promise<void>;
+  /**
+   * Ask the native runtime to end the current turn without tearing down the conversation.
+   * Resolves true only when the control request was actually accepted; a rejected or missing
+   * control channel resolves false. The caller still waits for the native result before
+   * treating the turn as over.
+   */
+  interruptTurn?(sessionId: string): boolean | Promise<boolean>;
+  /**
+   * Put one scoped guidance message into the live streaming input for the next native turn.
+   * Returns whether the input was accepted by the queue; it never means the model read it.
+   */
+  guidance?(sessionId: string, text: string, maxTurns?: number): boolean | Promise<boolean>;
   stop(sessionId?: string): void;
   destroy(): void;
   setWriteScope?(cwd: string, paths?: string[]): void;
@@ -98,6 +112,7 @@ export class ClaudeWorker implements Worker {
   private writeScope?: { cwd: string; paths: string[] };
   private workerName?: string;
   private nativeError?: string;
+  private interruptBarrier?: Promise<boolean>;
   setName(name: string | undefined) {
     this.workerName = name;
   }
@@ -233,6 +248,7 @@ export class ClaudeWorker implements Worker {
     this.generation++;
     this.eventFloor = -1;
     this.mailbox?.close("Native query replaced");
+    this.interruptBarrier = undefined;
     const mailbox = new SupervisorMailbox(decisionTimeoutMs());
     this.mailbox = mailbox;
     mailbox.subscribe((message) => {
@@ -262,15 +278,21 @@ export class ClaudeWorker implements Worker {
       pathToClaudeCodeExecutable: config.executable,
       env: config.env,
       tools: { type: "preset" as const, preset: "claude_code" as const },
-      disallowedTools: ["Agent", "TeamCreate", "TeamDelete"],
       persistSession: true,
       includePartialMessages: true,
       strictMcpConfig: false,
+      // Explicit inheritance: the worker runs under the user's own Claude Code configuration.
+      // The claude_code system prompt preset does NOT imply filesystem settings, and `project` is
+      // what makes CLAUDE.md (user/project/local memory files) load. Passing this explicitly keeps
+      // the worker from silently falling back to SDK isolation if build-options is reused with a
+      // different source later.
+      settingSources: [...DEFAULT_SETTING_SOURCES],
       systemPrompt: {
         type: "preset" as const,
         preset: "claude_code" as const,
         append:
-          "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Agent/TeamCreate/TeamDelete are unavailable; Task remains permitted under native policies. Codex schedules up to3 managed top-level sessions. Supervisor tools are not necessarily yours; select from your actually available tools.",
+          "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; native AskUserQuestion is also forwarded to Codex and its answer returned to you. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. " +
+          "Ask early rather than guessing: send a scoped ask_supervisor question as soon as a choice would change what you build or is hard to undo. Separate the three kinds of input explicitly: facts the user stated, decisions Codex actually answered, and research or implementation choices you are free to make yourself (use judgement there and proceed). Never present your own inference or a design you favour as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If the task text and Codex guidance disagree, follow the newest scoped guidance and say so in your report. Guidance Codex queues while you work arrives as a new user turn after your current one; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance intact.",
       },
     };
     if (resumeId)
@@ -294,6 +316,8 @@ export class ClaudeWorker implements Worker {
         mcpServers: { codex_supervisor: mailbox.createServer() },
       },
       nativeToolHandling: true,
+      handleUserQuestion: (input: Record<string, unknown>, signal: AbortSignal) =>
+        askCodex(mailbox, input, signal),
       permissionRequestTimeoutMs: decisionTimeoutMs(),
       sessionInitTimeoutMs: startupTimeoutMs(),
       sessionManager: this.manager,
@@ -443,6 +467,7 @@ export class ClaudeWorker implements Worker {
     }
     this.generation++;
     let errors = 0;
+    this.interruptBarrier = undefined;
     try {
       this.mailbox?.close("Worker stopped");
       this.input?.close();
@@ -467,6 +492,67 @@ export class ClaudeWorker implements Worker {
     }
     if (errors) console.error(`Worker cleanup completed with ${errors} resource errors`);
   }
+  /**
+   * Issue the native interrupt control request only. The conversation, its input stream and the
+   * supervisor mailbox stay alive so the drained turn can be followed by scoped guidance.
+   */
+  interruptTurn(sessionId: string): boolean | Promise<boolean> {
+    if (sessionId !== this.currentId || !this.handle || !this.live) return false;
+    // A pending question belongs to the abandoned tool call and must not stay claimable.
+    const generation = this.generation;
+    const mailbox = this.mailbox;
+    const release = () => {
+      if (generation === this.generation)
+        mailbox?.interruptPending("Turn interrupted for new guidance");
+    };
+    if (!this.handle.interruptAsync) {
+      return false;
+    }
+    const previous = this.interruptBarrier;
+    const request = this.handle.interruptAsync().catch(() => false);
+    const barrier = Promise.all(previous ? [previous, request] : [request]).then((answers) => {
+      const accepted = answers.every(Boolean);
+      if (accepted) release();
+      return accepted;
+    });
+    this.interruptBarrier = barrier;
+    void barrier.then(() => {
+      if (this.interruptBarrier === barrier) this.interruptBarrier = undefined;
+    });
+    return barrier;
+  }
+
+  /**
+   * Start one follow-on native turn in the same saved conversation. Reuses the existing reply
+   * lifecycle so the manager status, native error and context are armed exactly like a normal
+   * segment; when the reduced grant differs from the live startup cap the SDK requires a cold
+   * resume of the SAME session id rather than silently keeping the larger cap.
+   */
+  async guidance(sessionId: string, text: string, maxTurns?: number): Promise<boolean> {
+    const generation = this.generation;
+    // A naturally completed turn can race the native control acknowledgement. Drain all old
+    // controls before sending new input so a late interrupt cannot cancel the follow-on turn.
+    while (this.interruptBarrier) {
+      const barrier = this.interruptBarrier;
+      if (!(await barrier)) return false;
+      if (this.interruptBarrier === barrier) {
+        this.interruptBarrier = undefined;
+        break;
+      }
+    }
+    if (generation !== this.generation) return false;
+    const info = this.manager.get(sessionId);
+    if (!info || sessionId !== this.currentId || !this.live) return false;
+    // A turn that is still running cannot accept a follow-on input.
+    if (info.status === "running" || info.status === "waiting_permission") return false;
+    try {
+      await this.reply(sessionId, text, maxTurns);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async interrupt(sessionId: string, timeoutMs = 3000) {
     if (sessionId !== this.currentId || !this.handle) return;
     const started = this.manager.getLastEventId(sessionId) ?? -1;

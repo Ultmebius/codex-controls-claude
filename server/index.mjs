@@ -30379,6 +30379,17 @@ var TerminalProcess = class extends EventEmitter {
         if (message.type === "spawned") {
           this.info.workerPid = Number(message.pid);
           this.ready();
+        } else if (message.type === "ready") {
+          if (Number.isSafeInteger(message.firstFrameMs))
+            this.info.firstFrameMs = Number(message.firstFrameMs);
+          if (typeof message.firstFramePainted === "boolean")
+            this.info.firstFramePainted = message.firstFramePainted;
+          if (typeof message.minimized === "boolean")
+            this.info.startedMinimized = message.minimized;
+          if (message.userRestored === true) this.info.userRestored = true;
+          if (Number.isSafeInteger(message.columns))
+            this.info.paintedColumns = Number(message.columns);
+          if (Number.isSafeInteger(message.rows)) this.info.paintedRows = Number(message.rows);
         } else if (message.type === "stdout" && typeof message.data === "string") {
           if (!this.stdout.write(Buffer.from(message.data, "base64"))) {
             socket.pause();
@@ -30406,10 +30417,13 @@ var TerminalProcess = class extends EventEmitter {
         (window2) => {
           this.info.windowHandle = window2.handle;
           this.info.windowPid = window2.pid;
-          this.info.startedMinimized = window2.minimized;
+          if (typeof window2.inputBaseline === "number") this.inputBaseline = window2.inputBaseline;
+          if (window2.userRestoredAtLaunch === true) this.restoredAtLaunch = true;
+          if (window2.minimized) this.info.startedMinimized = true;
           this.info.windowLaunchMs = window2.launchMs;
           if (this.finished) closeWindow(this.info);
-          else if (!window2.minimized) fail3(new Error("Windows Terminal did not minimize"));
+          else if (window2.launchedMinimized === false && !window2.minimized)
+            fail3(new Error("Windows Terminal did not minimize"));
           else {
             this.startWorker();
             this.ready();
@@ -30428,12 +30442,16 @@ var TerminalProcess = class extends EventEmitter {
   finished = false;
   connected = false;
   started = false;
+  /** Last user-input tick at spawn time; the host uses it to tell self-activation from a restore. */
+  inputBaseline;
+  /** The launcher saw the user take the window; the host must neither bury nor minimize it. */
+  restoredAtLaunch = false;
   socket;
   sockets = /* @__PURE__ */ new Set();
   server = createServer();
   timer;
   startWorker() {
-    if (this.started || this.finished || !this.socket || !this.info.startedMinimized) return;
+    if (this.started || this.finished || !this.socket || !this.info.windowHandle) return;
     this.started = true;
     const { command, args, cwd, env } = this.opts;
     this.send({
@@ -30444,7 +30462,13 @@ var TerminalProcess = class extends EventEmitter {
       env,
       effort: this.options.effort ?? "unknown",
       effortSource: this.options.effortSource ?? "not reported",
-      windowHandle: this.info.windowHandle
+      windowHandle: this.info.windowHandle,
+      // Observed before the worker existed: the host compares it against the system input tick when
+      // the first frame is painted, so Windows Terminal's own startup activation is not mistaken for
+      // the user bringing the window forward.
+      inputBaseline: this.inputBaseline,
+      // The launcher's own restore decision; the host treats it as final and does not minimize.
+      windowRestoredAtLaunch: this.restoredAtLaunch
     });
     this.stdin.on("data", (chunk) => {
       if (!this.send({ type: "stdin", data: chunk.toString("base64") })) {
@@ -30455,7 +30479,7 @@ var TerminalProcess = class extends EventEmitter {
     this.stdin.once("end", () => this.send({ type: "end" }));
   }
   ready() {
-    if (this.info.workerPid && this.info.startedMinimized) clearTimeout(this.timer);
+    if (this.info.workerPid && this.info.windowHandle) clearTimeout(this.timer);
   }
   send(value) {
     return this.socket?.write(JSON.stringify(value) + "\n") ?? false;
@@ -30820,7 +30844,7 @@ function changedSince(baseline, current) {
 }
 
 // src/orchestrator/budget.ts
-var DEFAULT_SEGMENT_TURNS = 200;
+var DEFAULT_SEGMENT_TURNS = 500;
 var DEFAULT_RUN_TURN_LIMIT = 1e3;
 var LEGACY_RUN_TURN_LIMIT = 200;
 var BOUNDARY_ALLOWANCE = 1;
@@ -31067,7 +31091,7 @@ function capabilitiesFromInit(init) {
       mcp: "native_enabled_configuration",
       permissions: "native_configuration",
       hooks: "native_configuration",
-      blockedTools: ["Agent", "TeamCreate", "TeamDelete"]
+      blockedTools: []
     }
   };
 }
@@ -31134,6 +31158,11 @@ function nativeMcpSignature(cwd, home = os3.homedir()) {
 }
 
 // src/orchestrator/controller.ts
+var DEFAULT_EXECUTION_WINDOW_MS = 72e5;
+var MIN_EXECUTION_WINDOW_MS = 1e3;
+var MAX_GUIDANCE_TEXT = 4e3;
+var MAX_GUIDANCE_RECORDS = 32;
+var MAX_GUIDANCE_QUEUE = 8;
 function taskContract(task2) {
   const { id: id2, title, instructions, dependsOn, acceptance, artifacts, checks } = task2;
   return { id: id2, title, instructions, dependsOn, acceptance, artifacts, checks };
@@ -31205,6 +31234,8 @@ var Orchestrator = class {
   closed = false;
   ownerId = randomUUID4();
   interruptions = /* @__PURE__ */ new Map();
+  /** Per-message interrupt watchdogs; process-local and never persisted. */
+  guidanceTimers = /* @__PURE__ */ new Map();
   reviewing = /* @__PURE__ */ new Set();
   idleTimers = /* @__PURE__ */ new Map();
   eventSubscribers = /* @__PURE__ */ new Set();
@@ -31250,9 +31281,323 @@ var Orchestrator = class {
       nextCursor: this.cursor(runId)
     };
   }
+  /**
+   * Scoped guidance for an active, still-running task. `queue` records the text and returns
+   * without touching the native turn: delivery happens exactly once at the next native result
+   * boundary. `interrupt` additionally asks the worker to end the current turn, then delivers
+   * the guidance as the follow-on input in the same native conversation. Nothing is claimed as
+   * read by the model, and nothing survives a restart or a cancelled task.
+   */
+  sendGuidance(runId, input) {
+    const run = this.get(runId);
+    this.open(run, true);
+    if (["__proto__", "constructor", "prototype"].includes(input.requestId))
+      fail("INVALID_REQUEST_ID");
+    const text2 = typeof input.text === "string" ? input.text.trim() : "";
+    if (!text2) fail("GUIDANCE_TEXT_REQUIRED");
+    if (text2.length > MAX_GUIDANCE_TEXT) fail("GUIDANCE_TEXT_TOO_LONG");
+    const prior = run.guidance?.find((record4) => record4.requestId === input.requestId);
+    if (prior) {
+      if (prior.text !== text2 || prior.mode !== input.mode || input.taskId !== void 0 && input.taskId !== prior.taskId || input.taskRevision !== void 0 && input.taskRevision !== prior.taskRevision || input.sessionId !== void 0 && prior.sessionId !== void 0 && input.sessionId !== prior.sessionId)
+        fail("REQUEST_ID_CONFLICT");
+      return this.guidanceReceipt(run, prior, true);
+    }
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+    if (this.interruptions.has(run.id)) fail("EXECUTOR_STARTUP_DRAINING");
+    const task2 = run.activeTaskId ? this.task(run, run.activeTaskId) : void 0;
+    if (!task2 || task2.state !== "running" || !run.sessionId) fail("NO_ACTIVE_EXECUTION");
+    if (input.taskId !== void 0 && input.taskId !== task2.id) fail("GUIDANCE_TASK_NOT_ACTIVE");
+    if (input.taskRevision !== void 0 && input.taskRevision !== task2.revision)
+      fail("STALE_CONTRACT");
+    if (input.sessionId !== void 0 && input.sessionId !== run.sessionId)
+      fail("GUIDANCE_SESSION_MISMATCH");
+    const active2 = run.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (!active2 || active2.status !== "reserved") fail("NO_ACTIVE_EXECUTION");
+    if (this.pendingGuidance(run).length >= MAX_GUIDANCE_QUEUE) fail("GUIDANCE_QUEUE_FULL");
+    if ((run.guidance?.length ?? 0) >= MAX_GUIDANCE_RECORDS) fail("GUIDANCE_MESSAGE_LIMIT");
+    if (Date.now() >= run.deadline) fail("RUN_DEADLINE");
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const record3 = {
+      id: randomUUID4(),
+      requestId: input.requestId,
+      runId,
+      taskId: task2.id,
+      taskRevision: task2.revision,
+      sessionId: run.sessionId,
+      mode: input.mode,
+      text: text2,
+      state: input.mode === "interrupt" ? "interruption_requested" : "queued",
+      createdAt: now,
+      updatedAt: now
+    };
+    run.guidance ??= [];
+    run.guidance.push(record3);
+    this.save(run);
+    this.emit(
+      run,
+      input.mode === "interrupt" ? "guidance_interruption_requested" : "guidance_queued",
+      this.guidanceSummary(run, record3),
+      task2.id,
+      false
+    );
+    if (input.mode === "interrupt") this.requestGuidanceInterrupt(run, record3);
+    return this.guidanceReceipt(run, record3, false);
+  }
+  /** Pending guidance: interrupting messages outrank ordinary queued ones, then FIFO. */
+  pendingGuidance(run) {
+    const order = (record3) => record3.state === "interruption_requested" ? 0 : 1;
+    return (run.guidance ?? []).filter((record3) => record3.state === "queued" || record3.state === "interruption_requested").sort((a3, b) => order(a3) - order(b) || a3.createdAt.localeCompare(b.createdAt));
+  }
+  guidanceSummary(run, record3) {
+    return {
+      guidanceId: record3.id,
+      requestId: record3.requestId,
+      taskId: record3.taskId,
+      taskRevision: record3.taskRevision,
+      mode: record3.mode,
+      state: record3.state,
+      reason: record3.reason,
+      /** Truthful delivery only: input accepted, never a claim that the model read it. */
+      delivered: record3.state === "delivered",
+      pendingGuidance: this.pendingGuidance(run).length,
+      textPreview: record3.text.slice(0, 500),
+      truncated: record3.text.length > 500
+    };
+  }
+  guidanceReceipt(run, record3, deduplicated) {
+    return {
+      runId: run.id,
+      ...this.guidanceSummary(run, record3),
+      deduplicated,
+      states: {
+        queued: "Accepted; waits for the current native turn to reach its result boundary",
+        interruption_requested: "Native interruption requested; not yet input",
+        delivering: "Starting the follow-on native turn; transport acceptance is pending",
+        delivered: "Input accepted by the same native conversation for the follow-on turn",
+        failed: "Not delivered; interrupt, transport or allowance prevented it",
+        cancelled: "Dropped because the task, run, budget or conversation ended"
+      },
+      trust: "supervisor_scope_guidance",
+      nextCursor: this.cursor(run.id)
+    };
+  }
+  /**
+   * Ask the native runtime to abandon the current turn. Delivery stays with the native result
+   * boundary; if that boundary never arrives, the message fails instead of being sent late into
+   * an unknown turn.
+   */
+  async requestGuidanceInterrupt(run, record3) {
+    record3.state = "interruption_requested";
+    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const executionId = run.activeExecutionId;
+    this.save(run);
+    const watchdog = setTimeout(
+      () => {
+        if (record3.state !== "interruption_requested") return;
+        if (run.activeExecutionId !== executionId || run.activeTaskId !== record3.taskId) return;
+        this.settleGuidance(run, record3, "failed", "interrupt_boundary_timeout");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), record3.taskId);
+      },
+      Math.min(3e4, Math.max(1e3, run.deadline - Date.now()))
+    );
+    watchdog.unref();
+    this.guidanceTimers.set(record3.id, watchdog);
+    let issued = false;
+    try {
+      issued = await this.worker.interruptTurn?.(run.sessionId ?? "") ?? false;
+    } catch {
+      issued = false;
+    }
+    if (record3.state !== "interruption_requested") return;
+    if (!issued) {
+      this.settleGuidance(run, record3, "failed", "interrupt_failed");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), record3.taskId);
+      return;
+    }
+    this.save(run);
+  }
+  settleGuidance(run, record3, state, reason) {
+    record3.state = state;
+    record3.reason = reason;
+    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const timer = this.guidanceTimers.get(record3.id);
+    if (timer) {
+      clearTimeout(timer);
+      this.guidanceTimers.delete(record3.id);
+    }
+    this.save(run);
+  }
+  /**
+   * Deliver exactly one guidance message for the boundary that just settled. Exactly one user
+   * input crosses the native queue per boundary so two messages can never coalesce, and the
+   * follow-on segment is reserved before any input is sent.
+   */
+  deliverGuidance(run, record3) {
+    if (this.closed || !this.owns(run) || run.status !== "open" || !run.activeTaskId) {
+      this.settleGuidance(run, record3, "cancelled", "run_no_longer_active");
+      return false;
+    }
+    const task2 = this.task(run, run.activeTaskId);
+    if (Date.now() >= run.deadline) {
+      this.settleGuidance(run, record3, "failed", "execution_deadline");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
+      return false;
+    }
+    const requested = run.executions?.at(-1)?.requestedLimit ?? run.maxTurns;
+    let nativeLimit = availableGrant(run.turnBudget, requested);
+    if (this.teamManaged) {
+      const granted = this.parentGrant?.(run.id, requested) ?? 0;
+      if (granted < 1) {
+        this.settleGuidance(run, record3, "failed", "turn_budget_exhausted");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
+        return false;
+      }
+      run.turnBudget.limit = run.turnBudget.used + granted + 1;
+      run.turnBudget.reserved += granted + 1;
+      nativeLimit = granted;
+    } else {
+      if (nativeLimit < 1) {
+        this.settleGuidance(run, record3, "failed", "turn_budget_exhausted");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
+        return false;
+      }
+      reserveGrant(run.turnBudget, nativeLimit);
+    }
+    const execution = {
+      id: randomUUID4(),
+      taskId: task2.id,
+      attempt: task2.attempts,
+      startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      requestedLimit: requested,
+      effectiveLimit: nativeLimit,
+      defaultLimit: run.maxTurns,
+      reservedTurns: nativeLimit + 1,
+      observedAssistantMessages: 0,
+      provisionalCharge: 0,
+      status: "reserved",
+      reason: "guidance_continuation"
+    };
+    execution.sessionId = run.sessionId;
+    run.executions.push(execution);
+    run.activeExecutionId = execution.id;
+    const timer = setTimeout(
+      () => this.stopExecution(run, "Execution deadline exceeded", "time_budget"),
+      Math.min(run.taskTimeoutMs, Math.max(1, run.deadline - Date.now()))
+    );
+    timer.unref();
+    const previousTimer = this.timers.get(run.id);
+    if (previousTimer) clearTimeout(previousTimer);
+    this.timers.set(run.id, timer);
+    this.save(run);
+    let sent = false;
+    record3.state = "delivering";
+    record3.executionId = execution.id;
+    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    try {
+      sent = this.worker.guidance?.(run.sessionId ?? "", record3.text, nativeLimit) ?? false;
+    } catch {
+      sent = false;
+    }
+    if (typeof sent !== "boolean") {
+      const startup = { valid: true };
+      this.startups.set(run.id, startup);
+      let deliveryTimer;
+      const bounded = Promise.race([
+        sent,
+        new Promise((resolve) => {
+          deliveryTimer = setTimeout(
+            () => resolve(false),
+            Math.min(3e4, Math.max(1, run.deadline - Date.now()))
+          );
+          deliveryTimer.unref();
+        })
+      ]);
+      void bounded.then((accepted) => {
+        if (record3.state === "delivered") return;
+        if (!startup.valid || this.closed || !this.owns(run) || run.status !== "open" || run.activeExecutionId !== execution.id || record3.state !== "delivering") {
+          this.worker.stop(run.sessionId);
+          return;
+        }
+        if (!accepted) {
+          this.settleGuidance(run, record3, "failed", "transport_failed");
+          this.worker.stop(run.sessionId);
+          this.stoppedTask(
+            run,
+            task2,
+            "Guidance transport failed",
+            "guidance_transport",
+            "failed",
+            "worker_finished"
+          );
+          return;
+        }
+        execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
+        this.settleGuidance(run, record3, "delivered");
+        this.emit(run, "guidance_delivered", this.guidanceSummary(run, record3), task2.id, false);
+      }).catch(() => {
+        if (startup.valid && this.owns(run) && run.activeExecutionId === execution.id) {
+          this.settleGuidance(run, record3, "failed", "transport_failed");
+          this.worker.stop(run.sessionId);
+          this.stoppedTask(
+            run,
+            task2,
+            "Guidance transport failed",
+            "guidance_transport",
+            "failed",
+            "worker_finished"
+          );
+        }
+      }).finally(() => {
+        if (deliveryTimer) clearTimeout(deliveryTimer);
+        if (this.startups.get(run.id) === startup) {
+          this.startups.delete(run.id);
+          if (!run.activeTaskId && !run.sessionOperation) this.release(run);
+        }
+      });
+      this.save(run);
+      return true;
+    }
+    execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
+    if (!sent) {
+      settleReservation(run.turnBudget, execution.reservedTurns, void 0);
+      execution.reservedTurns = 0;
+      execution.status = "confirmed";
+      execution.reason = "guidance_transport_failed";
+      execution.settledAt = (/* @__PURE__ */ new Date()).toISOString();
+      if (run.activeExecutionId === execution.id) run.activeExecutionId = void 0;
+      this.settleGuidance(run, record3, "failed", "transport_failed");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
+      return false;
+    }
+    this.settleGuidance(run, record3, "delivered");
+    this.emit(run, "guidance_delivered", this.guidanceSummary(run, record3), task2.id, false);
+    return true;
+  }
+  /** Drop every unsent message; the caller reports why. */
+  clearGuidance(run, reason) {
+    for (const record3 of (run.guidance ?? []).filter(
+      (entry) => ["queued", "interruption_requested", "delivering"].includes(entry.state)
+    )) {
+      const timer = this.guidanceTimers.get(record3.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.guidanceTimers.delete(record3.id);
+      }
+      record3.state = "cancelled";
+      record3.reason = reason;
+      record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    }
+  }
   migrate(run) {
     run.executions ??= [];
+    for (const record3 of run.guidance ?? [])
+      if (["queued", "interruption_requested", "delivering"].includes(record3.state)) {
+        record3.state = "cancelled";
+        record3.reason = record3.reason ?? "not_replayed_after_restart";
+        record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      }
     run.workerName ??= run.tasks[0]?.title;
+    if (run.renewals && !Array.isArray(run.renewals)) run.renewals = void 0;
     if (!run.turnBudget) {
       let used = 0, observed = 0;
       for (const event of run.events)
@@ -31421,6 +31766,7 @@ var Orchestrator = class {
   stoppedTask(run, task2, reason, kind, state, eventType) {
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
+    this.clearGuidance(run, kind);
     this.settle(run, void 0, kind);
     run.activeTaskId = void 0;
     run.sessionOperation = void 0;
@@ -31575,6 +31921,12 @@ var Orchestrator = class {
       run.activeTaskId = void 0;
       run.sessionOperation = void 0;
       run.sessionState = "closed";
+      for (const record3 of run.guidance ?? [])
+        if (["queued", "interruption_requested", "delivering"].includes(record3.state)) {
+          record3.state = "cancelled";
+          record3.reason = "owner_lost";
+          record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        }
       for (const task2 of run.tasks) {
         if (task2.state === "running") {
           task2.state = "interrupted";
@@ -31912,6 +32264,7 @@ var Orchestrator = class {
   closeSession(run) {
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
+    this.clearGuidance(run, "Session closed");
     const timer = this.idleTimers.get(run.id);
     if (timer) clearTimeout(timer);
     this.idleTimers.delete(run.id);
@@ -31937,7 +32290,92 @@ var Orchestrator = class {
       remaining: run.tasks.filter((t) => !["accepted", "superseded"].includes(t.state)).map((t) => ({ id: t.id, title: t.title, dependsOn: t.dependsOn, feedback: t.feedback }))
     });
   }
-  async session(runId, action) {
+  /**
+   * Explicit, evidence-backed renewal of the model-execution window. Callers must have proved the
+   * run is idle and owned. Nothing else (task contracts, revisions, native conversation, turn
+   * budget, usage, repairs, checks or receipts) is touched, and an implicit path never calls this.
+   */
+  renewDeadline(run, source, evidence, requestedRunTimeoutMs, deadline) {
+    const text2 = evidence.trim();
+    if (!text2) fail("RENEWAL_EVIDENCE_REQUIRED");
+    const window2 = requestedRunTimeoutMs ?? DEFAULT_EXECUTION_WINDOW_MS;
+    if (!Number.isSafeInteger(window2) || window2 < MIN_EXECUTION_WINDOW_MS || window2 > DEFAULT_EXECUTION_WINDOW_MS)
+      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    if (deadline !== void 0 && (!Number.isSafeInteger(deadline) || deadline <= 0))
+      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    const previousDeadline = run.deadline;
+    const next = Math.max(previousDeadline, deadline ?? Date.now() + window2);
+    const renewal = {
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      source,
+      previousDeadline,
+      deadline: next,
+      evidence: text2
+    };
+    if (requestedRunTimeoutMs !== void 0) renewal.requestedRunTimeoutMs = requestedRunTimeoutMs;
+    run.renewals ??= [];
+    run.renewals.push(renewal);
+    run.deadline = next;
+    this.save(run);
+    return renewal;
+  }
+  /**
+   * Renewal guard shared by ordinary and team paths. Busy, draining, reviewed, foreign-owned or
+   * closed runs cannot be renewed; a failed worker never reaches this method.
+   */
+  assertRenewable(run) {
+    this.open(run);
+    if (this.closed || !this.owns(run)) fail("RUN_OWNED_BY_ANOTHER_CONNECTION");
+    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
+    if (run.activeTaskId || run.sessionOperation) fail("SESSION_BUSY");
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+  }
+  /**
+   * A managed child's model-execution window is owned by its team: only the coordinator may move
+   * it, so an ordinary resume can never outlive an expired parent.
+   */
+  teamManaged = false;
+  /**
+   * Team children spend the shared team allowance, which the parent must reserve before any
+   * follow-on input. The handler returns the granted turns (0 when the team cannot afford it).
+   */
+  parentGrant;
+  setParentGrant(handler) {
+    this.parentGrant = handler;
+  }
+  setTeamManaged(managed) {
+    this.teamManaged = managed;
+  }
+  /**
+   * Team-coordinated renewal of one child's window. The team coordinator supplies the single
+   * evidence record and the parent deadline, so the team and its children never diverge.
+   */
+  renewExecutionWindow(runId, input) {
+    const run = this.get(runId);
+    this.assertRenewable(run);
+    return this.renewDeadline(
+      run,
+      input.source,
+      input.evidence,
+      input.runTimeoutMs,
+      input.deadline
+    );
+  }
+  /** True only for a run this connection currently owns and may mutate. */
+  isOwned(runId) {
+    const run = this.runs.get(runId);
+    return !!run && !this.closed && this.owns(run);
+  }
+  /** Non-throwing form used to pre-check a coordinated team renewal atomically. */
+  renewalEligibility(runId) {
+    try {
+      this.assertRenewable(this.get(runId));
+      return void 0;
+    } catch (error48) {
+      return error48 instanceof Error ? error48.message : String(error48);
+    }
+  }
+  async session(runId, action, options = {}) {
     const run = this.get(runId), beforeCursor = this.cursor(runId);
     if ((run.status === "completed" || run.status === "cancelled") && action !== "close")
       fail("REOPEN_RUN_FIRST");
@@ -31945,6 +32383,10 @@ var Orchestrator = class {
       fail("OPEN_RUN_EXISTS");
     if (run.activeTaskId || this.reviewing.has(run.id) || run.sessionOperation)
       fail("SESSION_BUSY");
+    const renewalRequested = action === "resume" && (options.runTimeoutMs !== void 0 || options.evidence !== void 0);
+    if (options.runTimeoutMs !== void 0 && action !== "resume")
+      fail("BUDGET_CONFIG_CREATE_ONLY: runTimeoutMs is accepted only on create or explicit resume");
+    let renewal;
     if (action === "close") this.closeSession(run);
     else if (action === "new") {
       run.checkpoint = this.makeCheckpoint(run);
@@ -31957,6 +32399,19 @@ var Orchestrator = class {
       run.sessionState = run.sessionId && this.worker.model(run.sessionId) ? "retained" : "resume_pending";
     else if (action === "resume") {
       if (!run.sessionId) fail("NO_TRANSCRIPT_TO_RESUME");
+      if (renewalRequested) {
+        if (this.teamManaged)
+          fail(
+            "TEAM_RESUME_REQUIRED: renew a team child window through orchestrator_team action=resume"
+          );
+        this.assertRenewable(run);
+        renewal = this.renewDeadline(
+          run,
+          "explicit_session_resume",
+          options.evidence ?? "",
+          options.runTimeoutMs
+        );
+      }
       run.sessionState = this.worker.model(run.sessionId) ? "retained" : "resume_pending";
     } else {
       if (!run.sessionId) fail("NO_SESSION_TO_COMPACT");
@@ -32016,7 +32471,12 @@ var Orchestrator = class {
     this.emit(
       run,
       "session_policy",
-      { action, state: run.sessionState, sessionId: run.sessionId },
+      {
+        action,
+        state: run.sessionState,
+        sessionId: run.sessionId,
+        renewal: renewal ? this.renewalSummary(run, renewal) : void 0
+      },
       void 0,
       false
     );
@@ -32025,7 +32485,23 @@ var Orchestrator = class {
       action,
       state: run.sessionState,
       sessionId: run.sessionId,
+      deadline: run.deadline,
+      renewal: renewal ? this.renewalSummary(run, renewal) : void 0,
       nextCursor: beforeCursor
+    };
+  }
+  /** Effective window returned to the caller after an explicit renewal. */
+  renewalSummary(run, renewal) {
+    return {
+      source: renewal.source,
+      at: renewal.at,
+      previousDeadline: renewal.previousDeadline,
+      deadline: renewal.deadline,
+      effectiveDeadline: run.deadline,
+      requestedRunTimeoutMs: renewal.requestedRunTimeoutMs,
+      evidence: renewal.evidence,
+      renewalCount: run.renewals?.length ?? 0,
+      turnBudget: { ...run.turnBudget }
     };
   }
   acquire(run) {
@@ -32060,6 +32536,7 @@ var Orchestrator = class {
     this.open(run, true);
     if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
     if (run.activeTaskId || run.sessionOperation) fail("EXECUTOR_BUSY");
+    this.clearGuidance(run, "New dispatch");
     if (run.sessionId && run.lastContext && run.lastContext.inputTokens !== null && run.lastContext.inputTokens >= run.lastContext.hardLimit)
       fail("CONTEXT_MAINTENANCE_REQUIRED: compact or new before dispatch");
     const task2 = this.task(run, taskId);
@@ -32289,6 +32766,18 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     if (account) {
       account.sessionId = sessionId;
       account.epoch = epoch;
+      const delivery = run.guidance?.find(
+        (record3) => record3.executionId === account.id && record3.state === "delivering"
+      );
+      if (delivery && ["output", "permission_request", "result", "error"].includes(event.type)) {
+        if (event.type === "error") {
+          this.settleGuidance(run, delivery, "failed", "native_transport_error");
+          this.emit(run, "guidance_failed", this.guidanceSummary(run, delivery), task2.id);
+        } else {
+          this.settleGuidance(run, delivery, "delivered");
+          this.emit(run, "guidance_delivered", this.guidanceSummary(run, delivery), task2.id, false);
+        }
+      }
     }
     if (account && event.type === "output" && event.data.message?.role === "assistant")
       account.observedAssistantMessages++;
@@ -32324,23 +32813,26 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       return;
     }
     if (event.type === "result" || event.type === "error") {
-      task2.result = this.worker.result(sessionId) ?? event.data;
-      const accountingKnown = !task2.result.isError || !!task2.result.errorSubtype;
+      const nativeResult = this.worker.result(sessionId) ?? event.data;
+      const accountingKnown = !nativeResult.isError || !!nativeResult.errorSubtype;
+      const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
+        nativeResult.errorSubtype ?? ""
+      );
+      const blocked = !nativeResult.isError && /^BLOCKED:/m.test(nativeResult.result);
+      const nextState = budgetStop ? "budget_exhausted" : nativeResult.isError ? "failed" : blocked ? "blocked" : "awaiting_review";
       this.settle(
         run,
-        accountingKnown ? task2.result.numTurns : void 0,
-        task2.result.errorSubtype ?? event.type
+        accountingKnown ? nativeResult.numTurns : void 0,
+        nativeResult.errorSubtype ?? event.type
       );
-      const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
-        task2.result.errorSubtype ?? ""
-      );
+      task2.result = nativeResult;
       task2.failure = budgetStop ? {
-        kind: task2.result.errorSubtype === "error_max_turns" ? "turn_budget" : "provider_budget",
-        subtype: task2.result.errorSubtype
-      } : task2.result.isError ? { kind: "execution", subtype: task2.result.errorSubtype } : void 0;
+        kind: nativeResult.errorSubtype === "error_max_turns" ? "turn_budget" : "provider_budget",
+        subtype: nativeResult.errorSubtype
+      } : nativeResult.isError ? { kind: "execution", subtype: nativeResult.errorSubtype } : void 0;
       if (budgetStop)
-        run.turnBudget.stopReason = task2.result.errorSubtype === "error_max_turns" ? "native_max_turns" : "provider_budget_cap";
-      task2.state = budgetStop ? "budget_exhausted" : task2.result.isError ? "failed" : /^BLOCKED:/m.test(task2.result.result) ? "blocked" : "awaiting_review";
+        run.turnBudget.stopReason = nativeResult.errorSubtype === "error_max_turns" ? "native_max_turns" : "provider_budget_cap";
+      task2.state = nextState;
       const interruption = this.interruptions.get(run.id);
       if (interruption) {
         task2.state = interruption.kind === "permission" ? "blocked" : "interrupted";
@@ -32348,6 +32840,36 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
       }
       for (const decision of task2.decisions ?? [])
         if (decision.state === "pending") decision.state = "expired";
+      const pending = this.pendingGuidance(run);
+      if (pending.length && !interruption && !this.closed && run.status === "open") {
+        this.emit(
+          run,
+          "native_boundary",
+          {
+            executionId: account?.id,
+            numTurns: nativeResult.numTurns,
+            accountingKnown,
+            boundaryState: task2.state,
+            pendingGuidance: pending.length,
+            turnBudget: run.turnBudget
+          },
+          task2.id,
+          false
+        );
+        const interruptRequested = pending.some((record3) => record3.mode === "interrupt");
+        const deliverable = interruptRequested || !nativeResult.isError && !blocked;
+        if (deliverable && this.deliverGuidance(run, pending[0])) {
+          task2.state = "running";
+          task2.result = void 0;
+          task2.failure = void 0;
+          run.lastContext = this.worker.context?.(sessionId);
+          this.save(run);
+          this.warnBudget(run, task2);
+          return;
+        }
+        if (!deliverable || pending[0].state !== "delivered")
+          this.clearGuidance(run, `Boundary ${task2.state}`);
+      } else if (pending.length) this.clearGuidance(run, `Boundary ${task2.state}`);
       if (task2.state === "awaiting_review") {
         try {
           task2.artifactHash = this.hash(run, task2);
@@ -32458,6 +32980,7 @@ Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: 
     if (!reason.trim()) fail("INTERRUPTION_REASON_REQUIRED");
     if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
     if (!run.activeTaskId && !run.sessionOperation) fail("NO_ACTIVE_EXECUTION");
+    this.clearGuidance(run, reason.slice(0, 200));
     this.stopExecution(run, reason, "interrupted");
     return {
       runId,
@@ -32693,6 +33216,7 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
     const run = this.get(runId);
     if (run.status !== "open" && run.status !== "awaiting_user_review")
       return { runId, status: run.status };
+    this.clearGuidance(run, "cancelled");
     this.settle(run, void 0, "cancelled");
     if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
     const startup = this.startups.get(run.id);
@@ -32714,6 +33238,7 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
     for (const startup of this.startups.values()) startup.valid = false;
     for (const run of this.runs.values()) {
       if (!this.owns(run)) continue;
+      this.clearGuidance(run, "MCP connection closed");
       try {
         if (run.status === "open" || run.status === "awaiting_user_review") {
           if (run.activeTaskId || run.sessionOperation)
@@ -32740,6 +33265,8 @@ Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3
         }
       }
     }
+    for (const timer of this.guidanceTimers.values()) clearTimeout(timer);
+    this.guidanceTimers.clear();
     for (const timer of this.idleTimers.values()) clearTimeout(timer);
     this.idleTimers.clear();
     for (const timer of this.timers.values()) clearTimeout(timer);
@@ -51557,6 +52084,8 @@ function consumeQuery(params) {
   const canUseTool = async (toolName, input, options2) => {
     const sessionId = await getSessionId();
     const normalizedToolName = toolName.trim();
+    if (normalizedToolName === "AskUserQuestion" && params.handleUserQuestion)
+      return params.handleUserQuestion(input, options2.signal);
     const normalizedInput = params.nativeToolHandling ? input : normalizeToolInput(toolName, input, params.platform);
     if (!params.nativeToolHandling) {
       const scopedDecision = params.permissionPolicy?.(toolName, normalizedInput);
@@ -51689,6 +52218,16 @@ function consumeQuery(params) {
       void Promise.resolve(activeQuery.interrupt?.()).catch(() => {
       });
     } catch {
+    }
+  };
+  const interruptAsync = async () => {
+    const request = activeQuery.interrupt;
+    if (typeof request !== "function") return false;
+    try {
+      await request.call(activeQuery);
+      return true;
+    } catch {
+      return false;
     }
   };
   const done = (async () => {
@@ -51959,6 +52498,7 @@ function consumeQuery(params) {
     done,
     close,
     interrupt,
+    interruptAsync,
     mcpServerStatus: async () => {
       if (!activeQuery.mcpServerStatus) throw new Error("MCP_STATUS_UNSUPPORTED");
       return await activeQuery.mcpServerStatus();
@@ -52179,12 +52719,28 @@ var SupervisorMailbox = class {
     );
     return true;
   }
+  /** Native AskUserQuestion uses the same event/reply transport as ask_supervisor. */
+  askQuestion(question, signal) {
+    if (!text.safeParse(question).success)
+      return Promise.resolve(this.error("SUPERVISOR_QUESTION_INVALID"));
+    return this.send("question", question, void 0, signal);
+  }
   close(reason = "Attempt ended") {
     if (this.closedReason !== void 0) return;
     this.closedReason = reason.slice(0, MAX_TEXT);
     for (const record3 of this.messages.values())
       record3.finish?.(this.error("SUPERVISOR_MAILBOX_CLOSED", record3.id, this.closedReason));
     this.listeners.clear();
+  }
+  /**
+   * End pending questions without closing the mailbox. A native interruption or turn boundary
+   * abandons the originating tool call, so no answer may remain claimable or leave the worker
+   * waiting; the mailbox stays usable for the follow-on turn.
+   */
+  interruptPending(reason = "Native turn interrupted") {
+    for (const record3 of this.messages.values()) {
+      record3.finish?.(this.error("SUPERVISOR_INTERRUPTED", record3.id, reason.slice(0, MAX_TEXT)));
+    }
   }
   /** Release the previous attempt before reusing the query's SDK server. */
   reset(reason = "A new attempt started") {
@@ -52200,8 +52756,9 @@ var SupervisorMailbox = class {
       true
     );
   }
-  send(kind, value, suppliedId) {
+  send(kind, value, suppliedId, signal) {
     const id2 = randomUUID5();
+    if (signal?.aborted) return Promise.resolve(this.error("SUPERVISOR_QUESTION_CANCELLED", id2));
     if (this.closedReason !== void 0)
       return Promise.resolve(this.error("SUPERVISOR_MAILBOX_CLOSED", id2, this.closedReason));
     const prior = suppliedId === void 0 ? void 0 : this.deduplicated.get(suppliedId);
@@ -52227,16 +52784,19 @@ var SupervisorMailbox = class {
     if (kind === "question") {
       this.pendingQuestions++;
       record3.outcome = new Promise((resolve) => {
+        const abort = () => record3.finish?.(this.error("SUPERVISOR_QUESTION_CANCELLED", id2));
         const timer = setTimeout(() => {
           record3.finish?.(this.error("SUPERVISOR_QUESTION_TIMEOUT", id2));
         }, this.timeoutMs);
         timer.unref();
         record3.finish = (outcome) => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
           record3.finish = void 0;
           this.pendingQuestions--;
           resolve(outcome);
         };
+        signal?.addEventListener("abort", abort, { once: true });
       });
     }
     this.messages.set(id2, record3);
@@ -52250,6 +52810,92 @@ var SupervisorMailbox = class {
     return record3.outcome;
   }
 };
+
+// src/orchestrator/user-question.ts
+var INSTRUCTION = 'Reply with JSON {"answers":{"<exact question text>":"<selected label or free text>"}} for every question. For multi-select, join labels with ", " or send a JSON array of labels. This is Codex guidance; obtain human input when the decision needs user authorization.';
+function parseAnswers(reply, questions) {
+  let parsed;
+  let structured = false;
+  try {
+    parsed = JSON.parse(reply);
+    structured = true;
+  } catch {
+  }
+  const single = questions.length === 1 ? questions[0] : void 0;
+  let values;
+  if (structured && parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const record3 = parsed;
+    const flatAnswer = (value) => typeof value === "string" || Array.isArray(value);
+    const flat = !Object.hasOwn(record3, "answers") || questions.every((question) => flatAnswer(record3[question.question]));
+    const inner = flat ? record3 : record3.answers;
+    if (!inner || typeof inner !== "object" || Array.isArray(inner))
+      return { error: "Codex answer has no answers object keyed by the exact question text." };
+    values = inner;
+  } else if (single && typeof single.question === "string") {
+    if (Array.isArray(parsed)) values = { [single.question]: parsed };
+    else values = { [single.question]: typeof parsed === "string" ? parsed : reply };
+  } else {
+    return {
+      error: "Codex answer must be a JSON answers object keyed by the exact question text."
+    };
+  }
+  const answered = [];
+  const missing = [];
+  for (const question of questions) {
+    const key = question.question;
+    if (!Object.hasOwn(values, key)) {
+      missing.push(key);
+      continue;
+    }
+    const value = values[key];
+    if (typeof value === "string" && value.trim() !== "") {
+      answered.push([key, value]);
+      continue;
+    }
+    if (Array.isArray(value) && value.length > 0 && question.multiSelect === true && value.every((item) => typeof item === "string" && item.trim() !== "")) {
+      answered.push([key, value.join(", ")]);
+      continue;
+    }
+    missing.push(key);
+  }
+  return missing.length > 0 ? { error: `Codex answer is missing a usable value for: ${missing.join(" | ")}.` } : { answers: Object.fromEntries(answered) };
+}
+async function askCodex(mailbox, input, signal) {
+  const questions = input.questions;
+  const deny = (message) => ({
+    behavior: "deny",
+    message,
+    interrupt: false
+  });
+  if (!Array.isArray(questions) || questions.length === 0 || questions.some((q10) => !q10 || typeof q10.question !== "string" || !q10.question.trim()))
+    return deny("AskUserQuestion has no valid questions to forward to Codex.");
+  const keys = questions.map((q10) => q10.question);
+  if (new Set(keys).size !== keys.length)
+    return deny("AskUserQuestion requires distinct question text for each answer.");
+  const response = await mailbox.askQuestion(
+    JSON.stringify({ source: "AskUserQuestion", instruction: INSTRUCTION, input }),
+    signal
+  );
+  const content = response.content.find((item) => item.type === "text");
+  let outcome = {};
+  try {
+    const parsed2 = content?.type === "text" ? JSON.parse(content.text) : void 0;
+    if (parsed2 !== null && typeof parsed2 === "object" && !Array.isArray(parsed2))
+      outcome = parsed2;
+  } catch {
+  }
+  if (response.isError || outcome.status !== "answered" || typeof outcome.answer !== "string")
+    return deny(
+      `Codex question unanswered (${typeof outcome.error === "string" ? outcome.error : "NO_ANSWER"}). Report BLOCKED with the question; do not assume an answer.`
+    );
+  const parsed = parseAnswers(outcome.answer, questions);
+  if ("error" in parsed)
+    return deny(`${parsed.error} Report BLOCKED with the unanswered questions.`);
+  return {
+    behavior: "allow",
+    updatedInput: { ...input, answers: parsed.answers }
+  };
+}
 
 // src/orchestrator/worker.ts
 var ClaudeWorker = class {
@@ -52274,6 +52920,7 @@ var ClaudeWorker = class {
   writeScope;
   workerName;
   nativeError;
+  interruptBarrier;
   setName(name) {
     this.workerName = name;
   }
@@ -52377,6 +53024,7 @@ var ClaudeWorker = class {
     this.generation++;
     this.eventFloor = -1;
     this.mailbox?.close("Native query replaced");
+    this.interruptBarrier = void 0;
     const mailbox = new SupervisorMailbox(decisionTimeoutMs());
     this.mailbox = mailbox;
     mailbox.subscribe((message) => {
@@ -52406,14 +53054,19 @@ var ClaudeWorker = class {
       pathToClaudeCodeExecutable: config2.executable,
       env: config2.env,
       tools: { type: "preset", preset: "claude_code" },
-      disallowedTools: ["Agent", "TeamCreate", "TeamDelete"],
       persistSession: true,
       includePartialMessages: true,
       strictMcpConfig: false,
+      // Explicit inheritance: the worker runs under the user's own Claude Code configuration.
+      // The claude_code system prompt preset does NOT imply filesystem settings, and `project` is
+      // what makes CLAUDE.md (user/project/local memory files) load. Passing this explicitly keeps
+      // the worker from silently falling back to SDK isolation if build-options is reused with a
+      // different source later.
+      settingSources: [...DEFAULT_SETTING_SOURCES],
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; an answer is guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Agent/TeamCreate/TeamDelete are unavailable; Task remains permitted under native policies. Codex schedules up to3 managed top-level sessions. Supervisor tools are not necessarily yours; select from your actually available tools."
+        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; native AskUserQuestion is also forwarded to Codex and its answer returned to you. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. Ask early rather than guessing: send a scoped ask_supervisor question as soon as a choice would change what you build or is hard to undo. Separate the three kinds of input explicitly: facts the user stated, decisions Codex actually answered, and research or implementation choices you are free to make yourself (use judgement there and proceed). Never present your own inference or a design you favour as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If the task text and Codex guidance disagree, follow the newest scoped guidance and say so in your report. Guidance Codex queues while you work arrives as a new user turn after your current one; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance intact."
       }
     };
     if (resumeId)
@@ -52437,6 +53090,7 @@ var ClaudeWorker = class {
         mcpServers: { codex_supervisor: mailbox.createServer() }
       },
       nativeToolHandling: true,
+      handleUserQuestion: (input, signal2) => askCodex(mailbox, input, signal2),
       permissionRequestTimeoutMs: decisionTimeoutMs(),
       sessionInitTimeoutMs: startupTimeoutMs(),
       sessionManager: this.manager,
@@ -52568,6 +53222,7 @@ var ClaudeWorker = class {
     }
     this.generation++;
     let errors = 0;
+    this.interruptBarrier = void 0;
     try {
       this.mailbox?.close("Worker stopped");
       this.input?.close();
@@ -52591,6 +53246,61 @@ var ClaudeWorker = class {
       this.currentId = void 0;
     }
     if (errors) console.error(`Worker cleanup completed with ${errors} resource errors`);
+  }
+  /**
+   * Issue the native interrupt control request only. The conversation, its input stream and the
+   * supervisor mailbox stay alive so the drained turn can be followed by scoped guidance.
+   */
+  interruptTurn(sessionId) {
+    if (sessionId !== this.currentId || !this.handle || !this.live) return false;
+    const generation = this.generation;
+    const mailbox = this.mailbox;
+    const release = () => {
+      if (generation === this.generation)
+        mailbox?.interruptPending("Turn interrupted for new guidance");
+    };
+    if (!this.handle.interruptAsync) {
+      return false;
+    }
+    const previous = this.interruptBarrier;
+    const request = this.handle.interruptAsync().catch(() => false);
+    const barrier = Promise.all(previous ? [previous, request] : [request]).then((answers) => {
+      const accepted = answers.every(Boolean);
+      if (accepted) release();
+      return accepted;
+    });
+    this.interruptBarrier = barrier;
+    void barrier.then(() => {
+      if (this.interruptBarrier === barrier) this.interruptBarrier = void 0;
+    });
+    return barrier;
+  }
+  /**
+   * Start one follow-on native turn in the same saved conversation. Reuses the existing reply
+   * lifecycle so the manager status, native error and context are armed exactly like a normal
+   * segment; when the reduced grant differs from the live startup cap the SDK requires a cold
+   * resume of the SAME session id rather than silently keeping the larger cap.
+   */
+  async guidance(sessionId, text2, maxTurns) {
+    const generation = this.generation;
+    while (this.interruptBarrier) {
+      const barrier = this.interruptBarrier;
+      if (!await barrier) return false;
+      if (this.interruptBarrier === barrier) {
+        this.interruptBarrier = void 0;
+        break;
+      }
+    }
+    if (generation !== this.generation) return false;
+    const info = this.manager.get(sessionId);
+    if (!info || sessionId !== this.currentId || !this.live) return false;
+    if (info.status === "running" || info.status === "waiting_permission") return false;
+    try {
+      await this.reply(sessionId, text2, maxTurns);
+      return true;
+    } catch {
+      return false;
+    }
   }
   async interrupt(sessionId, timeoutMs = 3e3) {
     if (sessionId !== this.currentId || !this.handle) return;
@@ -52814,6 +53524,29 @@ var TeamCoordinator = class {
     return this.controllers.get(task2.childRunId).status(task2.childRunId);
   }
   attach(team, task2, controller = this.factory(task2.directory)) {
+    controller.setTeamManaged?.(true);
+    controller.setParentGrant?.((_runId, requested) => {
+      if (this.closed || !this.teams.has(team.id) || team.ownerReleased) return 0;
+      if (team.ownerId !== this.ownerId) return 0;
+      if (!task2.reservation) return 0;
+      const used = this.run(task2).turnBudget.used;
+      settleReservation(
+        team.budget,
+        task2.reservation.held,
+        Math.max(0, used - task2.reservation.usedBefore)
+      );
+      task2.reservation.held = 0;
+      task2.reservation.usedBefore = used;
+      this.syncBudget(team);
+      const grant = availableGrant(team.budget, requested);
+      if (grant < 1) {
+        this.save(team);
+        return 0;
+      }
+      task2.reservation.held += reserveGrant(team.budget, grant);
+      this.save(team);
+      return grant;
+    });
     controller.worker.setWriteScope?.(task2.cwd, task2.writeScope);
     this.controllers.set(task2.childRunId, controller);
     this.subscriptions.push(
@@ -52821,7 +53554,7 @@ var TeamCoordinator = class {
         if (run.id !== task2.childRunId || this.closed || !this.teams.has(team.id) || team.ownerId !== this.ownerId || team.ownerReleased)
           return;
         task2.state = run.tasks[0].state;
-        if (task2.reservation && run.tasks[0].attempts > task2.reservation.attemptsBefore && !run.activeTaskId && !run.sessionOperation) {
+        if (task2.reservation && run.tasks[0].attempts > task2.reservation.attemptsBefore && !run.activeTaskId && !run.sessionOperation && !run.activeExecutionId) {
           settleReservation(
             team.budget,
             task2.reservation.held,
@@ -52985,6 +53718,76 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
     ))
       fail2("TEAM_CHECKS_REQUIRE_QUIESCENT_WORKSPACE");
   }
+  /**
+   * Explicit, evidence-backed renewal of the shared execution window and every existing child.
+   * Only an idle team may renew; contracts, revisions, shared turn budget and native conversations
+   * are untouched, and a child can never outlive its parent.
+   */
+  resume(teamId, evidence, runTimeoutMs) {
+    const team = this.get(teamId);
+    if (team.status !== "open") fail2("TEAM_CLOSED");
+    const text2 = evidence.trim();
+    if (!text2) fail2("RENEWAL_EVIDENCE_REQUIRED");
+    const window2 = runTimeoutMs ?? DEFAULT_EXECUTION_WINDOW_MS;
+    if (!Number.isSafeInteger(window2) || window2 < MIN_EXECUTION_WINDOW_MS || window2 > DEFAULT_EXECUTION_WINDOW_MS)
+      fail2("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    if (team.tasks.some((task2) => this.active(task2))) fail2("EXECUTOR_BUSY");
+    if (team.tasks.some((task2) => task2.starting || task2.reservation))
+      fail2("EXECUTOR_STARTUP_DRAINING");
+    for (const task2 of team.tasks) {
+      const controller = this.controllers.get(task2.childRunId);
+      const error48 = controller.renewalEligibility(task2.childRunId);
+      if (error48) fail2(`TEAM_RESUME_BLOCKED:${task2.contract.id}:${error48}`);
+    }
+    const deadline = Math.max(team.deadline, Date.now() + window2);
+    const renewed = [];
+    try {
+      for (const task2 of team.tasks) {
+        const controller = this.controllers.get(task2.childRunId);
+        const renewal2 = controller.renewExecutionWindow(task2.childRunId, {
+          source: "team_resume",
+          evidence: text2,
+          runTimeoutMs,
+          deadline
+        });
+        renewed.push({
+          taskId: task2.contract.id,
+          previousDeadline: renewal2.previousDeadline,
+          deadline: renewal2.deadline
+        });
+      }
+    } catch (error48) {
+      this.emit(
+        team,
+        "team_resume_partial",
+        { evidence: text2, renewed, error: error48 instanceof Error ? error48.message : String(error48) },
+        false
+      );
+      throw error48;
+    }
+    const renewal = {
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      source: "team_resume",
+      previousDeadline: team.deadline,
+      deadline,
+      evidence: text2
+    };
+    if (runTimeoutMs !== void 0) renewal.requestedRunTimeoutMs = runTimeoutMs;
+    team.renewals ??= [];
+    team.renewals.push(renewal);
+    team.deadline = deadline;
+    this.syncBudget(team);
+    this.emit(team, "team_resumed", { renewal, children: renewed }, false);
+    return {
+      ...this.summary(team),
+      renewal: {
+        ...renewal,
+        effectiveDeadline: team.deadline,
+        renewalCount: team.renewals.length,
+        children: renewed
+      }
+    };
+  }
   async dispatch(teamId, taskId, requestId, options = {}, signal) {
     const team = this.get(teamId), task2 = this.task(team, taskId);
     if (!requestId || ["__proto__", "constructor", "prototype"].includes(requestId))
@@ -53052,7 +53855,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       } finally {
         task2.starting = false;
         this.starts.delete(task2.childRunId);
-        if (task2.reservation && !run.activeTaskId && !run.sessionOperation) {
+        if (task2.reservation && !run.activeTaskId && !run.sessionOperation && !run.activeExecutionId) {
           const delta = run.turnBudget.used - task2.reservation.usedBefore;
           settleReservation(
             team.budget,
@@ -53074,6 +53877,7 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       teamId: team.id,
       status: team.status,
       deadline: team.deadline,
+      renewals: team.renewals ?? [],
       maxWorkers: team.maxWorkers,
       turnBudget: { ...team.budget },
       accounting: budgetSummary(team.budget),
@@ -53285,7 +54089,8 @@ var EVIDENCE_SECTIONS = [
   "usage",
   "executions",
   "changes",
-  "decisions"
+  "decisions",
+  "guidance"
 ];
 function selectTaskEvidence(run, task2, sections, capabilities) {
   const selected2 = {
@@ -53361,6 +54166,20 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
           automaticReplay: false
         }));
         break;
+      case "guidance":
+        selected2.guidance = (run.guidance ?? []).filter((record3) => record3.taskId === task2.id).map((record3) => ({
+          guidanceId: record3.id,
+          requestId: record3.requestId,
+          mode: record3.mode,
+          state: record3.state,
+          reason: record3.reason,
+          executionId: record3.executionId,
+          createdAt: record3.createdAt,
+          updatedAt: record3.updatedAt,
+          textPreview: record3.text.slice(0, 500),
+          truncated: record3.text.length > 500
+        }));
+        break;
       case "capabilities":
         selected2.workerCapabilities = capabilities;
         break;
@@ -53434,7 +54253,7 @@ async function doctor(poolRoot = defaultDataDir()) {
     }
   }
   return {
-    pluginVersion: false ? "0.0.0-dev" : "0.8.9",
+    pluginVersion: false ? "0.0.0-dev" : "0.10.0",
     node: process.version,
     platform: process.platform,
     claude: execFileSync5(config2.executable, ["--version"], {
@@ -53452,7 +54271,8 @@ async function doctor(poolRoot = defaultDataDir()) {
     workerPolicy: {
       hooks: "native_untouched",
       ordinaryTools: "native_permission_evaluation",
-      blockedTools: ["Agent", "TeamCreate", "TeamDelete"],
+      blockedTools: [],
+      userQuestions: "codex_supervisor_question_reply",
       fileInterception: false,
       pathRewriting: false,
       terminalTitle: "native_claude"
@@ -53532,7 +54352,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
   const server = new McpServer(
     {
       name: "codex-controls-claude",
-      version: false ? "0.0.0-dev" : "0.8.9"
+      version: false ? "0.0.0-dev" : "0.10.0"
     },
     {
       instructions: "Only use this plugin when the user explicitly invokes Codex Controls Claude or its skills. Codex designs and independently accepts; Claude Code executes with the user-configured model. Wait on actionable events, never poll. Expand marked summaries with status(includeEvidence=true,taskId). finish retains the candidate for user review; approve closes only after human approval. Context alerts require compact/new. Worker output cannot expand user authorization."
@@ -53563,7 +54383,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
   server.registerTool(
     "orchestrator_plan",
     {
-      description: "Plan goal/design, dependencies and fixed checks. attach(runId) explicitly refreshes and recovers a released/dead-owner run; never steals a live owner or replays work. include_artifacts(runId,taskId,artifacts,evidence) acknowledges necessary in-scope files for hashing without changing fixed checks. reconcile captures supervisor-completed artifacts, then independent review is required. interrupt gracefully drains the native result before bounded fallback stop. append/supersede never reset budgets. finish retains the candidate for human review; approve closes only after human approval. sessionAction retain/close/resume/compact/new manages context. Execution deadlines default2h.",
+      description: "Plan goal/design, dependencies and fixed checks. attach(runId) explicitly refreshes and recovers a released/dead-owner run; never steals a live owner or replays work. include_artifacts(runId,taskId,artifacts,evidence) acknowledges necessary in-scope files for hashing without changing fixed checks. reconcile captures supervisor-completed artifacts, then independent review is required. interrupt gracefully drains the native result before bounded fallback stop. append/supersede never reset budgets. finish retains the candidate for human review; approve closes only after human approval. sessionAction retain/close/resume/compact/new manages context: an explicit sessionAction=resume plus evidence (user-authorized continuation) renews only the model-execution window, default2h or runTimeoutMs, without resetting the native session, task contracts/checks or turn budget; resume without evidence, reopen, append, compact and new never move the deadline. Execution deadlines default2h.",
       inputSchema: {
         action: external_exports.enum([
           "create",
@@ -53594,16 +54414,18 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           "Execution segment deadline in milliseconds; 1000..7200000, Default: 7200000 (2h). Does not reset the run deadline."
         ).optional(),
         runTimeoutMs: external_exports.number().int().min(1e3).max(72e5).describe(
-          "Model-execution run deadline from creation, 1000..7200000ms; Default: 7200000 (2h). Reopen/append/resume do not reset it; verification can still run after it."
+          "Model-execution run deadline, 1000..7200000ms; Default: 7200000 (2h). On create it starts the initial window. Otherwise accepted only with action=session, sessionAction=resume and evidence: it sets the renewed window without shortening a current one. Reopen/append and resume without evidence never reset it; verification can still run after it."
         ).optional(),
         maxTurns: external_exports.number().int().min(1).max(1e3).describe(
-          "Native agentic-turn cap per execution segment, 1..1000. Default: 200 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
+          "Native agentic-turn cap per execution segment, 1..1000. Default: 500 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
         ).optional(),
         maxTotalTurns: external_exports.number().int().min(1).max(1e4).describe(
           "Persistent run allowance in SDK-reported turns, 1..10000; Default: 1000. Create only. Survives all continuation/reopen/supersede/resume operations."
         ).optional(),
         taskRevision: external_exports.number().int().positive().optional(),
-        evidence: external_exports.string().min(1).max(16e3).optional(),
+        evidence: external_exports.string().min(1).max(16e3).describe(
+          "Supervisor/user evidence for reconcile, interrupt or an explicit session resume. A resume renewal requires non-empty evidence; it is recorded with the old and new deadline in the durable audit."
+        ).optional(),
         artifacts: external_exports.array(external_exports.string().min(1)).min(1).max(100).optional(),
         maxRepairs: external_exports.number().int().min(0).max(2).describe(
           "Acceptance-rework executions, 0..2; Default: 2. Budget continuation and explicit interruption recovery do not consume this count."
@@ -53651,9 +54473,9 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           nextCursor: route(input.runId).cursor(input.runId)
         };
       }
-      if (action !== "create" && (input.maxTotalTurns !== void 0 || input.runTimeoutMs !== void 0 || input.taskTimeoutMs !== void 0 || input.maxTurns !== void 0 || input.maxRepairs !== void 0))
+      if (action !== "create" && (input.maxTotalTurns !== void 0 || input.taskTimeoutMs !== void 0 || input.maxTurns !== void 0 || input.maxRepairs !== void 0 || input.runTimeoutMs !== void 0 && action !== "session"))
         throw new Error(
-          "BUDGET_CONFIG_CREATE_ONLY: use dispatch.maxTurns for an explicit continuation cap"
+          "BUDGET_CONFIG_CREATE_ONLY: use dispatch.maxTurns for an explicit continuation cap; runTimeoutMs is accepted only on create or an evidence-backed session resume"
         );
       if (input.runId && teams.controllerFor(input.runId) && !["session", "finish"].includes(action))
         throw new Error("TEAM_CHILD_CONTRACT_MANAGED: use the team coordinator");
@@ -53662,10 +54484,17 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           throw new Error(
             "TEAM_COMPACTION_NOT_SUPPORTED: use sessionAction=new to preserve checkpoint and shared budget"
           );
+        if (input.runId && teams.controllerFor(input.runId) && (input.runTimeoutMs !== void 0 || sessionAction === "resume" && (evidence?.trim() ?? "") !== ""))
+          throw new Error(
+            "TEAM_RESUME_REQUIRED: renew a team child window through orchestrator_team action=resume"
+          );
         if (sessionAction === "compact") {
           if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         }
-        return await route(input.runId).session(input.runId ?? "", sessionAction ?? "retain");
+        return await route(input.runId).session(input.runId ?? "", sessionAction ?? "retain", {
+          evidence,
+          runTimeoutMs: input.runTimeoutMs
+        });
       }
       const run = route(input.runId).plan({ ...rest, action });
       return {
@@ -53698,7 +54527,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           "Explicit same-task continuation for budget/interruption/blocking recovery. Does not change the contract or spend acceptance-repair quota."
         ).optional(),
         maxTurns: external_exports.number().int().min(1).max(1e3).describe(
-          "Optional native cap for this segment (default run.maxTurns=200), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
+          "Optional native cap for this segment (default run.maxTurns=500), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
         ).optional(),
         feedback: external_exports.string().min(1).max(16e3).describe(
           "Supervisor answer/checkpoint guidance within the unchanged task scope; not a new contract."
@@ -53718,12 +54547,12 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
   server.registerTool(
     "orchestrator_wait",
     {
-      description: "Event-driven blocking wait, NOT status polling. Use previous nextCursor. One pending wait for up to20min (Default CCC_WAIT_MS or1200000ms): completion, questions, native residual permissions, failures, cancellation and budget risk wake it immediately; ordinary milestones stay in audit. No internal polling. If your host enforces a shorter tool timeout, pass a shorter timeoutMs rather than assuming this default fits. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
+      description: "Event-driven blocking wait, NOT status polling. Use previous nextCursor. One pending wait for up to20min (Default CCC_WAIT_MS or1200000ms): completion, questions, native residual permissions, failures, cancellation and budget risk wake it immediately; ordinary milestones stay in audit. No internal polling. Omit timeoutMs; only an actual observed host tool-timeout failure justifies a shorter value, never progress updates or a speculative bound. worker_finished contains sufficient next-step evidence and expansion references; do not reflexively fetch status. Host cancellation stops owned execution and preserves explicit recovery.",
       inputSchema: {
         runId: id,
         afterSeq: external_exports.number().int().min(0),
         timeoutMs: external_exports.number().int().min(1).max(MAX_WAIT_MS).describe(
-          "Event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Must not exceed your actual host tool timeout. Timeout returns timedOut=true; never poll status/logs."
+          "Event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Omit it: the20-minute default applies, and it must not be shortened for progress updates, speculative host limits or an outer tool yield/wait bound. Pass a shorter value only after an actual observed host tool-timeout failure that cut a wait short, and record that exact error and bound. Timeout returns timedOut=true; never poll status/logs."
         ).optional()
       }
     },
@@ -53787,7 +54616,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           "Full legacy evidence expansion; may repeat contracts and usage. Prefer sections for targeted reads."
         ).optional(),
         sections: external_exports.array(external_exports.enum(EVIDENCE_SECTIONS)).min(1).describe(
-          "Evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. Contract and usage are opt-in. Requires runId."
+          "Evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions,guidance. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. guidance shows queued/interruption_requested/delivering/delivered/failed/cancelled scoped messages and their transport reason. Contract and usage are opt-in. Requires runId."
         ).optional()
       }
     },
@@ -53830,8 +54659,22 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
         status: r3.status,
         sessionId: r3.sessionId,
         sessionState: r3.sessionState,
+        // Effective model-execution window; renewals are visible without expanding evidence.
+        deadline: r3.deadline,
+        renewalCount: r3.renewals?.length ?? 0,
         context: r3.lastContext,
         budget: budgetSummary(r3.turnBudget),
+        guidance: (r3.guidance ?? []).filter(
+          (record3) => ["queued", "interruption_requested", "delivering"].includes(record3.state)
+        ).map((record3) => ({
+          guidanceId: record3.id,
+          requestId: record3.requestId,
+          taskId: record3.taskId,
+          mode: record3.mode,
+          state: record3.state,
+          // Audit only; never a claim that the model read the text.
+          textPreview: record3.text.slice(0, 200)
+        })),
         workerCapabilities: compactCapabilities(
           r3.workerCapabilities
         ),
@@ -53855,19 +54698,51 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
   server.registerTool(
     "orchestrator_message",
     {
-      description: "Answer a worker_question from an active Claude tool call. This is supervisor guidance within the task, not human permission. Use messageId from the event and its childRunId for teams. Stale, wrong-task or expired IDs are rejected. Updates already have transport receipts; no polling inbox.",
+      description: "Talk to the active Claude turn. action=reply answers a worker_question (runId,messageId,answer): supervisor guidance within the task, not human permission; use the event's messageId and its childRunId for teams; stale, wrong-task or expired IDs are rejected; updates already have transport receipts, so there is no inbox to poll. action=queue delivers scoped guidance (runId,requestId,text) without interrupting: it is accepted now and sent as exactly one input after the current native turn reaches its result boundary, FIFO with other queued guidance. action=interrupt additionally asks the native runtime to end the current turn promptly and, once that segment's result drains, sends the guidance into the same saved native conversation; it outranks unsent queued messages, which stay pending. Both require an active running task and reject foreign/stale run/task/revision/session scope. Returned states are truthful and distinct: queued, interruption_requested, delivering (native startup pending), delivered (input accepted, never a claim the model read it), failed, cancelled. Queue re-reserves the persistent turn budget before the follow-on input; exhaustion, cancellation, disconnect, an expired deadline or a failed interrupt report failure instead of delivering late.",
       inputSchema: {
+        action: external_exports.enum(["reply", "queue", "interrupt"]).describe(
+          "reply answers a pending question; queue adds scoped guidance for the next native boundary; interrupt ends the current turn and delivers guidance into the same conversation. Default: reply."
+        ).optional(),
         runId: id,
-        messageId: external_exports.string().min(1),
-        answer: external_exports.string().min(1).max(16e3)
+        messageId: external_exports.string().min(1).optional().describe("Required for action=reply."),
+        answer: external_exports.string().min(1).max(16e3).optional().describe("Required for action=reply."),
+        requestId: external_exports.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).describe(
+          "Stable caller idempotency key for queue/interrupt. Repeating it with the same text returns the same record; different text is a conflict."
+        ).optional(),
+        text: external_exports.string().min(1).max(4e3).describe("Scoped guidance for action=queue/interrupt; at most 4000 characters.").optional(),
+        taskId: external_exports.string().min(1).max(100).optional().describe("Optional assertion of the active task; a mismatch is rejected."),
+        taskRevision: external_exports.number().int().positive().optional().describe("Optional assertion of the active task contract revision."),
+        sessionId: external_exports.string().min(1).max(200).optional().describe("Optional assertion of the run's current native session id.")
       }
     },
-    (input) => guard(() => route(input.runId).respondMessage(input.runId, input.messageId, input.answer))
+    (input) => guard(() => {
+      const controller2 = route(input.runId);
+      const action = input.action ?? "reply";
+      if (action === "reply") {
+        if (!input.messageId || !input.answer)
+          throw new Error("REPLY_REQUIRES_MESSAGE_ID_AND_ANSWER");
+        if (input.text !== void 0 || input.requestId !== void 0)
+          throw new Error("REPLY_TAKES_NO_GUIDANCE_FIELDS");
+        return controller2.respondMessage(input.runId, input.messageId, input.answer);
+      }
+      if (!input.requestId || !input.text)
+        throw new Error("GUIDANCE_REQUIRES_REQUEST_ID_AND_TEXT");
+      if (input.messageId !== void 0 || input.answer !== void 0)
+        throw new Error("GUIDANCE_TAKES_NO_ANSWER_FIELDS");
+      return controller2.sendGuidance(input.runId, {
+        requestId: input.requestId,
+        mode: action,
+        text: input.text,
+        taskId: input.taskId,
+        taskRevision: input.taskRevision,
+        sessionId: input.sessionId
+      });
+    })
   );
   server.registerTool(
     "orchestrator_team",
     {
-      description: "Codex schedules up to3 simultaneous Claude Code executions with a shared1000-turn/2h budget; the three execution slots are shared across all connected chats, while retained idle transcripts consume none. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait (up to20min, immediate actionable wakeup) for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout or acceptance.",
+      description: "Codex schedules up to3 simultaneous Claude Code executions with a shared1000-turn/2h budget; the three execution slots are shared across all connected chats, while retained idle transcripts consume none. action=resume(teamId,evidence,runTimeoutMs?) explicitly renews only the shared/child model-execution window after user authorization while every worker is idle; contracts, revisions, native conversations and the shared turn budget are retained, and children cannot renew past an expired parent by ordinary resume. Explicitly dispatch independent tasks; omitted writeScope reserves whole workspace. Conflicting active scopes block parallel dispatch. Dependencies require independent review acceptance. Use team wait (up to20min, immediate actionable wakeup) for composite events; childRunId routes existing review/status/permission/message tools. Review shared-workspace tasks after peers quiesce. Single simple work should use ordinary plan/dispatch. No autonomous fanout or acceptance.",
       inputSchema: {
         action: external_exports.enum([
           "create",
@@ -53879,7 +54754,8 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           "interrupt",
           "approve",
           "close",
-          "attach"
+          "attach",
+          "resume"
         ]),
         teamId: id.optional(),
         taskId: id.optional(),
@@ -53897,7 +54773,9 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           })
         ).optional(),
         maxWorkers: external_exports.number().int().min(1).max(3).optional(),
-        maxTurns: external_exports.number().int().min(1).max(1e3).optional(),
+        maxTurns: external_exports.number().int().min(1).max(1e3).describe(
+          "Native agentic-turn cap per team segment, 1..1000; Default: 500. Bounded by the shared persistent run allowance."
+        ).optional(),
         maxTotalTurns: external_exports.number().int().min(1).max(1e4).optional(),
         runTimeoutMs: external_exports.number().int().min(1e3).max(72e5).optional(),
         taskTimeoutMs: external_exports.number().int().min(1e3).max(72e5).optional(),
@@ -53905,9 +54783,12 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
         feedback: external_exports.string().max(16e3).optional(),
         afterSeq: external_exports.number().int().min(0).optional(),
         timeoutMs: external_exports.number().int().min(1).max(MAX_WAIT_MS).describe(
-          "Team event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Actionable events wake it immediately."
+          "Team event wait bound in milliseconds, 1..1200000; Default CCC_WAIT_MS or1200000 (20min). Omit it: the20-minute default applies unless an actual observed host tool-timeout failure requires a shorter value (record the exact error and bound). Actionable events wake it immediately."
         ).optional(),
-        reason: external_exports.string().max(16e3).optional()
+        reason: external_exports.string().max(16e3).optional(),
+        evidence: external_exports.string().min(1).max(16e3).describe(
+          "User-authorized continuation evidence for action=resume; accepted as the renewal record. reason is accepted as a fallback."
+        ).optional()
       }
     },
     (input, extra) => guard(async () => {
@@ -53930,10 +54811,12 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
       if (input.action === "attach") {
         return teams.recover(teamId);
       }
+      if (input.action === "resume")
+        return teams.resume(teamId, input.reason ?? input.evidence ?? "", input.runTimeoutMs);
       if (input.action === "dispatch") {
         if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         for (const run of controller.status())
-          if (run.sessionState === "retained" && !run.activeTaskId && !run.sessionOperation)
+          if (controller.isOwned(run.id) && run.sessionState === "retained" && !run.activeTaskId && !run.sessionOperation)
             await controller.session(run.id, "close");
         if (reviewInProgress()) throw new Error("REVIEW_IN_PROGRESS");
         return teams.dispatch(

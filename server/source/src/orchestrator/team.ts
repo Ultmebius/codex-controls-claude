@@ -13,7 +13,14 @@ import { defaultWaitMs, inside } from "./runtime.js";
 import { budgetSummary } from "./execution.js";
 import { claimFile, processAlive as alive } from "./ownership.js";
 import { MAX_WAIT_MS } from "./worker-slots.js";
-import type { Orchestrator, Run, TaskSpec } from "./controller.js";
+import {
+  DEFAULT_EXECUTION_WINDOW_MS,
+  MIN_EXECUTION_WINDOW_MS,
+  type DeadlineRenewal,
+  type Orchestrator,
+  type Run,
+  type TaskSpec,
+} from "./controller.js";
 import {
   DEFAULT_SEGMENT_TURNS,
   DEFAULT_RUN_TURN_LIMIT,
@@ -80,6 +87,8 @@ interface Team {
   design: string;
   status: "open" | "awaiting_user_review" | "completed" | "cancelled";
   deadline: number;
+  /** Explicit evidence-backed renewals of the shared model-execution window. */
+  renewals?: DeadlineRenewal[];
   taskTimeoutMs: number;
   maxWorkers: number;
   maxTurns: number;
@@ -303,6 +312,34 @@ export class TeamCoordinator {
     return this.controllers.get(task.childRunId)!.status(task.childRunId) as Run;
   }
   private attach(team: Team, task: TeamTask, controller = this.factory(task.directory)) {
+    controller.setTeamManaged?.(true);
+    // Follow-on guidance inside a child is funded from the shared team allowance, never free.
+    controller.setParentGrant?.((_runId, requested) => {
+      if (this.closed || !this.teams.has(team.id) || team.ownerReleased) return 0;
+      if (team.ownerId !== this.ownerId) return 0;
+      // A team-wide budget can only fund guidance while its dispatch hold is still outstanding.
+      if (!task.reservation) return 0;
+      const used = this.run(task).turnBudget.used;
+      // The previous native segment has settled. Release only this child's old hold, charge its
+      // observed delta, then fund the next segment without borrowing a peer's reservation.
+      settleReservation(
+        team.budget,
+        task.reservation.held,
+        Math.max(0, used - task.reservation.usedBefore)
+      );
+      task.reservation.held = 0;
+      task.reservation.usedBefore = used;
+      this.syncBudget(team);
+      const grant = availableGrant(team.budget, requested);
+      if (grant < 1) {
+        this.save(team);
+        return 0;
+      }
+      // Fold the follow-on hold into the existing dispatch hold so it settles exactly once.
+      task.reservation.held += reserveGrant(team.budget, grant);
+      this.save(team);
+      return grant;
+    });
     controller.worker.setWriteScope?.(task.cwd, task.writeScope);
     this.controllers.set(task.childRunId, controller);
     this.subscriptions.push(
@@ -316,11 +353,14 @@ export class TeamCoordinator {
         )
           return;
         task.state = run.tasks[0].state;
+        // Follow-on guidance segments spend the child's residual grant, so the team hold is only
+        // released once the child is genuinely between native segments.
         if (
           task.reservation &&
           run.tasks[0].attempts > task.reservation.attemptsBefore &&
           !run.activeTaskId &&
-          !run.sessionOperation
+          !run.sessionOperation &&
+          !run.activeExecutionId
         ) {
           settleReservation(
             team.budget,
@@ -508,6 +548,84 @@ export class TeamCoordinator {
       fail("TEAM_CHECKS_REQUIRE_QUIESCENT_WORKSPACE");
   }
 
+  /**
+   * Explicit, evidence-backed renewal of the shared execution window and every existing child.
+   * Only an idle team may renew; contracts, revisions, shared turn budget and native conversations
+   * are untouched, and a child can never outlive its parent.
+   */
+  resume(teamId: string, evidence: string, runTimeoutMs?: number) {
+    const team = this.get(teamId);
+    if (team.status !== "open") fail("TEAM_CLOSED");
+    const text = evidence.trim();
+    if (!text) fail("RENEWAL_EVIDENCE_REQUIRED");
+    const window = runTimeoutMs ?? DEFAULT_EXECUTION_WINDOW_MS;
+    if (
+      !Number.isSafeInteger(window) ||
+      window < MIN_EXECUTION_WINDOW_MS ||
+      window > DEFAULT_EXECUTION_WINDOW_MS
+    )
+      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    if (team.tasks.some((task) => this.active(task))) fail("EXECUTOR_BUSY");
+    if (team.tasks.some((task) => task.starting || task.reservation))
+      fail("EXECUTOR_STARTUP_DRAINING");
+    // Pre-check every child so an expected rejection cannot renew a subset.
+    for (const task of team.tasks) {
+      const controller = this.controllers.get(task.childRunId)!;
+      const error = controller.renewalEligibility(task.childRunId);
+      if (error) fail(`TEAM_RESUME_BLOCKED:${task.contract.id}:${error}`);
+    }
+    const deadline = Math.max(team.deadline, Date.now() + window);
+    const renewed: { taskId: string; previousDeadline: number; deadline: number }[] = [];
+    try {
+      for (const task of team.tasks) {
+        const controller = this.controllers.get(task.childRunId)!;
+        const renewal = controller.renewExecutionWindow(task.childRunId, {
+          source: "team_resume",
+          evidence: text,
+          runTimeoutMs,
+          deadline,
+        });
+        renewed.push({
+          taskId: task.contract.id,
+          previousDeadline: renewal.previousDeadline,
+          deadline: renewal.deadline,
+        });
+      }
+    } catch (error) {
+      // Renewals already applied stay forward-only; the team window is not moved, so a retry can
+      // finish the same authorized renewal without resetting anything.
+      this.emit(
+        team,
+        "team_resume_partial",
+        { evidence: text, renewed, error: error instanceof Error ? error.message : String(error) },
+        false
+      );
+      throw error;
+    }
+    const renewal: DeadlineRenewal = {
+      at: new Date().toISOString(),
+      source: "team_resume",
+      previousDeadline: team.deadline,
+      deadline,
+      evidence: text,
+    };
+    if (runTimeoutMs !== undefined) renewal.requestedRunTimeoutMs = runTimeoutMs;
+    team.renewals ??= [];
+    team.renewals.push(renewal);
+    team.deadline = deadline;
+    this.syncBudget(team);
+    this.emit(team, "team_resumed", { renewal, children: renewed }, false);
+    return {
+      ...this.summary(team),
+      renewal: {
+        ...renewal,
+        effectiveDeadline: team.deadline,
+        renewalCount: team.renewals.length,
+        children: renewed,
+      },
+    };
+  }
+
   async dispatch(
     teamId: string,
     taskId: string,
@@ -599,7 +717,12 @@ export class TeamCoordinator {
       } finally {
         task.starting = false;
         this.starts.delete(task.childRunId);
-        if (task.reservation && !run.activeTaskId && !run.sessionOperation) {
+        if (
+          task.reservation &&
+          !run.activeTaskId &&
+          !run.sessionOperation &&
+          !run.activeExecutionId
+        ) {
           const delta = run.turnBudget.used - task.reservation.usedBefore;
           settleReservation(
             team.budget,
@@ -622,6 +745,7 @@ export class TeamCoordinator {
       teamId: team.id,
       status: team.status,
       deadline: team.deadline,
+      renewals: team.renewals ?? [],
       maxWorkers: team.maxWorkers,
       turnBudget: { ...team.budget },
       accounting: budgetSummary(team.budget),

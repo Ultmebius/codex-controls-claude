@@ -13,6 +13,7 @@ export const EVIDENCE_SECTIONS = [
   "executions",
   "changes",
   "decisions",
+  "guidance",
 ] as const;
 export type EvidenceSection = (typeof EVIDENCE_SECTIONS)[number];
 export function selectTaskEvidence(
@@ -101,6 +102,22 @@ export function selectTaskEvidence(
               : ["continue_with_feedback", "reconcile"],
           automaticReplay: false,
         }));
+        break;
+      case "guidance":
+        selected.guidance = (run.guidance ?? [])
+          .filter((record) => record.taskId === task.id)
+          .map((record) => ({
+            guidanceId: record.id,
+            requestId: record.requestId,
+            mode: record.mode,
+            state: record.state,
+            reason: record.reason,
+            executionId: record.executionId,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+            textPreview: record.text.slice(0, 500),
+            truncated: record.text.length > 500,
+          }));
         break;
       case "capabilities":
         selected.workerCapabilities = capabilities;

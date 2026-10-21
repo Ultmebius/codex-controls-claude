@@ -82,6 +82,10 @@ export type ConsumeQueryParams =
         input: Record<string, unknown>
       ) => PermissionResult | undefined;
       nativeToolHandling?: boolean;
+      handleUserQuestion?: (
+        input: Record<string, unknown>,
+        signal: AbortSignal
+      ) => Promise<PermissionResult>;
       abortController: AbortController;
       /** For tests only: override platform-dependent behavior. */
       platform?: NodeJS.Platform;
@@ -102,6 +106,10 @@ export type ConsumeQueryParams =
         input: Record<string, unknown>
       ) => PermissionResult | undefined;
       nativeToolHandling?: boolean;
+      handleUserQuestion?: (
+        input: Record<string, unknown>,
+        signal: AbortSignal
+      ) => Promise<PermissionResult>;
       abortController: AbortController;
       /** For tests only: override platform-dependent behavior. */
       platform?: NodeJS.Platform;
@@ -119,6 +127,11 @@ export type ConsumeQueryHandle = {
   done: Promise<void>;
   close: () => void;
   interrupt: () => void;
+  /**
+   * Awaitable form of the same native control request. Resolves true only when the SDK/CLI
+   * acknowledged the interrupt, false when no control channel exists or it rejected the request.
+   */
+  interruptAsync?: () => Promise<boolean>;
   mcpServerStatus?: () => Promise<McpServerStatus[]>;
 };
 
@@ -461,6 +474,8 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
   const canUseTool: CanUseTool = async (toolName, input, options) => {
     const sessionId = await getSessionId();
     const normalizedToolName = toolName.trim();
+    if (normalizedToolName === "AskUserQuestion" && params.handleUserQuestion)
+      return params.handleUserQuestion(input, options.signal);
     const normalizedInput = params.nativeToolHandling
       ? input
       : normalizeToolInput(toolName, input, params.platform);
@@ -637,6 +652,21 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
       });
     } catch {
       // ignore interrupt errors
+    }
+  };
+
+  /**
+   * Same control request, but the caller learns whether the runtime actually accepted it. A
+   * missing control channel or a rejected request is a false result, never an assumed success.
+   */
+  const interruptAsync = async (): Promise<boolean> => {
+    const request = activeQuery.interrupt;
+    if (typeof request !== "function") return false;
+    try {
+      await request.call(activeQuery);
+      return true;
+    } catch {
+      return false;
     }
   };
 
@@ -972,6 +1002,7 @@ export function consumeQuery(params: ConsumeQueryParams): ConsumeQueryHandle {
     done,
     close,
     interrupt,
+    interruptAsync,
     mcpServerStatus: async () => {
       if (!activeQuery.mcpServerStatus) throw new Error("MCP_STATUS_UNSUPPORTED");
       return await activeQuery.mcpServerStatus();

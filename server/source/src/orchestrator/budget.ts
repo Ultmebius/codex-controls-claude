@@ -9,7 +9,7 @@
  */
 
 /** Native segment grant default (agentic rounds per dispatch). */
-export const DEFAULT_SEGMENT_TURNS = 200;
+export const DEFAULT_SEGMENT_TURNS = 500;
 /** Persistent run budget in SDK-reported turns. */
 export const DEFAULT_RUN_TURN_LIMIT = 1000;
 /** Limit persisted runs actually ran under before `turnBudget` existed; new runs use the raised default. */

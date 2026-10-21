@@ -38,6 +38,25 @@ import {
   type TurnBudget,
 } from "./budget.js";
 
+/** Default model-execution window and the upper bound of one explicit renewal. */
+export const DEFAULT_EXECUTION_WINDOW_MS = 7200000;
+/** Minimum explicit renewal window, matching the create-time deadline bound. */
+export const MIN_EXECUTION_WINDOW_MS = 1000;
+
+/**
+ * One explicitly authorized execution-window renewal. The native conversation, task contracts and
+ * turn budget are untouched; only the model-execution deadline moves. Implicit operations never
+ * append here.
+ */
+export interface DeadlineRenewal {
+  at: string;
+  source: "explicit_session_resume" | "team_resume";
+  previousDeadline: number;
+  deadline: number;
+  evidence: string;
+  requestedRunTimeoutMs?: number;
+}
+
 export interface Check {
   command: string;
   args: string[];
@@ -108,6 +127,34 @@ export interface Task extends TaskSpec {
     reason?: string;
   }[];
 }
+/**
+ * One scoped Codex-to-Claude guidance message. `queue` waits for the next native result
+ * boundary; `interrupt` asks the native runtime to end the current turn and is delivered as the
+ * follow-on input of the same conversation. Records never outlive the task segment they targeted.
+ */
+export interface GuidanceRecord {
+  id: string;
+  /** Caller-supplied idempotency key; at most one record per (run, requestId). */
+  requestId: string;
+  runId: string;
+  taskId: string;
+  taskRevision: number;
+  sessionId?: string;
+  mode: GuidanceMode;
+  text: string;
+  state: "queued" | "interruption_requested" | "delivering" | "delivered" | "failed" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+  /** Native segment assigned to the transport attempt. State records actual acceptance. */
+  executionId?: string;
+  /** Counts native results already absorbed before delivery (audit only). */
+  reason?: string;
+}
+export type GuidanceMode = "queue" | "interrupt";
+const MAX_GUIDANCE_TEXT = 4000;
+const MAX_GUIDANCE_RECORDS = 32;
+const MAX_GUIDANCE_QUEUE = 8;
+
 export interface RunEvent {
   seq: number;
   type: string;
@@ -133,6 +180,8 @@ export interface Run {
   lastContext?: ContextInfo;
   createdAt: string;
   deadline: number;
+  /** Explicitly authorized execution-window renewals; never appended by implicit paths. */
+  renewals?: DeadlineRenewal[];
   taskTimeoutMs: number;
   maxTurns: number;
   turnBudget: TurnBudget;
@@ -156,6 +205,8 @@ export interface Run {
   >;
   sessionId?: string;
   activeTaskId?: string;
+  /** Bounded, ordered scoped-guidance audit; never replayed after a restart. */
+  guidance?: GuidanceRecord[];
   ownerPid: number;
   ownerId?: string;
   ownerGeneration?: number;
@@ -188,6 +239,8 @@ export class Orchestrator {
   private closed = false;
   private readonly ownerId = randomUUID();
   private interruptions = new Map<string, { reason: string; kind: string }>();
+  /** Per-message interrupt watchdogs; process-local and never persisted. */
+  private guidanceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private reviewing = new Set<string>();
   private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private eventSubscribers = new Set<(run: Run, event: RunEvent) => void>();
@@ -298,9 +351,381 @@ export class Orchestrator {
     };
   }
 
+  /**
+   * Scoped guidance for an active, still-running task. `queue` records the text and returns
+   * without touching the native turn: delivery happens exactly once at the next native result
+   * boundary. `interrupt` additionally asks the worker to end the current turn, then delivers
+   * the guidance as the follow-on input in the same native conversation. Nothing is claimed as
+   * read by the model, and nothing survives a restart or a cancelled task.
+   */
+  sendGuidance(
+    runId: string,
+    input: {
+      requestId: string;
+      mode: GuidanceMode;
+      text: string;
+      taskId?: string;
+      taskRevision?: number;
+      sessionId?: string;
+    }
+  ) {
+    const run = this.get(runId);
+    this.open(run, true);
+    if (["__proto__", "constructor", "prototype"].includes(input.requestId))
+      fail("INVALID_REQUEST_ID");
+    const text = typeof input.text === "string" ? input.text.trim() : "";
+    if (!text) fail("GUIDANCE_TEXT_REQUIRED");
+    if (text.length > MAX_GUIDANCE_TEXT) fail("GUIDANCE_TEXT_TOO_LONG");
+    const prior = run.guidance?.find((record) => record.requestId === input.requestId);
+    if (prior) {
+      // An idempotency key identifies one delivery intent: mode and asserted scope must match.
+      if (
+        prior.text !== text ||
+        prior.mode !== input.mode ||
+        (input.taskId !== undefined && input.taskId !== prior.taskId) ||
+        (input.taskRevision !== undefined && input.taskRevision !== prior.taskRevision) ||
+        (input.sessionId !== undefined &&
+          prior.sessionId !== undefined &&
+          input.sessionId !== prior.sessionId)
+      )
+        fail("REQUEST_ID_CONFLICT");
+      return this.guidanceReceipt(run, prior, true);
+    }
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+    if (this.interruptions.has(run.id)) fail("EXECUTOR_STARTUP_DRAINING");
+    const task = run.activeTaskId ? this.task(run, run.activeTaskId) : undefined;
+    if (!task || task.state !== "running" || !run.sessionId) fail("NO_ACTIVE_EXECUTION");
+    if (input.taskId !== undefined && input.taskId !== task.id) fail("GUIDANCE_TASK_NOT_ACTIVE");
+    if (input.taskRevision !== undefined && input.taskRevision !== task.revision)
+      fail("STALE_CONTRACT");
+    if (input.sessionId !== undefined && input.sessionId !== run.sessionId)
+      fail("GUIDANCE_SESSION_MISMATCH");
+    const active = run.executions?.find((e) => e.id === run.activeExecutionId);
+    if (!active || active.status !== "reserved") fail("NO_ACTIVE_EXECUTION");
+    if (this.pendingGuidance(run).length >= MAX_GUIDANCE_QUEUE) fail("GUIDANCE_QUEUE_FULL");
+    // Never evict accepted idempotency keys while the run can still receive their retries.
+    if ((run.guidance?.length ?? 0) >= MAX_GUIDANCE_RECORDS) fail("GUIDANCE_MESSAGE_LIMIT");
+    if (Date.now() >= run.deadline) fail("RUN_DEADLINE");
+    const now = new Date().toISOString();
+    const record: GuidanceRecord = {
+      id: randomUUID(),
+      requestId: input.requestId,
+      runId,
+      taskId: task.id,
+      taskRevision: task.revision,
+      sessionId: run.sessionId,
+      mode: input.mode,
+      text,
+      state: input.mode === "interrupt" ? "interruption_requested" : "queued",
+      createdAt: now,
+      updatedAt: now,
+    };
+    run.guidance ??= [];
+    run.guidance.push(record);
+    this.save(run);
+    // The caller already holds the transport receipt; these events are audit, not wakeups.
+    this.emit(
+      run,
+      input.mode === "interrupt" ? "guidance_interruption_requested" : "guidance_queued",
+      this.guidanceSummary(run, record),
+      task.id,
+      false
+    );
+    if (input.mode === "interrupt") this.requestGuidanceInterrupt(run, record);
+    return this.guidanceReceipt(run, record, false);
+  }
+
+  /** Pending guidance: interrupting messages outrank ordinary queued ones, then FIFO. */
+  private pendingGuidance(run: Run) {
+    const order = (record: GuidanceRecord) => (record.state === "interruption_requested" ? 0 : 1);
+    return (run.guidance ?? [])
+      .filter((record) => record.state === "queued" || record.state === "interruption_requested")
+      .sort((a, b) => order(a) - order(b) || a.createdAt.localeCompare(b.createdAt));
+  }
+
+  private guidanceSummary(run: Run, record: GuidanceRecord) {
+    return {
+      guidanceId: record.id,
+      requestId: record.requestId,
+      taskId: record.taskId,
+      taskRevision: record.taskRevision,
+      mode: record.mode,
+      state: record.state,
+      reason: record.reason,
+      /** Truthful delivery only: input accepted, never a claim that the model read it. */
+      delivered: record.state === "delivered",
+      pendingGuidance: this.pendingGuidance(run).length,
+      textPreview: record.text.slice(0, 500),
+      truncated: record.text.length > 500,
+    };
+  }
+
+  private guidanceReceipt(run: Run, record: GuidanceRecord, deduplicated: boolean) {
+    return {
+      runId: run.id,
+      ...this.guidanceSummary(run, record),
+      deduplicated,
+      states: {
+        queued: "Accepted; waits for the current native turn to reach its result boundary",
+        interruption_requested: "Native interruption requested; not yet input",
+        delivering: "Starting the follow-on native turn; transport acceptance is pending",
+        delivered: "Input accepted by the same native conversation for the follow-on turn",
+        failed: "Not delivered; interrupt, transport or allowance prevented it",
+        cancelled: "Dropped because the task, run, budget or conversation ended",
+      },
+      trust: "supervisor_scope_guidance",
+      nextCursor: this.cursor(run.id),
+    };
+  }
+
+  /**
+   * Ask the native runtime to abandon the current turn. Delivery stays with the native result
+   * boundary; if that boundary never arrives, the message fails instead of being sent late into
+   * an unknown turn.
+   */
+  private async requestGuidanceInterrupt(run: Run, record: GuidanceRecord) {
+    record.state = "interruption_requested";
+    record.updatedAt = new Date().toISOString();
+    const executionId = run.activeExecutionId;
+    this.save(run);
+    // Start the bound before awaiting the control acknowledgement: a hung native control
+    // channel must not leave the message pending forever.
+    const watchdog = setTimeout(
+      () => {
+        if (record.state !== "interruption_requested") return;
+        if (run.activeExecutionId !== executionId || run.activeTaskId !== record.taskId) return;
+        this.settleGuidance(run, record, "failed", "interrupt_boundary_timeout");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record), record.taskId);
+      },
+      Math.min(30000, Math.max(1000, run.deadline - Date.now()))
+    );
+    watchdog.unref();
+    this.guidanceTimers.set(record.id, watchdog);
+    let issued = false;
+    try {
+      // Awaited so a rejected control request fails the message immediately, not 30s later.
+      issued = (await this.worker.interruptTurn?.(run.sessionId ?? "")) ?? false;
+    } catch {
+      issued = false;
+    }
+    // The boundary may have arrived while the request was in flight; that path owns the record.
+    if (record.state !== "interruption_requested") return;
+    if (!issued) {
+      this.settleGuidance(run, record, "failed", "interrupt_failed");
+      // A failed redirect leaves the running task unchanged; only the failure is actionable.
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record), record.taskId);
+      return;
+    }
+    this.save(run);
+  }
+
+  private settleGuidance(
+    run: Run,
+    record: GuidanceRecord,
+    state: GuidanceRecord["state"],
+    reason?: string
+  ) {
+    record.state = state;
+    record.reason = reason;
+    record.updatedAt = new Date().toISOString();
+    const timer = this.guidanceTimers.get(record.id);
+    if (timer) {
+      clearTimeout(timer);
+      this.guidanceTimers.delete(record.id);
+    }
+    this.save(run);
+  }
+
+  /**
+   * Deliver exactly one guidance message for the boundary that just settled. Exactly one user
+   * input crosses the native queue per boundary so two messages can never coalesce, and the
+   * follow-on segment is reserved before any input is sent.
+   */
+  private deliverGuidance(run: Run, record: GuidanceRecord) {
+    // Never deliver after cancellation, owner loss, a deadline stop or a closed run.
+    if (this.closed || !this.owns(run) || run.status !== "open" || !run.activeTaskId) {
+      this.settleGuidance(run, record, "cancelled", "run_no_longer_active");
+      return false;
+    }
+    const task = this.task(run, run.activeTaskId);
+    if (Date.now() >= run.deadline) {
+      this.settleGuidance(run, record, "failed", "execution_deadline");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record), task.id);
+      return false;
+    }
+    const requested = run.executions?.at(-1)?.requestedLimit ?? run.maxTurns;
+    let nativeLimit = availableGrant(run.turnBudget, requested);
+    if (this.teamManaged) {
+      // The child's own allowance is one dispatch grant; the shared team budget funds the rest.
+      const granted = this.parentGrant?.(run.id, requested) ?? 0;
+      if (granted < 1) {
+        this.settleGuidance(run, record, "failed", "turn_budget_exhausted");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record), task.id);
+        return false;
+      }
+      // Mirror the parent's hold so child settlement stays truthful and idempotent.
+      run.turnBudget.limit = run.turnBudget.used + granted + 1;
+      run.turnBudget.reserved += granted + 1;
+      nativeLimit = granted;
+    } else {
+      if (nativeLimit < 1) {
+        this.settleGuidance(run, record, "failed", "turn_budget_exhausted");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record), task.id);
+        return false;
+      }
+      reserveGrant(run.turnBudget, nativeLimit);
+    }
+    const execution: ExecutionAccount = {
+      id: randomUUID(),
+      taskId: task.id,
+      attempt: task.attempts,
+      startedAt: new Date().toISOString(),
+      requestedLimit: requested,
+      effectiveLimit: nativeLimit,
+      defaultLimit: run.maxTurns,
+      reservedTurns: nativeLimit + 1,
+      observedAssistantMessages: 0,
+      provisionalCharge: 0,
+      status: "reserved",
+      reason: "guidance_continuation",
+    };
+    // The saved conversation is retained; a changed native cap may require a new query epoch.
+    execution.sessionId = run.sessionId;
+    run.executions!.push(execution);
+    run.activeExecutionId = execution.id;
+    const timer = setTimeout(
+      () => this.stopExecution(run, "Execution deadline exceeded", "time_budget"),
+      Math.min(run.taskTimeoutMs, Math.max(1, run.deadline - Date.now()))
+    );
+    timer.unref();
+    const previousTimer = this.timers.get(run.id);
+    if (previousTimer) clearTimeout(previousTimer);
+    this.timers.set(run.id, timer);
+    this.save(run);
+    let sent: boolean | Promise<boolean> = false;
+    record.state = "delivering";
+    record.executionId = execution.id;
+    record.updatedAt = new Date().toISOString();
+    try {
+      sent = this.worker.guidance?.(run.sessionId ?? "", record.text, nativeLimit) ?? false;
+    } catch {
+      sent = false;
+    }
+    if (typeof sent !== "boolean") {
+      const startup = { valid: true };
+      this.startups.set(run.id, startup);
+      let deliveryTimer: ReturnType<typeof setTimeout> | undefined;
+      const bounded = Promise.race([
+        sent,
+        new Promise<boolean>((resolve) => {
+          deliveryTimer = setTimeout(
+            () => resolve(false),
+            Math.min(30000, Math.max(1, run.deadline - Date.now()))
+          );
+          deliveryTimer.unref();
+        }),
+      ]);
+      void bounded
+        .then((accepted) => {
+          // An early native event may already have confirmed delivery and even finished the turn.
+          if (record.state === "delivered") return;
+          if (
+            !startup.valid ||
+            this.closed ||
+            !this.owns(run) ||
+            run.status !== "open" ||
+            run.activeExecutionId !== execution.id ||
+            record.state !== "delivering"
+          ) {
+            this.worker.stop(run.sessionId);
+            return;
+          }
+          if (!accepted) {
+            this.settleGuidance(run, record, "failed", "transport_failed");
+            this.worker.stop(run.sessionId);
+            this.stoppedTask(
+              run,
+              task,
+              "Guidance transport failed",
+              "guidance_transport",
+              "failed",
+              "worker_finished"
+            );
+            return;
+          }
+          execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
+          this.settleGuidance(run, record, "delivered");
+          this.emit(run, "guidance_delivered", this.guidanceSummary(run, record), task.id, false);
+        })
+        .catch(() => {
+          if (startup.valid && this.owns(run) && run.activeExecutionId === execution.id) {
+            this.settleGuidance(run, record, "failed", "transport_failed");
+            this.worker.stop(run.sessionId);
+            this.stoppedTask(
+              run,
+              task,
+              "Guidance transport failed",
+              "guidance_transport",
+              "failed",
+              "worker_finished"
+            );
+          }
+        })
+        .finally(() => {
+          if (deliveryTimer) clearTimeout(deliveryTimer);
+          if (this.startups.get(run.id) === startup) {
+            this.startups.delete(run.id);
+            if (!run.activeTaskId && !run.sessionOperation) this.release(run);
+          }
+        });
+      this.save(run);
+      return true;
+    }
+    execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
+    if (!sent) {
+      // The hold is charged conservatively so a lost input can never free allowance.
+      settleReservation(run.turnBudget, execution.reservedTurns, undefined);
+      execution.reservedTurns = 0;
+      execution.status = "confirmed";
+      execution.reason = "guidance_transport_failed";
+      execution.settledAt = new Date().toISOString();
+      if (run.activeExecutionId === execution.id) run.activeExecutionId = undefined;
+      this.settleGuidance(run, record, "failed", "transport_failed");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record), task.id);
+      return false;
+    }
+    this.settleGuidance(run, record, "delivered");
+    this.emit(run, "guidance_delivered", this.guidanceSummary(run, record), task.id, false);
+    return true;
+  }
+
+  /** Drop every unsent message; the caller reports why. */
+  private clearGuidance(run: Run, reason: string) {
+    for (const record of (run.guidance ?? []).filter((entry) =>
+      ["queued", "interruption_requested", "delivering"].includes(entry.state)
+    )) {
+      const timer = this.guidanceTimers.get(record.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.guidanceTimers.delete(record.id);
+      }
+      record.state = "cancelled";
+      record.reason = reason;
+      record.updatedAt = new Date().toISOString();
+    }
+  }
+
   private migrate(run: Run) {
     run.executions ??= [];
+    // Loaded or re-owned state never replays guidance from an earlier process.
+    for (const record of run.guidance ?? [])
+      if (["queued", "interruption_requested", "delivering"].includes(record.state)) {
+        record.state = "cancelled";
+        record.reason = record.reason ?? "not_replayed_after_restart";
+        record.updatedAt = new Date().toISOString();
+      }
     run.workerName ??= run.tasks[0]?.title;
+    if (run.renewals && !Array.isArray(run.renewals)) run.renewals = undefined;
     if (!run.turnBudget) {
       let used = 0,
         observed = 0;
@@ -492,6 +917,7 @@ export class Orchestrator {
   ) {
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
+    this.clearGuidance(run, kind);
     this.settle(run, undefined, kind);
     run.activeTaskId = undefined;
     run.sessionOperation = undefined;
@@ -676,6 +1102,13 @@ export class Orchestrator {
       run.activeTaskId = undefined;
       run.sessionOperation = undefined;
       run.sessionState = "closed";
+      // Guidance is never replayed across an owner change.
+      for (const record of run.guidance ?? [])
+        if (["queued", "interruption_requested", "delivering"].includes(record.state)) {
+          record.state = "cancelled";
+          record.reason = "owner_lost";
+          record.updatedAt = new Date().toISOString();
+        }
       for (const task of run.tasks) {
         if (task.state === "running") {
           task.state = "interrupted";
@@ -1078,6 +1511,7 @@ export class Orchestrator {
   private closeSession(run: Run) {
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
+    this.clearGuidance(run, "Session closed");
     const timer = this.idleTimers.get(run.id);
     if (timer) clearTimeout(timer);
     this.idleTimers.delete(run.id);
@@ -1109,7 +1543,121 @@ export class Orchestrator {
     });
   }
 
-  async session(runId: string, action: "retain" | "close" | "resume" | "compact" | "new") {
+  /**
+   * Explicit, evidence-backed renewal of the model-execution window. Callers must have proved the
+   * run is idle and owned. Nothing else (task contracts, revisions, native conversation, turn
+   * budget, usage, repairs, checks or receipts) is touched, and an implicit path never calls this.
+   */
+  private renewDeadline(
+    run: Run,
+    source: DeadlineRenewal["source"],
+    evidence: string,
+    requestedRunTimeoutMs?: number,
+    deadline?: number
+  ) {
+    const text = evidence.trim();
+    if (!text) fail("RENEWAL_EVIDENCE_REQUIRED");
+    const window = requestedRunTimeoutMs ?? DEFAULT_EXECUTION_WINDOW_MS;
+    if (
+      !Number.isSafeInteger(window) ||
+      window < MIN_EXECUTION_WINDOW_MS ||
+      window > DEFAULT_EXECUTION_WINDOW_MS
+    )
+      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    if (deadline !== undefined && (!Number.isSafeInteger(deadline) || deadline <= 0))
+      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    const previousDeadline = run.deadline;
+    // A renewal only ever moves the deadline forward; an explicit shorter window cannot shorten.
+    const next = Math.max(previousDeadline, deadline ?? Date.now() + window);
+    const renewal: DeadlineRenewal = {
+      at: new Date().toISOString(),
+      source,
+      previousDeadline,
+      deadline: next,
+      evidence: text,
+    };
+    if (requestedRunTimeoutMs !== undefined) renewal.requestedRunTimeoutMs = requestedRunTimeoutMs;
+    run.renewals ??= [];
+    run.renewals.push(renewal);
+    run.deadline = next;
+    this.save(run);
+    return renewal;
+  }
+
+  /**
+   * Renewal guard shared by ordinary and team paths. Busy, draining, reviewed, foreign-owned or
+   * closed runs cannot be renewed; a failed worker never reaches this method.
+   */
+  private assertRenewable(run: Run) {
+    this.open(run);
+    if (this.closed || !this.owns(run)) fail("RUN_OWNED_BY_ANOTHER_CONNECTION");
+    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
+    if (run.activeTaskId || run.sessionOperation) fail("SESSION_BUSY");
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+  }
+
+  /**
+   * A managed child's model-execution window is owned by its team: only the coordinator may move
+   * it, so an ordinary resume can never outlive an expired parent.
+   */
+  private teamManaged = false;
+  /**
+   * Team children spend the shared team allowance, which the parent must reserve before any
+   * follow-on input. The handler returns the granted turns (0 when the team cannot afford it).
+   */
+  private parentGrant?: (runId: string, requested: number) => number;
+  setParentGrant(handler: ((runId: string, requested: number) => number) | undefined) {
+    this.parentGrant = handler;
+  }
+  setTeamManaged(managed: boolean) {
+    this.teamManaged = managed;
+  }
+
+  /**
+   * Team-coordinated renewal of one child's window. The team coordinator supplies the single
+   * evidence record and the parent deadline, so the team and its children never diverge.
+   */
+  renewExecutionWindow(
+    runId: string,
+    input: {
+      source: DeadlineRenewal["source"];
+      evidence: string;
+      runTimeoutMs?: number;
+      deadline?: number;
+    }
+  ) {
+    const run = this.get(runId);
+    this.assertRenewable(run);
+    return this.renewDeadline(
+      run,
+      input.source,
+      input.evidence,
+      input.runTimeoutMs,
+      input.deadline
+    );
+  }
+
+  /** True only for a run this connection currently owns and may mutate. */
+  isOwned(runId: string) {
+    const run = this.runs.get(runId);
+    return !!run && !this.closed && this.owns(run);
+  }
+
+  /** Non-throwing form used to pre-check a coordinated team renewal atomically. */
+  renewalEligibility(runId: string) {
+    try {
+      this.assertRenewable(this.get(runId));
+      return undefined;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async session(
+    runId: string,
+    action: "retain" | "close" | "resume" | "compact" | "new",
+    options: { evidence?: string; runTimeoutMs?: number } = {}
+  ) {
     const run = this.get(runId),
       beforeCursor = this.cursor(runId);
     if ((run.status === "completed" || run.status === "cancelled") && action !== "close")
@@ -1121,6 +1669,14 @@ export class Orchestrator {
       fail("OPEN_RUN_EXISTS");
     if (run.activeTaskId || this.reviewing.has(run.id) || run.sessionOperation)
       fail("SESSION_BUSY");
+    // An explicit resume carrying evidence is the only path that may move the execution deadline.
+    // Passing either renewal field requests a renewal; a blank evidence is then rejected rather
+    // than silently falling back to an ordinary resume.
+    const renewalRequested =
+      action === "resume" && (options.runTimeoutMs !== undefined || options.evidence !== undefined);
+    if (options.runTimeoutMs !== undefined && action !== "resume")
+      fail("BUDGET_CONFIG_CREATE_ONLY: runTimeoutMs is accepted only on create or explicit resume");
+    let renewal: DeadlineRenewal | undefined;
     if (action === "close") this.closeSession(run);
     else if (action === "new") {
       run.checkpoint = this.makeCheckpoint(run);
@@ -1134,6 +1690,19 @@ export class Orchestrator {
         run.sessionId && this.worker.model(run.sessionId) ? "retained" : "resume_pending";
     else if (action === "resume") {
       if (!run.sessionId) fail("NO_TRANSCRIPT_TO_RESUME");
+      if (renewalRequested) {
+        if (this.teamManaged)
+          fail(
+            "TEAM_RESUME_REQUIRED: renew a team child window through orchestrator_team action=resume"
+          );
+        this.assertRenewable(run);
+        renewal = this.renewDeadline(
+          run,
+          "explicit_session_resume",
+          options.evidence ?? "",
+          options.runTimeoutMs
+        );
+      }
       run.sessionState = this.worker.model(run.sessionId) ? "retained" : "resume_pending";
     } else {
       if (!run.sessionId) fail("NO_SESSION_TO_COMPACT");
@@ -1195,7 +1764,12 @@ export class Orchestrator {
     this.emit(
       run,
       "session_policy",
-      { action, state: run.sessionState, sessionId: run.sessionId },
+      {
+        action,
+        state: run.sessionState,
+        sessionId: run.sessionId,
+        renewal: renewal ? this.renewalSummary(run, renewal) : undefined,
+      },
       undefined,
       false
     );
@@ -1204,7 +1778,24 @@ export class Orchestrator {
       action,
       state: run.sessionState,
       sessionId: run.sessionId,
+      deadline: run.deadline,
+      renewal: renewal ? this.renewalSummary(run, renewal) : undefined,
       nextCursor: beforeCursor,
+    };
+  }
+
+  /** Effective window returned to the caller after an explicit renewal. */
+  renewalSummary(run: Run, renewal: DeadlineRenewal) {
+    return {
+      source: renewal.source,
+      at: renewal.at,
+      previousDeadline: renewal.previousDeadline,
+      deadline: renewal.deadline,
+      effectiveDeadline: run.deadline,
+      requestedRunTimeoutMs: renewal.requestedRunTimeoutMs,
+      evidence: renewal.evidence,
+      renewalCount: run.renewals?.length ?? 0,
+      turnBudget: { ...run.turnBudget },
     };
   }
 
@@ -1250,6 +1841,8 @@ export class Orchestrator {
     this.open(run, true);
     if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
     if (run.activeTaskId || run.sessionOperation) fail("EXECUTOR_BUSY");
+    // A new explicit attempt never inherits messages queued for a previous segment.
+    this.clearGuidance(run, "New dispatch");
     if (
       run.sessionId &&
       run.lastContext &&
@@ -1514,6 +2107,18 @@ export class Orchestrator {
     if (account) {
       account.sessionId = sessionId;
       account.epoch = epoch;
+      const delivery = run.guidance?.find(
+        (record) => record.executionId === account.id && record.state === "delivering"
+      );
+      if (delivery && ["output", "permission_request", "result", "error"].includes(event.type)) {
+        if (event.type === "error") {
+          this.settleGuidance(run, delivery, "failed", "native_transport_error");
+          this.emit(run, "guidance_failed", this.guidanceSummary(run, delivery), task.id);
+        } else {
+          this.settleGuidance(run, delivery, "delivered");
+          this.emit(run, "guidance_delivered", this.guidanceSummary(run, delivery), task.id, false);
+        }
+      }
     }
     if (
       account &&
@@ -1562,44 +2167,84 @@ export class Orchestrator {
       return;
     }
     if (event.type === "result" || event.type === "error") {
-      task.result = this.worker.result(sessionId) ?? (event.data as AgentResult);
-      const accountingKnown = !task.result.isError || !!task.result.errorSubtype;
+      const nativeResult = this.worker.result(sessionId) ?? (event.data as AgentResult);
+      const accountingKnown = !nativeResult.isError || !!nativeResult.errorSubtype;
+      const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
+        nativeResult.errorSubtype ?? ""
+      );
+      const blocked = !nativeResult.isError && /^BLOCKED:/m.test(nativeResult.result);
+      const nextState: Task["state"] = budgetStop
+        ? "budget_exhausted"
+        : nativeResult.isError
+          ? "failed"
+          : blocked
+            ? "blocked"
+            : "awaiting_review";
+      // Settle this native segment exactly once, before any follow-on reservation.
       this.settle(
         run,
-        accountingKnown ? task.result.numTurns : undefined,
-        task.result.errorSubtype ?? event.type
+        accountingKnown ? nativeResult.numTurns : undefined,
+        nativeResult.errorSubtype ?? event.type
       );
-      const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
-        task.result.errorSubtype ?? ""
-      );
+      task.result = nativeResult;
       task.failure = budgetStop
         ? {
             kind:
-              task.result.errorSubtype === "error_max_turns" ? "turn_budget" : "provider_budget",
-            subtype: task.result.errorSubtype,
+              nativeResult.errorSubtype === "error_max_turns" ? "turn_budget" : "provider_budget",
+            subtype: nativeResult.errorSubtype,
           }
-        : task.result.isError
-          ? { kind: "execution", subtype: task.result.errorSubtype }
+        : nativeResult.isError
+          ? { kind: "execution", subtype: nativeResult.errorSubtype }
           : undefined;
       if (budgetStop)
         run.turnBudget.stopReason =
-          task.result.errorSubtype === "error_max_turns"
+          nativeResult.errorSubtype === "error_max_turns"
             ? "native_max_turns"
             : "provider_budget_cap";
-      task.state = budgetStop
-        ? "budget_exhausted"
-        : task.result.isError
-          ? "failed"
-          : /^BLOCKED:/m.test(task.result.result)
-            ? "blocked"
-            : "awaiting_review";
+      task.state = nextState;
       const interruption = this.interruptions.get(run.id);
       if (interruption) {
         task.state = interruption.kind === "permission" ? "blocked" : "interrupted";
         task.failure = { kind: interruption.kind };
       }
+      // The settled turn cannot answer anything it left pending.
       for (const decision of task.decisions ?? [])
         if (decision.state === "pending") decision.state = "expired";
+      const pending = this.pendingGuidance(run);
+      if (pending.length && !interruption && !this.closed && run.status === "open") {
+        this.emit(
+          run,
+          "native_boundary",
+          {
+            executionId: account?.id,
+            numTurns: nativeResult.numTurns,
+            accountingKnown,
+            boundaryState: task.state,
+            pendingGuidance: pending.length,
+            turnBudget: run.turnBudget,
+          },
+          task.id,
+          false
+        );
+        // A queued message waits for a clean boundary; an interrupting message outranks it.
+        const interruptRequested = pending.some((record) => record.mode === "interrupt");
+        const deliverable = interruptRequested || (!nativeResult.isError && !blocked);
+        if (deliverable && this.deliverGuidance(run, pending[0])) {
+          // The task continues in the same native conversation; the ledger keeps no
+          // intermediate result and the next boundary decides the outcome.
+          task.state = "running";
+          task.result = undefined;
+          task.failure = undefined;
+          run.lastContext = this.worker.context?.(sessionId);
+          this.save(run);
+          this.warnBudget(run, task);
+          return;
+        }
+        // Anything that did not deliver at this boundary is unreachable now: the task is
+        // settling, so records fail/cancel with an explicit reason instead of waiting.
+        if (!deliverable || pending[0].state !== "delivered")
+          this.clearGuidance(run, `Boundary ${task.state}`);
+      } else if (pending.length) this.clearGuidance(run, `Boundary ${task.state}`);
       if (task.state === "awaiting_review") {
         try {
           task.artifactHash = this.hash(run, task);
@@ -1736,6 +2381,7 @@ export class Orchestrator {
     if (!reason.trim()) fail("INTERRUPTION_REASON_REQUIRED");
     if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
     if (!run.activeTaskId && !run.sessionOperation) fail("NO_ACTIVE_EXECUTION");
+    this.clearGuidance(run, reason.slice(0, 200));
     this.stopExecution(run, reason, "interrupted");
     return {
       runId,
@@ -2011,6 +2657,7 @@ export class Orchestrator {
     const run = this.get(runId);
     if (run.status !== "open" && run.status !== "awaiting_user_review")
       return { runId, status: run.status };
+    this.clearGuidance(run, "cancelled");
     this.settle(run, undefined, "cancelled");
     if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
     const startup = this.startups.get(run.id);
@@ -2033,6 +2680,7 @@ export class Orchestrator {
     for (const startup of this.startups.values()) startup.valid = false;
     for (const run of this.runs.values()) {
       if (!this.owns(run)) continue;
+      this.clearGuidance(run, "MCP connection closed");
       try {
         if (run.status === "open" || run.status === "awaiting_user_review") {
           if (run.activeTaskId || run.sessionOperation)
@@ -2059,6 +2707,8 @@ export class Orchestrator {
         }
       }
     }
+    for (const timer of this.guidanceTimers.values()) clearTimeout(timer);
+    this.guidanceTimers.clear();
     for (const timer of this.idleTimers.values()) clearTimeout(timer);
     this.idleTimers.clear();
     for (const timer of this.timers.values()) clearTimeout(timer);

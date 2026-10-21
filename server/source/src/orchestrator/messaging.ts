@@ -90,12 +90,30 @@ export class SupervisorMailbox {
     return true;
   }
 
+  /** Native AskUserQuestion uses the same event/reply transport as ask_supervisor. */
+  askQuestion(question: string, signal: AbortSignal): Promise<CallToolResult> {
+    if (!text.safeParse(question).success)
+      return Promise.resolve(this.error("SUPERVISOR_QUESTION_INVALID"));
+    return this.send("question", question, undefined, signal);
+  }
+
   close(reason = "Attempt ended"): void {
     if (this.closedReason !== undefined) return;
     this.closedReason = reason.slice(0, MAX_TEXT);
     for (const record of this.messages.values())
       record.finish?.(this.error("SUPERVISOR_MAILBOX_CLOSED", record.id, this.closedReason));
     this.listeners.clear();
+  }
+
+  /**
+   * End pending questions without closing the mailbox. A native interruption or turn boundary
+   * abandons the originating tool call, so no answer may remain claimable or leave the worker
+   * waiting; the mailbox stays usable for the follow-on turn.
+   */
+  interruptPending(reason = "Native turn interrupted"): void {
+    for (const record of this.messages.values()) {
+      record.finish?.(this.error("SUPERVISOR_INTERRUPTED", record.id, reason.slice(0, MAX_TEXT)));
+    }
   }
 
   /** Release the previous attempt before reusing the query's SDK server. */
@@ -117,10 +135,12 @@ export class SupervisorMailbox {
   private send(
     kind: SupervisorMessage["kind"],
     value: string,
-    suppliedId?: string
+    suppliedId?: string,
+    signal?: AbortSignal
   ): Promise<CallToolResult> {
     // Caller keys only deduplicate within an attempt. Reply identities never repeat on reset.
     const id = randomUUID();
+    if (signal?.aborted) return Promise.resolve(this.error("SUPERVISOR_QUESTION_CANCELLED", id));
     if (this.closedReason !== undefined)
       return Promise.resolve(this.error("SUPERVISOR_MAILBOX_CLOSED", id, this.closedReason));
     const prior = suppliedId === undefined ? undefined : this.deduplicated.get(suppliedId);
@@ -152,16 +172,19 @@ export class SupervisorMailbox {
     if (kind === "question") {
       this.pendingQuestions++;
       record.outcome = new Promise<CallToolResult>((resolve) => {
+        const abort = () => record.finish?.(this.error("SUPERVISOR_QUESTION_CANCELLED", id));
         const timer = setTimeout(() => {
           record.finish?.(this.error("SUPERVISOR_QUESTION_TIMEOUT", id));
         }, this.timeoutMs);
         timer.unref();
         record.finish = (outcome) => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
           record.finish = undefined;
           this.pendingQuestions--;
           resolve(outcome);
         };
+        signal?.addEventListener("abort", abort, { once: true });
       });
     }
     this.messages.set(id, record);

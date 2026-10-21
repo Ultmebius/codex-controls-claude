@@ -34,7 +34,7 @@ export function capabilitiesFromInit(init: SDKSystemMessage): WorkerCapabilities
       mcp: "native_enabled_configuration",
       permissions: "native_configuration",
       hooks: "native_configuration",
-      blockedTools: ["Agent", "TeamCreate", "TeamDelete"],
+      blockedTools: [],
     },
   };
 }

@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -16,12 +16,35 @@ internal sealed class SessionDashboard : IDisposable
     private const string Redacted = "[redacted]";
     private const int PageStep = 6;
     private const int WheelNotch = 120;
+    // Auto-scroll speed (rows per second) for middle-click browsing and for dragging a selection
+    // outside the body. Speed grows with the pointer's distance from the anchor/edge up to a cap, so
+    // a small overshoot is slow and a long one is fast, and neither ever outruns what the reader can
+    // follow. Motion is driven by clamped elapsed time, never by a fixed step per input record.
+    private const int BrowseMinRowsPerSecond = 3;
+    private const int BrowseMaxRowsPerSecond = 40;
+    private const int EdgeMinRowsPerSecond = 6;
+    private const int EdgeMaxRowsPerSecond = 48;
+    // A single timer step never advances more than this, so a long stall (a debugger break, a
+    // minimized window, a busy machine) resumes at the normal speed instead of jumping.
+    private const int MaxMotionStepMs = 50;
+    // A pointer this close (in body rows) to the browse anchor does not move the view at all: without
+    // the deadzone a one-row jitter around the anchor would start and stop scrolling constantly.
+    private const int BrowseDeadzoneRows = 1;
+    // Streamed display bounds. The message map is per query and tiny; the raw hold only ever keeps
+    // an unterminated escape/CR, and the held whitespace is trimmed again before it is shown.
+    private const int MaxStreamMessages = 32;
+    private const int MaxStreamBlocks = 128;
+    private const int MaxStreamRawHold = 512;
+    private const int MaxStreamHeld = 4096;
+    // A tool call's streamed input JSON is only used for its detail line; past this bound the row is
+    // deferred to the completed snapshot, whose input is complete and bounded by the protocol.
+    private const int MaxStreamToolJson = 32768;
     // One right-hand column always belongs to the scrollbar, so the body never reflows when it appears.
     private const int ScrollbarCells = 1;
     // The body prefix "  │ " is a gutter, not user text; selection starts after it.
     private const int BodyGutterCells = 4;
 
-    private enum Tone { Plain, Title, Accent, Dim, Text, Output, Gold, Green, Error, LogoA, LogoB, LogoC, LogoD, ScrollThumb, ScrollTrack }
+    private enum Tone { Plain, Title, Strong, Accent, Dim, Text, Output, Gold, Green, Error, LogoA, LogoB, LogoC, LogoD, ScrollThumb, ScrollTrack }
 
     private readonly record struct Seg(string Text, Tone Style, bool Selected = false);
     private readonly record struct Chip(int Start, int End, int Index)
@@ -33,7 +56,74 @@ internal sealed class SessionDashboard : IDisposable
     {
         public readonly string Tag = tag;
         public readonly DateTime At = at;
-        public readonly string Text = text;
+        // A live streamed block grows this in place; a completed entry is never rewritten.
+        public string Text = text;
+        // The OUTPUT markdown split of `Text`. A streamed entry is re-parsed only when its text
+        // actually changed, so a repaint (clock tick, scroll, resize) never re-parses history.
+        public string MdSource = "";
+        public List<List<MdSpan>>? MdLines;
+        // A table's column widths depend on the body width, so the split is cached per width too:
+        // a resize re-parses and reflows; only a repeated repaint at the same width is free.
+        public int MdWidth = -1;
+        // The entry's own wrapped body rows, cached by text instance and body width. A live streamed
+        // block grows its text in place, so only THAT entry's rows are rebuilt on each delta: the rest
+        // of the history is reused instead of re-wrapping the whole log (see Rebuild).
+        public string WrappedText = "";
+        public int WrappedWidth = -1;
+        public List<BodyRow>? Wrapped;
+    }
+
+    // One streamed content block. A text block owns exactly ONE log entry for its whole lifetime,
+    // so a text_delta grows that entry instead of appending a new OUTPUT row per chunk. `Pending`
+    // holds sanitised text whose tail could still be the start of a redacted secret; `Raw` holds
+    // only an unterminated ANSI escape / split CR, so neither buffer grows with the stream.
+    private sealed class StreamBlock
+    {
+        public int Index;
+        public string Type = "";
+        public readonly StringBuilder Display = new();
+        public readonly StringBuilder Pending = new();
+        // A secret prefix reached the hold limit. Defer this block's remaining streamed text until
+        // its complete snapshot can be redacted, rather than leaking a suffix after the bound.
+        public bool RedactionDeferred;
+        public string Raw = "";
+        public Entry? Entry;
+        public bool Truncated;
+        public bool Closed;
+        public bool Recorded;
+        // Index of this block's text in the query's echo memory, so it is replaced in place as the
+        // block grows instead of being added once per delta.
+        public int EchoIndex = -1;
+        public string ToolId = "";
+        public string ToolName = "";
+        public string ToolJson = "";
+        // The accumulated input JSON exceeded its bound, so the streamed row is deferred to the
+        // completed snapshot instead of being shown with missing details.
+        public bool ToolCapped;
+        // The snapshot text this block has already been reconciled against, so a repeated delivery
+        // is a no-op and only genuinely new text is appended.
+        public string Reconciled = "";
+    }
+
+    // The display side of one native assistant message, keyed by the same id streamed usage uses.
+    // Deltas resolve to one block by its content index, so interleaved text/tool/thinking blocks
+    // keep their protocol order and two messages can never share an entry.
+    private sealed class StreamMessage
+    {
+        public string Key = "";
+        public int Epoch;
+        public int Sequence;
+        // Set by message_stop. A snapshot may still arrive afterwards and must reconcile against
+        // this display instead of printing the body again, so the message is retained.
+        public bool Completed;
+        public int Current = -1;
+        // The last snapshot text reconciled for this display, used for id-less deliveries, which
+        // have no message id to key the query's repeat memory on.
+        public string LastSnapshot = "";
+        // Next snapshot text index not yet appended as a remainder, so a grown snapshot appends
+        // only its own new blocks.
+        public int RemainderFrom;
+        public readonly SortedDictionary<int, StreamBlock> Blocks = [];
     }
 
     // One native assistant message's own usage contribution. Input is uncached + cache-read +
@@ -84,6 +174,15 @@ internal sealed class SessionDashboard : IDisposable
         public string[] Secrets = [];
         public List<Entry> Log = [];
         public int Tools;
+        // Live display of the current query's streamed text blocks. It is reset at a query boundary
+        // and never contributes to usage counting, which stays on UsageMessages alone.
+        public Dictionary<string, StreamMessage> StreamMessages = [];
+        public string DisplayStreamKey = "";
+        public int StreamSequence;
+        // Messages whose streamed display has already been completed. A late duplicate frame must
+        // never re-open them and print the body a second time.
+        public HashSet<string> CompletedStreams = [];
+        public Queue<string> CompletedStreamOrder = [];
         // Conversation totals, never a per-message snapshot: confirmed input (uncached + both cache
         // counts) and confirmed output over every message of the native conversation. -1 is unknown.
         public long Input = -1;
@@ -119,6 +218,15 @@ internal sealed class SessionDashboard : IDisposable
         public DateTime Started = DateTime.Now;
         public DateTime Stopped = DateTime.MinValue;
         public int Scroll;
+        // The content the user is actually reading, anchored to an ENTRY rather than a line index:
+        // a new entry appended below, a streamed block growing in place and the bounded-log drop all
+        // leave the anchor on the same text. Null means "following the newest output".
+        public Entry? ViewEntry;
+        public int ViewRow = -1;   // -1 = the entry's badge row, else 0-based text row inside it
+        // Absolute body line where each log entry starts, plus its rendered height. Rebuilt with
+        // the wrapped view, so anchoring never re-wraps the log.
+        public int[] EntryStarts = [];
+        public int[] EntryCounts = [];
         public int WheelRemainder;
         // The result echo is suppressed only when it repeats text this same query already printed.
         // These reset at a task boundary, so an intentional repeat in a later turn is still shown.
@@ -136,6 +244,32 @@ internal sealed class SessionDashboard : IDisposable
         public bool Selecting;
         public bool ScrollbarDragging;
         public int ScrollbarGrab, ScrollbarLastY;
+        // The track geometry is captured when the scrollbar button goes down. While the log keeps
+        // streaming the thumb's length and its travel change, so mapping a later pointer row through
+        // FRESH geometry would move the same pointer to a different place — which reads as the drag
+        // fighting the reverse direction near the oldest end. One gesture is one affine map, captured
+        // at press and only re-clamped to the content length that exists right now.
+        public bool DragGeometry;
+        public int DragRows, DragThumb;
+        // The gesture's frozen origin and scale: where the thumb was and where the view sat at the
+        // grab, plus how many content rows one thumb row meant then. Pointer movement is applied as a
+        // DELTA through that frozen scale, so streaming growth can never change what a row means.
+        public int DragPressThumbTop, DragPressScroll;
+        // The thumb row the last applied movement was mapped from, so each record is a step from the
+        // previous pointer position rather than a re-map of an absolute row.
+        public int DragLastThumbTop;
+        public double DragScaleRowsPerRow = 1;
+        // Timed motion (middle-click browsing and selection edge scrolling). Offsets are fractional
+        // rows accumulated against a CLAMPED elapsed time, so a stall, a minimize or a dropped frame
+        // can never release a catch-up burst afterwards.
+        public double MotionRows;
+        public long MotionMs;
+        public int MotionSign;               // direction of the motion accumulated so far
+        public int DragEdge;                 // -1 scrolling towards older rows, +1 towards newer, 0 idle
+        public int DragEdgeDistance;         // body rows the pointer sits outside the drawn body
+        public int BrowseAnchor;             // body row where middle-click browsing started
+        // True once a layout has recorded the body geometry hit tests use.
+        public bool Built;
         public bool SelectionActive;
         public int SelectionAnchorLine, SelectionAnchorColumn;
         public int SelectionFocusLine, SelectionFocusColumn;
@@ -159,10 +293,35 @@ internal sealed class SessionDashboard : IDisposable
 
     private readonly object gate = new();
     private readonly List<Session> sessions = [];
+    // How many times the wrapped log was actually rebuilt (never how often it was reused). The
+    // headless interaction benchmark reads this to prove a repaint/scroll/drag reuses the cache.
+    private long rebuilds;
     private string selectedId = "";
     private volatile bool disposed;
+    // Set once the pump has PHYSICALLY painted a frame that already owns a conversation. A
+    // minimized window is composed from the last frame it painted, so this is the readiness barrier
+    // for a non-activating preview refresh — never a timer guess and never a synthetic bitmap.
+    private readonly TaskCompletionSource<bool> firstFrame = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public SessionDashboard() { }
+
+    /// <summary>Completes when a real conversation frame has been painted, or never if the pump is absent.</summary>
+    internal Task FirstConversationFrame => firstFrame.Task;
+    // A mere pane registration is not a dashboard: the preview is only worth refreshing once the
+    // conversation actually carries at least one observed entry (init/task/output).
+    internal bool HasConversation
+    {
+        get { lock (gate) return sessions.Any(session => session.Log.Count > 0); }
+    }
+    internal void MarkConversationFrame() => firstFrame.TrySetResult(true);
+    internal (int Revision, int Width, int Height, int Conversations) PaintedSummary
+    {
+        get
+        {
+            lock (gate)
+                return (NativeConsole.PaintedRevision, NativeConsole.PaintedWidth, NativeConsole.PaintedHeight, sessions.Count);
+        }
+    }
     public event Action? StopRequested;
     internal nint OwnedWindow { get; set; }
 
@@ -296,7 +455,10 @@ internal sealed class SessionDashboard : IDisposable
                     ScrollBy(sessions[index], -PageStep);
                     break;
                 case ConsoleKey.End:
+                    // End resumes following: the newest output is live again from here on.
                     sessions[index].Scroll = 0;
+                    sessions[index].ViewEntry = null;
+                    sessions[index].ViewRow = -1;
                     break;
                 default:
                     return false;
@@ -318,54 +480,211 @@ internal sealed class SessionDashboard : IDisposable
         }
     }
 
-    // Middle button toggles free vertical browsing: while it is on the body moves in half-page steps
-    // without holding the button, and the next middle click (or any selection) stops it.
-    internal bool MiddleClick()
+    // Middle button toggles free vertical browsing: while it is on the body moves under a short local
+    // timer without holding the button, and the next middle click (or any selection) stops it.
+    internal bool MiddleClick(int anchorRow = -1, long now = 0)
     {
         lock (gate)
         {
             if (Find(selectedId) is not { } session) return false;
             session.MiddleBrowsing = !session.MiddleBrowsing;
             session.Selecting = false;
+            ResetMotion(session);
+            session.BrowseAnchor = anchorRow >= 0 ? anchorRow : session.BodyTop + session.BodyRows / 2;
+            session.MotionMs = now != 0 ? now : Environment.TickCount64;
             return session.MiddleBrowsing;   // the new state, so the console timer arms or disarms
         }
     }
 
-    // A movement record with no buttons, only meaningful while browsing; the delta is in mouse rows.
+    // The row a middle-click-browse gesture is anchored to, for a console that measured it itself.
+    internal int BrowseAnchorForTest
+    {
+        get { lock (gate) return Find(selectedId)?.BrowseAnchor ?? -1; }
+    }
+
+    // Kept for the deterministic fixtures: a movement record with no buttons, only meaningful while
+    // browsing. The pump itself uses `BrowseAt`, which is elapsed-time based; this one applies the
+    // same mapping to one pointer row of distance so a headless test can drive it directly.
     internal bool Browse(int deltaY)
+    {
+        lock (gate) return BrowseAt((Find(selectedId)?.BrowseAnchor ?? 0) + deltaY, Environment.TickCount64);
+    }
+
+    // One timed browsing step. The pointer row relative to the anchor chooses the DIRECTION and the
+    // speed; the elapsed time decides how far the view moved. Distance is always measured from the
+    // gesture's own anchor, so a reversal (down, then up) turns the motion round on the next tick
+    // instead of being averaged with, or carried over from, the previous direction.
+    internal bool BrowseAt(int pointerRow, long now)
     {
         lock (gate)
         {
-            if (Find(selectedId) is not { } session || !session.MiddleBrowsing || deltaY == 0) return false;
-            var step = Math.Max(1, (session.BodyRows > 0 ? session.BodyRows : PageStep) / 2);
-            var before = session.Scroll;
-            ScrollBy(session, (int)Math.Clamp(-deltaY * step, -step * 4, step * 4));
-            // At an end the view cannot move: report false so the pump need not repaint.
-            return session.Scroll != before;
+            if (Find(selectedId) is not { } session || !session.MiddleBrowsing) return false;
+            var distance = pointerRow - session.BrowseAnchor;
+            if (Math.Abs(distance) <= BrowseDeadzoneRows) { session.MotionRows = 0; return false; }
+            var rowsPerSecond = SpeedFor(distance, BrowseMinRowsPerSecond, BrowseMaxRowsPerSecond);
+            // Pointer BELOW the anchor scrolls towards newer rows, above it towards older ones.
+            var sign = distance < 0 ? 1 : -1;
+            return AdvanceMotion(session, now, sign * rowsPerSecond);
+        }
+    }
+
+    // Timer-driven selection edge scrolling: while a drag stays outside the body the view keeps
+    // moving even with the pointer perfectly still. The step is clamped to the drawn body, so a
+    // stationary pointer at the edge never scrolls past the oldest or the newest row.
+    internal bool EdgeScroll(long now)
+    {
+        lock (gate)
+        {
+            var session = Find(selectedId);
+            if (session is null || !session.Selecting || session.DragEdge == 0) return false;
+            var rowsPerSecond = session.DragEdge < 0 ? EdgeMinRowsPerSecond + EdgeDistance(session) * 2
+                : -(EdgeMinRowsPerSecond + EdgeDistance(session) * 2);
+            rowsPerSecond = Math.Clamp(rowsPerSecond, -EdgeMaxRowsPerSecond, EdgeMaxRowsPerSecond);
+            return AdvanceMotion(session, now, rowsPerSecond);
+        }
+    }
+
+    // Distance of the pointer outside the drawn body, in body rows (0 while it is inside).
+    private static int EdgeDistance(Session session) => Math.Min(8, Math.Abs(session.DragEdgeDistance));
+
+    // Rows per second for a pointer `distance` rows away from an anchor, ramping from the slow end to
+    // the fast end and never beyond either. A linear ramp is deliberate: it makes the first row of
+    // overshoot gentle and the far edge brisk, which is what classic middle-click scrolling felt like.
+    private static double SpeedFor(int distance, int slowest, int fastest)
+    {
+        var span = Math.Min(1.0, Math.Abs(distance) / 24.0);
+        return slowest + (fastest - slowest) * span;
+    }
+
+    // Fractional-row accumulator shared by both timed motions. Elapsed time is clamped per step and
+    // capped in total, so no motion can bank a catch-up burst across a stall or a minimize.
+    private bool AdvanceMotion(Session session, long now, double rowsPerSecond)
+    {
+        if (session.BodyRows <= 0) { ResetMotion(session); return false; }
+        if (session.MotionMs == 0) session.MotionMs = now;
+        var elapsed = now - session.MotionMs;
+        session.MotionMs = now;
+        elapsed = Math.Clamp(elapsed, 0, MaxMotionStepMs);
+        // A reversal drops the fractional remainder instead of carrying it: a half row banked while
+        // scrolling one way must never be spent on the other, or the pointer would appear to fight
+        // the view for a moment right at the turn.
+        var sign = Math.Sign(rowsPerSecond);
+        if (sign != session.MotionSign) { session.MotionRows = 0; session.MotionSign = sign; }
+        session.MotionRows += rowsPerSecond * elapsed / 1000.0;
+        var whole = (int)session.MotionRows;          // truncate towards zero: the remainder is kept
+        if (whole == 0) return false;
+        session.MotionRows -= whole;
+        var before = session.Scroll;
+        SetScroll(session, session.Scroll + whole);
+        return session.Scroll != before;
+    }
+
+    private static void ResetMotion(Session session)
+    {
+        session.MotionRows = 0;
+        session.MotionMs = 0;
+        session.MotionSign = 0;
+    }
+
+    // A minimized or hidden window must not keep a timer moving the view, and coming back must not
+    // replay the time spent away. Every timed motion stops; the held drag stays a drag (its pointer
+    // row is kept), so moving the mouse again simply re-arms the edge.
+    internal void SuspendMotion()
+    {
+        lock (gate)
+        {
+            foreach (var session in sessions)
+            {
+                ResetMotion(session);
+                session.DragEdge = 0;
+                session.DragEdgeDistance = 0;
+            }
         }
     }
 
     // A track click at body row `y` maps proportionally onto the log: top is the oldest content,
     // bottom the newest, so the thumb follows the pointer instead of jumping to an arbitrary end.
+    //
+    // The geometry is taken from the LAST LAYOUT, never rebuilt here: this runs for every motion
+    // record of a drag, and rebuilding would re-wrap the log and re-apply the view anchor in the
+    // middle of the gesture, which is what made a drag near the oldest end look like it fought the
+    // pointer. This call is an ABSOLUTE map at the moment it is made; a following drag continues
+    // from where it landed (see ScrollbarDragTo).
     internal bool ScrollbarDrag(int y, int width, int height)
     {
         lock (gate)
         {
             var session = Find(selectedId);
             if (session is null) return false;
-            Build(Math.Max(1, width), Math.Max(1, height), true);
-            if (!session.BodyScrollable || session.BodyMap.Length == 0) return false;
-            var maximum = Math.Max(0, session.BodyLines - session.BodyRows);
-            // The thumb spans `thumb` rows and travels through its whole track. Mapping the pointer
-            // over (rows - thumb) rather than (rows - 1) keeps the grabbed point under the pointer.
-            var thumb = Math.Max(1, session.ScrollbarThumbRows);
-            var travel = Math.Max(1, session.BodyRows - thumb);
-            var offset = Math.Clamp(y - session.BodyTop, 0, session.BodyRows - 1);
+            if (!session.Built) Build(Math.Max(1, width), Math.Max(1, height), true);
+            if (!session.BodyScrollable || session.BodyRows <= 0) return false;
+            var rows = Math.Max(1, session.BodyRows);
+            var thumb = Math.Clamp(session.ScrollbarThumbRows, 1, rows);
+            // The thumb travels through `rows - thumb` positions; a full-height thumb cannot travel at
+            // all, so the view must not move for a pointer that only slides along it.
+            var travel = Math.Max(1, rows - thumb);
+            var offset = Math.Clamp(y - session.BodyTop, 0, rows - 1);
             var thumbTop = Math.Clamp(offset, 0, travel);
+            var maximum = Math.Max(0, session.BodyLines - session.BodyRows);
             var fromTop = maximum == 0 ? 0 : (int)Math.Round((double)thumbTop / travel * maximum);
-            session.Scroll = Math.Clamp(maximum - fromTop, 0, maximum);
+            SetScroll(session, maximum - fromTop);
+            // The drag that follows is measured from HERE, not from the frame the press happened on.
+            CaptureGesture(session, thumbTop);
             return true;
         }
+    }
+
+    // A motion record during a scrollbar drag, expressed as a DELTA from where the gesture started.
+    //
+    // An absolute thumb-row map cannot survive the log growing: the thumb gets shorter, so the same
+    // pointer row describes a different place, and one row of pointer movement can jump dozens of
+    // content rows — which reads as the drag reversing or fighting the user near the oldest end.
+    // The scale captured at the grab (content rows per thumb row) is frozen for the whole gesture;
+    // only the live bounds are re-applied, so growth changes where the thumb is drawn but never
+    // what the pointer is holding, and the endpoints still clamp to the content that exists now.
+    internal bool ScrollbarDragTo(int y, int width, int height)
+    {
+        lock (gate)
+        {
+            var session = Find(selectedId);
+            if (session is null) return false;
+            if (!session.Built) Build(Math.Max(1, width), Math.Max(1, height), true);
+            if (!session.BodyScrollable || session.BodyRows <= 0) return false;
+            var rows = Math.Max(1, session.DragRows);
+            // A document that shrank below the thumb's own length cannot travel: keep the offset.
+            if (rows - Math.Clamp(session.DragThumb, 1, rows) <= 0) return true;
+            var travel = Math.Max(1, rows - Math.Clamp(session.DragThumb, 1, rows));
+            // The pointer carries the offset it grabbed INSIDE a multi-row thumb, so the endpoint
+            // clamps below (which are thumb-TOP coordinates) must see the thumb's top, not the cell
+            // under the finger. Without it a grab on a wide thumb's middle already looks clamped at
+            // the bottom and the first drag row snaps the view to the newest content.
+            var offset = Math.Clamp(y - session.BodyTop - session.ScrollbarGrab, 0, rows - 1);
+            var thumbTop = Math.Clamp(offset, 0, travel);
+            // Up the track (smaller thumb row) means OLDER content, i.e. a larger scroll offset. The
+            // step is applied to the offset the view has NOW, so the anchoring that already absorbed
+            // streamed growth is preserved instead of being reset to the value frozen at the grab.
+            var deltaRows = (double)(session.DragLastThumbTop - thumbTop) * session.DragScaleRowsPerRow;
+            session.DragLastThumbTop = thumbTop;
+            SetScroll(session, thumbTop <= 0 ? Math.Max(0, session.BodyLines - session.BodyRows)
+                : thumbTop >= travel ? 0 : session.Scroll + (int)Math.Round(deltaRows));
+            return true;
+        }
+    }
+
+    // Freeze the gesture's origin and scale. `DragScaleRowsPerRow` is how many content rows one
+    // thumb row stood for when the grab happened, so later pointer movement keeps that meaning.
+    private static void CaptureGesture(Session session, int thumbTop)
+    {
+        session.DragGeometry = true;
+        session.DragRows = Math.Max(1, session.BodyRows);
+        session.DragThumb = Math.Max(1, session.ScrollbarThumbRows);
+        session.DragPressThumbTop = thumbTop;
+        session.DragPressScroll = session.Scroll;
+        session.DragLastThumbTop = thumbTop;
+        var rows = Math.Max(1, session.BodyRows);
+        var travel = Math.Max(1, rows - Math.Clamp(session.ScrollbarThumbRows, 1, rows));
+        var maximum = Math.Max(0, session.BodyLines - session.BodyRows);
+        session.DragScaleRowsPerRow = (double)maximum / travel;
     }
 
     internal bool WheelDelta(int delta)
@@ -383,12 +702,72 @@ internal sealed class SessionDashboard : IDisposable
     }
 
     // Scroll counts back from the newest rendered log line, so the bound is what the body can
-    // actually show: clamped here, never allowed to run past the oldest item.
-    private void ScrollBy(Session session, int delta)
+    // actually show: clamped here, never allowed to run past the oldest item. Scrolling UP pins the
+    // content the user just moved to; reaching the bottom resumes following the newest output.
+    private void ScrollBy(Session session, int delta) => SetScroll(session, session.Scroll + delta);
+
+    // The ONE place that writes the scroll offset while a user is driving it. `anchor` pins the row
+    // the viewport is showing so later growth of the log leaves it alone; a move that only touches an
+    // end (already clamped, or reversing at the oldest row) leaves the anchor alone instead of
+    // re-deriving it from a viewport that did not move.
+    private void SetScroll(Session session, int value, bool anchor = true)
     {
         var rows = session.BodyRows > 0 ? session.BodyRows : PageStep;
         var maximum = Math.Max(0, session.BodyLines - rows);
-        session.Scroll = Math.Clamp(session.Scroll + delta, 0, maximum);
+        var next = Math.Clamp(value, 0, maximum);
+        var moved = next != session.Scroll;
+        session.Scroll = next;
+        if (next <= 0)
+        {
+            // Reaching the bottom (or being scrolled past it) resumes following the newest output.
+            session.ViewEntry = null;
+            session.ViewRow = -1;
+            return;
+        }
+        if (anchor && moved && session.EntryStarts.Length > 0) PinAnchor(session, TopLine(session));
+    }
+
+    // First body line the viewport draws (0-based) for the current scroll offset.
+    private static int TopLine(Session session)
+        => Math.Max(0, session.BodyLines - session.Scroll - (session.BodyRows > 0 ? session.BodyRows : PageStep));
+
+    // Pin the entry (and its row) that owns an absolute body line. An entry that is no longer in the
+    // bounded log clears the anchor instead of pointing at unrelated text.
+    private void PinAnchor(Session session, int line)
+    {
+        var starts = session.EntryStarts;
+        var counts = session.EntryCounts;
+        if (starts.Length != session.Log.Count || line < 0)
+        {
+            session.ViewEntry = null;
+            session.ViewRow = -1;
+            return;
+        }
+        var low = 0;
+        var high = starts.Length - 1;
+        var found = -1;
+        while (low <= high)
+        {
+            var middle = (low + high) / 2;
+            if (starts[middle] <= line) { found = middle; low = middle + 1; }
+            else high = middle - 1;
+        }
+        if (found < 0) { session.ViewEntry = null; session.ViewRow = -1; return; }
+        var inside = line - starts[found];
+        // A badge row is entry-relative -1; a text row is its 0-based index within the entry.
+        session.ViewEntry = session.Log[found];
+        session.ViewRow = inside <= 0 ? -1 : Math.Min(inside - 1, Math.Max(0, counts[found] - 2));
+    }
+
+    // Absolute body line the anchored content occupies now, or -1 when it left the bounded log.
+    private int AnchorLine(Session session)
+    {
+        var entry = session.ViewEntry;
+        if (entry is null || session.EntryStarts.Length != session.Log.Count) return -1;
+        var index = session.Log.FindIndex(candidate => ReferenceEquals(candidate, entry));
+        if (index < 0) return -1;
+        var inside = session.ViewRow < 0 ? 0 : Math.Min(session.ViewRow + 1, session.EntryCounts[index] - 1);
+        return session.EntryStarts[index] + Math.Max(0, inside);
     }
 
     // A task prompt starts a new query: the echo memory is cleared here, so a reply that intentionally
@@ -399,6 +778,10 @@ internal sealed class SessionDashboard : IDisposable
         session.AssistantMessages.Clear();
         session.ToolUseIds.Clear();
         session.QueryTruncated = false;
+        session.StreamMessages.Clear();
+        session.DisplayStreamKey = "";
+        session.CompletedStreams.Clear();
+        session.CompletedStreamOrder.Clear();
     }
 
     private Session? Find(string id) => sessions.FirstOrDefault(session => session.Id == id);
@@ -468,6 +851,9 @@ internal sealed class SessionDashboard : IDisposable
         session.TurnFinalized = false;
         session.StreamKey = "";
         session.StreamActive = false;
+        // A new turn's streamed text starts new display blocks; the previous turn's entries stay
+        // exactly as they were printed and are never rewritten.
+        session.DisplayStreamKey = "";
     }
 
     // True only for a count that carries information: the API's message_start/assistant usage may
@@ -549,6 +935,7 @@ internal sealed class SessionDashboard : IDisposable
             var usage = Message(session, id);
             session.StreamKey = usage.Key;
             session.StreamActive = true;
+            BeginStreamDisplay(session, usage.Key);
             if (Text(message, "model") is { Length: > 0 } model) session.Model = Safe(session, model);
             // A finalized message is frozen: a late or duplicate frame may not rewrite it.
             if (!usage.Frozen && message.TryGetProperty("usage", out var start) && start.ValueKind == JsonValueKind.Object && Reported(start))
@@ -580,14 +967,65 @@ internal sealed class SessionDashboard : IDisposable
                 Recompute(session);
             }
         }
-        else if (type == "message_stop") session.StreamActive = false;
+        else if (type == "message_stop")
+        {
+            session.StreamActive = false;
+            FlushStreamDisplay(session);
+            // The display is retained: a snapshot arriving after the stop still reconciles against
+            // it instead of printing the same body again.
+            if (CurrentDisplay(session) is { } display) display.Completed = true;
+        }
+        else if (type == "content_block_start")
+        {
+            // A start carries the block type (and, for a tool call, its identity) before any delta
+            // arrives, so a thinking or tool block is never mistaken for visible assistant text.
+            if (Index(item) is not { } at || CurrentDisplay(session) is not { } started) return;
+            if (!item.TryGetProperty("content_block", out var startBlock) || startBlock.ValueKind != JsonValueKind.Object) return;
+            var block = DisplayBlock(session, started, at);
+            block.Type = Text(startBlock, "type");
+            if (block.Type == "tool_use")
+            {
+                block.ToolId = Text(startBlock, "id");
+                block.ToolName = Text(startBlock, "name");
+            }
+            else if (block.Type is "thinking" or "redacted_thinking")
+            {
+                // Reasoning is displayed nowhere: not the stream, not the completed snapshot.
+                block.Type = "hidden";
+            }
+            else if (block.Type == "text" && Text(startBlock, "text") is { Length: > 0 } seeded)
+            {
+                // A provider may put the first (or whole) text in the start block instead of a delta.
+                StreamAppend(session, block, seeded);
+            }
+        }
+        else if (type == "content_block_stop")
+        {
+            if (Index(item) is not { } at || CurrentDisplay(session) is not { } display
+                || !display.Blocks.TryGetValue(at, out var block))
+                return;
+            block.Closed = true;
+            // A completed tool block is shown in its protocol position, before any later text.
+            if (block.Type == "tool_use") StreamTool(session, block);
+            // The block is over, so a held tail can never be completed by a later chunk. It is a
+            // strict secret prefix by construction and is published as redacted, never partially.
+            else if (block.Type == "text")
+            {
+                var flushed = ResolveHeld(session, block);
+                if (flushed.Length > 0) block.Display.Append(flushed);
+                // An unterminated escape can no longer be completed; drop it instead of showing it.
+                block.Raw = "";
+                StreamRender(session, block);
+            }
+        }
         else if (type == "content_block_delta" && item.TryGetProperty("delta", out var delta))
         {
             // After the turn's result, no further chunk may add an estimate: the result already
             // covers that output.
             if (session.TurnFinalized) return;
             // Count and discard chunks, including thinking; never log their content. The character
-            // estimate only stands in for output the upstream has not reported yet.
+            // estimate only stands in for output the upstream has not reported yet. This is the
+            // unchanged 0.8.9 accounting: it is display-only and never touches confirmed usage.
             var chunk = Text(delta, "text") + Text(delta, "partial_json") + Text(delta, "thinking");
             var usage = CurrentMessage(session);
             if (!usage.Frozen && !usage.OutputKnown && chunk.Length > 0)
@@ -595,8 +1033,386 @@ internal sealed class SessionDashboard : IDisposable
                 usage.Estimated = true;
                 usage.StreamEstimate += Estimate(chunk);
             }
+            // The content index lives on the EVENT, not on its delta; pass it explicitly so an
+            // interleaved delta still lands in its own block.
+            if (!usage.Frozen) DisplayDelta(session, delta, Index(item), chunk.Length > 0);
             Recompute(session);
         }
+    }
+
+    // ------------------------------------------------------------ streamed text display
+
+    // The display message for the CURRENT streamed response. Usage and display share the usage key,
+    // so a re-delivered message_start resolves to the same blocks instead of starting new ones.
+    private static StreamMessage? CurrentDisplay(Session session)
+        => session.DisplayStreamKey.Length > 0 && session.StreamMessages.TryGetValue(session.DisplayStreamKey, out var display)
+            ? display
+            : null;
+
+    // A new streamed response starts a fresh display message, unless its key is one this query has
+    // already shown (a re-delivered message_start must never restart or duplicate its blocks).
+    private static void BeginStreamDisplay(Session session, string key)
+    {
+        if (session.DisplayStreamKey == key) return;
+        if (session.CompletedStreams.Contains(key))
+        {
+            // A reconciled response never re-opens: a late duplicate message_start would otherwise
+            // print the body again. (After a message_stop the display is still reconcilable but is
+            // not in this set, so a legitimately continued snapshot can still be matched.)
+            session.DisplayStreamKey = "";
+            return;
+        }
+        if (!session.StreamMessages.TryGetValue(key, out var display) || display.Epoch != session.Epoch)
+        {
+            // A previous turn's completed blocks are never resumed by this turn, even if a provider
+            // reuses a message id: the new turn gets its own display message and its own entry.
+            if (display is not null) session.StreamMessages.Remove(key);
+            if (session.StreamMessages.Count >= MaxStreamMessages)
+            {
+                // Oldest-first eviction: completed display messages are display-only by then, and
+                // their entries are already past reconciliation.
+                var oldest = session.StreamMessages.Values.Where(item => item.Completed).OrderBy(item => item.Epoch).FirstOrDefault()
+                    ?? session.StreamMessages.Values.OrderBy(item => item.Epoch).First();
+                session.StreamMessages.Remove(oldest.Key);
+            }
+            display = new StreamMessage { Key = key, Epoch = session.Epoch, Sequence = ++session.StreamSequence };
+            session.StreamMessages[key] = display;
+        }
+        session.DisplayStreamKey = key;
+    }
+
+    private static int? Index(JsonElement item)
+        => Number(item, "index") is { } value && value >= 0 && value <= int.MaxValue ? (int)value : null;
+
+    // The block for one protocol content index, created on first use. An index is the block's
+    // identity inside its message, so out-of-order deltas still land in their own block.
+    private static StreamBlock DisplayBlock(Session session, StreamMessage display, int index)
+    {
+        if (!display.Blocks.TryGetValue(index, out var block))
+        {
+            // A malformed envelope must not allocate an unbounded number of blocks. The bound is far
+            // above any real message's block count.
+            if (display.Blocks.Count >= MaxStreamBlocks) index = MaxStreamBlocks - 1;
+            if (!display.Blocks.TryGetValue(index, out block))
+            {
+                block = new StreamBlock { Index = index };
+                display.Blocks[index] = block;
+            }
+        }
+        display.Current = index;
+        return block;
+    }
+
+    // A delta may omit its index. It then belongs to the block that is currently open, or to the
+    // next one when no block has started.
+    private static StreamBlock CurrentBlock(Session session, StreamMessage display, int? index)
+    {
+        var at = index ?? (display.Current >= 0 ? display.Current : display.Blocks.Count);
+        return DisplayBlock(session, display, at);
+    }
+
+    // A delta arrives without its type when the provider sends only `{"type":"text_delta","text":...}`.
+    // The block itself knows what it is; an envelope that only carries a payload field (`text`,
+    // `partial_json`, `thinking`) is classified by that field, so a positional fragment can never
+    // turn the message's current text block into a tool block.
+    private static void DisplayDelta(Session session, JsonElement delta, int? eventIndex, bool counted)
+    {
+        // Some providers repeat the index inside the delta; an absent event index falls back to it.
+        var index = eventIndex ?? Index(delta);
+        var kind = Text(delta, "type");
+        var text = Text(delta, "text");
+        var thinking = Text(delta, "thinking");
+        var partial = Text(delta, "partial_json");
+        var signature = Text(delta, "signature");
+        if (text.Length == 0 && thinking.Length == 0 && partial.Length == 0 && signature.Length == 0) return;
+        if (CurrentDisplay(session) is not { } display) return;
+        // A positional delta (no index) is classified by its payload only when the current block is
+        // still untyped; an explicit index still resolves to that index's own block.
+        var explicitKind = kind.Length > 0
+            ? kind
+            : text.Length > 0 ? "text_delta"
+            : thinking.Length > 0 ? "thinking_delta"
+            : partial.Length > 0 ? "input_json_delta" : "";
+        var block = CurrentBlock(session, display, index);
+        if (block.Type.Length == 0)
+            block.Type = explicitKind == "thinking_delta" ? "hidden" : explicitKind == "input_json_delta" ? "tool_use" : "text";
+        // Thinking never reaches the display, whatever index or envelope it uses.
+        if (block.Type == "hidden") return;
+        if (block.Type == "tool_use")
+        {
+            // Accumulate only the detail JSON line needs. Past the bound the streamed row is not
+            // emitted early; the completed snapshot still shows the full tool row.
+            if (!block.ToolCapped)
+            {
+                if (block.ToolJson.Length + partial.Length > MaxStreamToolJson) block.ToolCapped = true;
+                else block.ToolJson += partial;
+            }
+            return;
+        }
+        // A text block whose type was never announced (no content_block_start) is still shown, and
+        // counts its own characters towards the estimate exactly once: when it was not counted by
+        // the unchanged chunk accounting above.
+        if (text.Length == 0) return;
+        StreamAppend(session, block, text);
+        if (!counted) CountDisplayChars(session, text);
+    }
+
+    // Only used when a delta carried text but the protocol did not count it (an unusual envelope):
+    // keep the 0.8.9 estimate consistent rather than ignoring a body the user can see.
+    private static void CountDisplayChars(Session session, string text)
+    {
+        var usage = CurrentMessage(session);
+        if (usage.Frozen || usage.OutputKnown || text.Length == 0) return;
+        usage.Estimated = true;
+        usage.StreamEstimate += Estimate(text);
+        Recompute(session);
+    }
+
+    // Appends one delta to a block's single live entry. Text that could still be the prefix of a
+    // redacted secret is held back until it is resolved, so a credential split across chunks never
+    // flashes on screen. Raw sanitisation state is kept separately and is always bounded.
+    private static void StreamAppend(Session session, StreamBlock block, string text)
+    {
+        if (block.Closed || block.Truncated) return;
+        block.Display.Append(StreamSanitize(session, block, text));
+        StreamRender(session, block);
+    }
+
+    // Sanitise one chunk without losing an escape sequence, a CRLF pair or a control rune that is
+    // split across the chunk boundary. `Raw` holds ONLY such an unterminated piece.
+    private static string StreamSanitize(Session session, StreamBlock block, string text)
+    {
+        var raw = block.Raw + text;
+        block.Raw = "";
+        // A trailing CR may be the first half of a CRLF: hold it so the pair normalises exactly as
+        // a completed string would, instead of becoming two newlines.
+        var holdCr = raw.EndsWith('\r');
+        if (holdCr) raw = raw[..^1];
+        var clean = new StringBuilder(raw.Length);
+        var cursor = 0;
+        while (cursor < raw.Length)
+        {
+            var at = raw.IndexOf('\u001b', cursor);
+            if (at < 0) { clean.Append(Clean(raw[cursor..])); break; }
+            clean.Append(Clean(raw[cursor..at]));
+            var rest = raw[at..];
+            var match = Ansi.Match(rest);
+            if (match.Success && match.Index == 0) { cursor = at + match.Length; continue; }
+            // An unterminated escape may be completed by the next chunk: keep it, bounded.
+            if (rest.Length <= MaxStreamRawHold) { block.Raw = rest; break; }
+            cursor = at + 1;
+        }
+        if (holdCr && block.Raw.Length == 0) block.Raw = "\r";
+        // Redaction runs ONCE over the whole sanitised piece, so a secret split by an escape
+        // boundary cannot slip through as two innocent halves.
+        return StreamRedacted(session, block, clean.ToString());
+    }
+
+    // Control runes and CR are normalised exactly like the completed-text path; ANSI is removed.
+    private static string Clean(string text)
+    {
+        if (text.Length == 0) return "";
+        var output = new StringBuilder(text.Length);
+        foreach (var rune in text.EnumerateRunes())
+            if (rune.Value is '\n' or '\r' || !Rune.IsControl(rune)) output.Append(rune.ToString());
+        return output.ToString().Replace("\r\n", "\n").Replace('\r', '\n');
+    }
+
+    // Redact secrets, but retain a tail that is still a possible PREFIX of an active secret. The
+    // hold is re-scanned on the next chunk, so a secret split anywhere across deltas never appears
+    // partially. `[redacted]` is plain text: no ANSI or control can hide a published prefix because
+    // both were already removed above.
+    private static string StreamRedacted(Session session, StreamBlock block, string text)
+    {
+        if (text.Length == 0 || block.RedactionDeferred) return "";
+        var combined = block.Pending + text;
+        block.Pending.Clear();
+        var shown = new StringBuilder(combined.Length);
+        var cursor = 0;
+        while (cursor < combined.Length)
+        {
+            // A complete secret match is consumed first, at EVERY start position. Doing this before
+            // any prefix hold is what prevents a self-overlapping secret (e.g. "ABAB" inside
+            // "ABABAB") from publishing a shorter strict prefix as innocent text.
+            var matched = 0;
+            foreach (var secret in session.Secrets)
+            {
+                if (secret.Length == 0 || secret.Length <= matched) continue;
+                if (string.CompareOrdinal(combined, cursor, secret, 0, secret.Length) == 0) matched = secret.Length;
+            }
+            if (matched > 0)
+            {
+                shown.Append(Redacted);
+                cursor += matched;
+                continue;
+            }
+            // No full match starts here. If the whole remaining buffer is still a strict prefix of
+            // any secret, it may be completed by the next chunk: hold it and stop publishing.
+            var remaining = combined.Length - cursor;
+            var hold = false;
+            foreach (var secret in session.Secrets)
+                if (secret.Length > remaining && string.CompareOrdinal(combined, cursor, secret, 0, remaining) == 0)
+                {
+                    hold = true;
+                    break;
+                }
+            if (hold)
+            {
+                if (remaining >= MaxStreamHeld)
+                {
+                    shown.Append(Redacted);
+                    block.RedactionDeferred = true;
+                    return shown.ToString();
+                }
+                break;
+            }
+            // Otherwise this character is publishable; advance one RUNE so surrogate pairs survive.
+            var rune = Rune.GetRuneAt(combined, cursor);
+            shown.Append(combined, cursor, rune.Utf16SequenceLength);
+            cursor += rune.Utf16SequenceLength;
+        }
+        block.Pending.Append(combined, cursor, combined.Length - cursor);
+        return shown.ToString();
+    }
+
+    // Re-render the block's ONE entry from its display buffer. Blank leading rows are trimmed the
+    // same way a completed output block is, so a delta that begins with a newline cannot create an
+    // empty entry. The first visible content creates the entry; every later delta grows it in place.
+    private static void StreamRender(Session session, StreamBlock block)
+    {
+        if (block.Truncated) return;
+        var text = TrimBlankText(block.Display.ToString());
+        if (text.Length == 0) return;
+        // The same runaway guard as a completed OUTPUT entry: the live block can never grow past
+        // the bounded item size, and a cut body is never claimed as a result echo.
+        if (text.Length > MaxItemChars)
+        {
+            text = text[..MaxItemChars] + TruncatedMark;
+            block.Truncated = true;
+            session.QueryTruncated = true;
+        }
+        if (block.Entry is null)
+        {
+            block.Entry = new Entry("output", DateTime.Now, text);
+            InsertStreamEntry(session, block.Entry);
+        }
+        else block.Entry.Text = text;
+        session.BodyCache = null;
+        // The echo memory follows the SAME single entry, so a result that repeats the streamed body
+        // can still be recognised as an echo. A text still being held as a secret prefix is not
+        // eligible until the hold is resolved.
+        if (block.Truncated || block.Pending.Length > 0) return;
+        var clean = Redact(session, Sanitize(text));
+        if (clean.Length > MaxItemChars) { session.QueryTruncated = true; return; }
+        if (block.EchoIndex >= 0 && block.EchoIndex < session.QueryOutputs.Count)
+            session.QueryOutputs[block.EchoIndex] = clean;
+        else
+        {
+            block.EchoIndex = session.QueryOutputs.Count;
+            session.QueryOutputs.Add(clean);
+        }
+    }
+
+    private static string TrimBlankText(string text)
+    {
+        var lines = TrimBlank(text.Split('\n')).ToArray();
+        return string.Join("\n", lines);
+    }
+
+    // A displayed stream block joins the log at its protocol position. Entries appended by later
+    // tool blocks stay after it, so mixed text/tool order is chronological without reordering.
+    private static void InsertStreamEntry(Session session, Entry entry)
+    {
+        session.Log.Add(entry);
+        TrimLog(session);
+    }
+
+    // The same bounded log as Append: oldest entries are dropped with the same selection shift, so
+    // a long stream cannot grow memory or move an existing selection by an arbitrary amount.
+    private static void TrimLog(Session session)
+    {
+        if (session.Log.Count <= MaxLogItems) return;
+        var drop = session.Log.Count - MaxLogItems;
+        var textWidth = session.BodyWidth > 0
+            ? Math.Max(4, session.BodyWidth - BodyGutterCells - ScrollbarCells)
+            : 0;
+        if (session.SelectionActive && textWidth > 0)
+        {
+            var dropped = 0;
+            for (var index = 0; index < drop; index++) dropped += RenderedRows(session.Log[index], textWidth);
+            session.SelectionAnchorLine = Math.Max(0, session.SelectionAnchorLine - dropped);
+            session.SelectionFocusLine = Math.Max(0, session.SelectionFocusLine - dropped);
+        }
+        session.Log.RemoveRange(0, drop);
+        // Line geometry is now stale; the next layout rebuilds it and re-derives the anchor from the
+        // entry itself, so a browsing viewport stays on the text it was reading.
+        session.EntryStarts = [];
+        session.EntryCounts = [];
+        if (session.Scroll > 0) session.Scroll++;
+    }
+
+    // A held tail at a real boundary can no longer be completed by another chunk, so it is published
+    // as redacted: the user sees that text was withheld, never a partial credential.
+    private static string ResolveHeld(Session session, StreamBlock block)
+    {
+        if (block.Pending.Length == 0) return "";
+        var held = block.Pending.ToString();
+        block.Pending.Clear();
+        // The hold is a strict prefix of at least one secret. Any full secret it may also contain is
+        // still replaced; if it IS purely a prefix, publishing it would expose credential bytes.
+        foreach (var secret in session.Secrets)
+            if (secret.Length > 0) held = held.Replace(secret, Redacted, StringComparison.Ordinal);
+        if (held.Contains(Redacted, StringComparison.Ordinal)) return held;
+        return session.Secrets.Any(secret => secret.Length > 0 && secret.StartsWith(held, StringComparison.Ordinal))
+            ? Redacted
+            : held;
+    }
+
+    // Flush every held tail when the response ends: no later chunk can complete one.
+    private void FlushStreamDisplay(Session session)
+    {
+        if (CurrentDisplay(session) is not { } display) return;
+        foreach (var block in display.Blocks.Values)
+        {
+            if (block.Type != "text") continue;
+            var flushed = ResolveHeld(session, block);
+            block.Raw = "";
+            if (flushed.Length > 0) block.Display.Append(flushed);
+            StreamRender(session, block);
+        }
+        // A tool block whose first delta carried only its identity renders once at the end too.
+        foreach (var block in display.Blocks.Values)
+            if (block.Type == "tool_use" && !block.Recorded) StreamTool(session, block);
+    }
+
+    private void StreamTool(Session session, StreamBlock block)
+    {
+        if (block.Recorded) return;
+        // The capped block's streamed row would be incomplete, so it is not emitted and not marked
+        // recorded: the completed snapshot then emits the full tool row exactly once.
+        if (block.ToolCapped) return;
+        block.Recorded = true;
+        if (block.ToolId.Length > 0 && !session.ToolUseIds.Add(block.ToolId)) return;
+        session.Tools++;
+        var detail = StreamToolDetail(session, block.ToolJson);
+        Append(session, "tool", (block.ToolName.Length > 0 ? block.ToolName : "tool") + detail);
+    }
+
+    // The same detail selection as a completed tool_use, applied to the accumulated input JSON.
+    private static string StreamToolDetail(Session session, string json)
+    {
+        if (json.Length == 0) return "";
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var item = document.RootElement;
+            if (item.ValueKind != JsonValueKind.Object) return "";
+            foreach (var key in new[] { "file_path", "path", "command", "pattern", "url", "query" })
+                if (Text(item, key) is { Length: > 0 } value)
+                    return ": " + Redact(session, Sanitize(value)).Trim();
+        }
+        catch (JsonException) { return ""; }
+        return "";
     }
 
     private static double Estimate(string text)
@@ -840,7 +1656,10 @@ internal sealed class SessionDashboard : IDisposable
             if (!session.TitleAssigned && heading.Length > 0)
             {
                 var title = Safe(session, Title(heading));
-                if (title.Length > 0) { session.Name = Fit(title, 44); session.TitleAssigned = true; }
+                // Store the WHOLE sanitised title. Fitting it here would permanently discard text
+                // before layout ran: the heading row, the selector chips and a wider window each
+                // fit the name themselves, so a wide terminal must still be able to show all of it.
+                if (title.Length > 0) { session.Name = title; session.TitleAssigned = true; }
             }
             session.Status = "working";
             session.NativeError = false;
@@ -897,7 +1716,15 @@ internal sealed class SessionDashboard : IDisposable
                 entry.FullEstimate = Estimate(content.GetRawText());
                 Recompute(session);
             }
+            // The completed snapshot reconciles the live streamed display for THIS message. Text
+            // blocks the stream already showed are completed in place; a message with no streamed
+            // display goes through the unchanged 0.8.9 complete-only path. The display is NOT
+            // removed: a snapshot may carry only some blocks, and later blocks must keep streaming.
+            var display = FindStreamDisplay(session, entry, messageId);
             var texts = new List<string>();
+            var toolIds = display is null
+                ? new HashSet<string>(StringComparer.Ordinal)
+                : [.. display.Blocks.Values.Where(block => block.Type == "tool_use" && block.Recorded && block.ToolId.Length > 0).Select(block => block.ToolId)];
             foreach (var item in content.EnumerateArray())
             {
                 switch (Text(item, "type"))
@@ -910,6 +1737,7 @@ internal sealed class SessionDashboard : IDisposable
                         // entry must not count the same tool call twice. Only ids can be deduplicated,
                         // so an id-less tool use is always shown.
                         var toolId = Text(item, "id");
+                        if (toolId.Length > 0 && toolIds.Contains(toolId)) break;
                         if (toolId.Length > 0 && !session.ToolUseIds.Add(toolId)) break;
                         session.Tools++;
                         // No arbitrary truncation: the body wraps the whole path/command to the width.
@@ -920,9 +1748,100 @@ internal sealed class SessionDashboard : IDisposable
                         break;
                 }
             }
-            if (texts.Count > 0) ShowText(session, messageId, texts);
+            if (display is not null) ReconcileStream(session, messageId, display, texts);
+            else if (texts.Count > 0) ShowText(session, messageId, texts);
         }
         session.Status = session.NativeError ? "failed" : "working";
+    }
+
+    // The streamed display a completed snapshot belongs to. An id can only ever match its own
+    // display. An id-less delivery (no message id at all) has no such key, so it follows the most
+    // recent display of the SAME turn, including one already stopped: the body it repeats must be
+    // recognised, not printed a second time.
+    private static StreamMessage? FindStreamDisplay(Session session, MessageUsage usage, string messageId)
+    {
+        if (session.StreamMessages.TryGetValue(usage.Key, out var direct)) return direct;
+        if (messageId.Length > 0) return null;
+        return session.StreamMessages.Values
+            .Where(item => item.Epoch == session.Epoch)
+            .OrderByDescending(item => item.Sequence)
+            .FirstOrDefault();
+    }
+
+    // Reconcile the completed text against the blocks the stream already displayed. A block keeps
+    // its ONE entry and receives only the suffix the snapshot added; text that arrives without a
+    // previous block is appended once. Only blocks the snapshot actually covers are settled, so a
+    // partial snapshot never stops later blocks from streaming. A repeated delivery is a no-op.
+    private void ReconcileStream(Session session, string messageId, StreamMessage display, List<string> texts)
+    {
+        var originals = texts.Select(text => Redact(session, Sanitize(text))).ToList();
+        var joined = string.Join("\n", originals);
+        if (originals.Count > 0 && display.LastSnapshot == joined) return;   // already reconciled
+        display.LastSnapshot = joined;
+        var shown = display.Blocks.Values
+            .Where(block => block.Type == "text" && block.Entry is not null)
+            .OrderBy(block => block.Index).ToList();
+        if (shown.Count == 0)
+        {
+            // Nothing reached the screen (an empty or hidden stream): the normal path applies.
+            if (texts.Count > 0) ShowText(session, messageId, texts);
+            return;
+        }
+        var paired = Math.Min(shown.Count, originals.Count);
+        for (var index = 0; index < paired; index++)
+        {
+            var block = shown[index];
+            var target = originals[index];
+            if (block.Reconciled.Length > 0 && target == block.Reconciled) continue;
+            var streamed = TrimBlankText(block.Display.ToString());
+            if (target == streamed)
+            {
+                block.Reconciled = target;
+                block.Closed = true;   // this block is settled; a late duplicate delta cannot grow it
+                continue;
+            }
+            if (target.StartsWith(streamed, StringComparison.Ordinal))
+            {
+                // The normal case: the completion adds the tail that had not arrived yet.
+                block.Display.Clear();
+                block.Display.Append(target);
+                block.Entry!.Text = TrimBlankText(target);
+                session.BodyCache = null;
+                block.Reconciled = target;
+                block.Closed = true;
+                // The echo memory follows the completed body, not the earlier partial one.
+                if (block.EchoIndex >= 0 && block.EchoIndex < session.QueryOutputs.Count)
+                    session.QueryOutputs[block.EchoIndex] = target;
+                continue;
+            }
+            // A snapshot SHORTER than what already streamed is a partial duplicate: the live entry
+            // stands and nothing new is printed.
+            if (streamed.StartsWith(target, StringComparison.Ordinal)) { block.Reconciled = target; continue; }
+            // Otherwise the payload differs somewhere in the middle. The live entry is not
+            // rewritten, but text the user never saw is still appended once after it.
+            if (Normalize(target).Length > 0) AppendOutput(session, texts[index]);
+            block.Reconciled = target;
+        }
+        // Text the stream never delivered is appended after the live blocks, in its own order. The
+        // count already appended is remembered so a repeated or grown snapshot never duplicates it.
+        for (var index = Math.Max(paired, display.RemainderFrom); index < originals.Count; index++)
+        {
+            if (Normalize(originals[index]).Length > 0) AppendOutput(session, texts[index]);
+            display.RemainderFrom = index + 1;
+        }
+        if (messageId.Length > 0)
+            session.AssistantMessages[messageId] = joined;
+        // A response that has already stopped and is now reconciled is complete: a late duplicate
+        // message_start must not re-open it.
+        if (display.Completed) MarkStreamCompleted(session, display.Key);
+    }
+
+    private static void MarkStreamCompleted(Session session, string key)
+    {
+        if (!session.CompletedStreams.Add(key)) return;
+        session.CompletedStreamOrder.Enqueue(key);
+        while (session.CompletedStreamOrder.Count > MaxStreamMessages)
+            session.CompletedStreams.Remove(session.CompletedStreamOrder.Dequeue());
     }
 
     // Display assistant text once. A repeated delivery of the SAME message id is the same message,
@@ -1070,6 +1989,10 @@ internal sealed class SessionDashboard : IDisposable
                 session.SelectionFocusLine = Math.Max(0, session.SelectionFocusLine - dropped);
             }
             session.Log.RemoveRange(0, drop);
+            // Line geometry is stale after a drop; the next layout rebuilds it and re-derives the
+            // viewport from the anchored entry, so the reader keeps the same text.
+            session.EntryStarts = [];
+            session.EntryCounts = [];
             // Scroll counts back from the newest item; a dropped oldest entry shifts it, exactly as
             // before, so an existing scroll position keeps showing the same content.
             if (session.Scroll > 0) session.Scroll++;
@@ -1077,10 +2000,11 @@ internal sealed class SessionDashboard : IDisposable
         session.BodyCache = null;   // the wrapped view is stale until the next layout
     }
 
-    // One entry's height in the body: a badge row plus each wrapped text row. Wrap never yields
-    // fewer than one row, matching Rebuild exactly.
+    // One entry's height in the body: a badge row plus each wrapped text row. It runs the SAME
+    // layout Rebuild uses (including the OUTPUT markdown pass), so the selection shift on a dropped
+    // oldest entry stays exact even when a fence/heading changed an entry's row count.
     private static int RenderedRows(Entry entry, int textWidth)
-        => 1 + Wrap(entry.Text, textWidth).Count();
+        => 1 + OutputRows(entry, textWidth).Count();
 
     private static string Redact(Session session, string text)
     {
@@ -1194,11 +2118,12 @@ internal sealed class SessionDashboard : IDisposable
         {
             var session = Find(selectedId);
             if (session is null) return false;
-            // The hit test re-lays the SAME graphics-capable geometry the pump paints, so body rows
-            // and columns match the screen exactly.
             // A new press always starts from a clean gesture: no leftover thumb drag or browse state.
             ResetInteraction(session);
-            Build(Math.Max(1, width), Math.Max(1, height), true);
+            // The hit test uses the LAST LAYOUT: the pump has just painted exactly this geometry, and
+            // re-laying it out here would wrap the whole log on every press (and, worse, re-apply the
+            // view anchor in the middle of a gesture). Only the first press before any layout builds.
+            if (!session.Built) Build(Math.Max(1, width), Math.Max(1, height), true);
             var row = y - session.BodyTop;
             // A filler row of a short log maps to -1: there is no body text to select there.
             if (row < 0 || row >= session.BodyMap.Length || session.BodyMap[row] < 0) return false;
@@ -1216,9 +2141,23 @@ internal sealed class SessionDashboard : IDisposable
                     ? Math.Clamp(thumbRow - session.ScrollbarThumbTop, 0, Math.Max(0, session.ScrollbarThumbRows - 1))
                     : 0;
                 session.ScrollbarLastY = y;
-                // A track click outside the thumb pages to that position; a grab on the thumb does not
-                // jump, so the first movement starts exactly where the user pressed.
-                if (!onThumb) ScrollbarDrag(y, width, height);
+                // A grab on the thumb does not jump: the gesture is anchored where the press landed,
+                // so the first movement is a delta from the row the user actually grabbed.
+                if (onThumb)
+                {
+                    var rows = Math.Max(1, session.BodyRows);
+                    var travel = Math.Max(1, rows - Math.Clamp(session.ScrollbarThumbRows, 1, rows));
+                    // Capture the gesture at the thumb's TOP row: the grab offset is kept for the
+                    // motion records, so a press on a wide thumb's middle is not mistaken for an
+                    // already-scrolled-to-the-end position.
+                    CaptureGesture(session, Math.Clamp(thumbRow - session.ScrollbarGrab, 0, travel));
+                }
+                else
+                {
+                    // A track click pages to that position, and the drag continues from there.
+                    session.DragGeometry = false;
+                    ScrollbarDrag(y, width, height);
+                }
                 return true;
             }
             session.Selecting = true;
@@ -1230,8 +2169,11 @@ internal sealed class SessionDashboard : IDisposable
         }
     }
 
-    // A drag extends the selection. Auto-scroll at a body edge keeps extending while the pointer sits
-    // outside the body, so a long output can be selected in one gesture without retargeting a session.
+    // A drag extends the selection. A pointer outside the body arms a TIMED edge scroll instead of
+    // taking one step per movement record: the pump keeps advancing it while the pointer stays still,
+    // which is what makes dragging past the bottom keep revealing text. Inside the body the selection
+    // focus follows the pointer immediately, and the pointer row is remembered so a timer tick can
+    // re-map it after the view moved.
     internal bool DragMove(int x, int y, int width, int height)
     {
         lock (gate)
@@ -1241,36 +2183,61 @@ internal sealed class SessionDashboard : IDisposable
             if (session.ScrollbarDragging)
             {
                 // Track/thumb drag: the scrollbar consumes the movement, so the body never selects.
-                // Continuing from the grab point keeps the thumb under the pointer without jumping.
+                // The step is a delta through the scale frozen at the grab, so the log growing under
+                // the pointer can never flip the direction or re-map the row to other content.
                 if (y == session.ScrollbarLastY) return false;
                 session.ScrollbarLastY = y;
-                return ScrollbarDrag(y - session.ScrollbarGrab, width, height);
+                return ScrollbarDragTo(y, width, height);
             }
             if (!session.Selecting) return false;
-            if (x == session.DragLastX && y == session.DragLastY) return false;
-            session.DragLastX = x; session.DragLastY = y;
-            // Re-lay the view so an edge auto-scroll is reflected before the row is mapped.
-            if (session.BodyMap.Length == 0) Build(Math.Max(1, width), Math.Max(1, height), true);
             if (session.BodyMap.Length == 0) return false;
-            var row = y - session.BodyTop;
-            if (row < 0 || row >= session.BodyMap.Length)
+            var changed = false;
+            if (x != session.DragLastX || y != session.DragLastY)
             {
-                ScrollBy(session, row < 0 ? 1 : -1);
-                Build(Math.Max(1, width), Math.Max(1, height), true);
-                if (session.BodyMap.Length == 0) return false;
-                row = row < 0 ? 0 : session.BodyMap.Length - 1;
+                session.DragLastX = x; session.DragLastY = y;
+                changed = ExtendSelection(session, x, y, width);
             }
-            var line = session.BodyMap[Math.Clamp(row, 0, session.BodyMap.Length - 1)];
-            if (line < 0) return false;      // filler row: never anchor a selection outside the log
-            var column = Math.Clamp(x, 0, Math.Max(0, width - ScrollbarCells - 1));
-            if (line == session.SelectionAnchorLine && column == session.SelectionAnchorColumn) return false;
-            session.SelectionFocusLine = line;
-            session.SelectionFocusColumn = column;
-            session.SelectionActive = true;
-            return true;
+            // Nothing outside the body ever selects here: the timer reveals rows first, and the
+            // selection then follows the remembered pointer row.
+            return changed;
         }
     }
 
+    // Maps the pointer onto the body: inside it the focus is set directly, outside it the direction
+    // is only recorded (the timer owns the motion). Returns whether the selection actually changed.
+    private static bool ExtendSelection(Session session, int x, int y, int width)
+    {
+        var row = y - session.BodyTop;
+        if (row < 0 || row >= session.BodyRows)
+        {
+            // Arming the edge starts its clock HERE, so the time between the pointer leaving the body
+            // and the pump's next tick is the first step's budget instead of being discarded.
+            if (session.DragEdge == 0) { ResetMotion(session); session.MotionMs = Environment.TickCount64; }
+            session.DragEdge = row < 0 ? -1 : 1;
+            session.DragEdgeDistance = row < 0 ? -row : row - (session.BodyRows - 1);
+            // Clamp the focus to the visible row the pointer is closest to, so a pointer dragged past
+            // the bottom still selects the last visible row instead of freezing on an old one.
+            row = row < 0 ? 0 : session.BodyRows - 1;
+        }
+        else
+        {
+            session.DragEdge = 0;
+            session.DragEdgeDistance = 0;
+        }
+        if (session.BodyMap.Length == 0) return false;
+        var line = session.BodyMap[Math.Clamp(row, 0, session.BodyMap.Length - 1)];
+        if (line < 0) return false;      // filler row: never anchor a selection outside the log
+        var column = Math.Clamp(x, 0, Math.Max(0, width - ScrollbarCells - 1));
+        if (line == session.SelectionAnchorLine && column == session.SelectionAnchorColumn) return false;
+        if (line == session.SelectionFocusLine && column == session.SelectionFocusColumn) return false;
+        session.SelectionFocusLine = line;
+        session.SelectionFocusColumn = column;
+        session.SelectionActive = true;
+        return true;
+    }
+
+    // Release ends every button-owned gesture, including any timed edge scrolling the release
+    // interrupted. The committed selection and the scroll position both stand exactly as they were.
     internal bool PressEnd()
     {
         lock (gate)
@@ -1280,8 +2247,17 @@ internal sealed class SessionDashboard : IDisposable
             var was = session.Selecting || session.ScrollbarDragging;
             session.Selecting = false;
             session.ScrollbarDragging = false;
+            session.DragEdge = 0;
+            session.DragEdgeDistance = 0;
+            ResetMotion(session);
             return was;
         }
+    }
+
+    // True while a drag is holding the pointer outside the body, so the pump arms its short timer.
+    internal bool DragEdgeActive
+    {
+        get { lock (gate) return Find(selectedId) is { Selecting: true, DragEdge: not 0 }; }
     }
 
     // Escape / session change: drop the highlight without touching the worker. A committed
@@ -1316,10 +2292,17 @@ internal sealed class SessionDashboard : IDisposable
         session.SelectionActive = false;
         session.MiddleBrowsing = false;
         session.DragLastX = session.DragLastY = -1;
+        session.DragEdge = 0;
+        session.DragEdgeDistance = 0;
+        session.DragGeometry = false;
+        ResetMotion(session);
     }
 
-    // One right click copies the committed selection. A right click with no selection changes
-    // nothing at all — in particular it never replaces the clipboard.
+    // One copy gesture (right click or Ctrl+C) over the committed selection. A selection that copied
+    // successfully is finished: the highlight and the gesture state clear, so the next drag starts a
+    // fresh selection and nothing is left looking selected after the text already reached the
+    // clipboard. The TEXT is never touched, and a FAILED write keeps the selection intact for a
+    // retry. With no selection nothing happens at all — in particular the clipboard is not replaced.
     internal bool CopySelection()
     {
         lock (gate)
@@ -1328,8 +2311,23 @@ internal sealed class SessionDashboard : IDisposable
             if (session is null || !session.SelectionActive) return false;
             var text = SelectionText(session);
             if (text.Length == 0) return false;
-            return Clipboard.Write(text);
+            if (!ClipboardWriter(text)) return false;
+            ResetInteraction(session);
+            return true;
         }
+    }
+
+    // How a copy reaches the clipboard. The real Win32 writer by default; the self test substitutes a
+    // failing one to prove a failed copy keeps the highlight for a retry and never clears it.
+    private static Func<string, bool> ClipboardWriter = Clipboard.Write;
+
+    // Test-only: run `body` with a clipboard writer that succeeds or fails deterministically.
+    internal void WithClipboardForTest(bool succeeds, Action body)
+    {
+        var previous = ClipboardWriter;
+        ClipboardWriter = _ => succeeds;
+        try { body(); }
+        finally { ClipboardWriter = previous; }
     }
 
     // The exact text a copy would place on the clipboard; empty when nothing is selected.
@@ -1351,6 +2349,84 @@ internal sealed class SessionDashboard : IDisposable
     internal bool BodyScrollableForTest
     {
         get { lock (gate) return Find(selectedId)?.BodyScrollable == true; }
+    }
+
+    // Benchmark-only: drop every wrap cache, so the next layout wraps the WHOLE log again. This is
+    // how the view behaved before per-entry caching existed, and the headless benchmark uses it to
+    // measure the same fixture both ways instead of comparing two builds.
+    internal void InvalidateWrapCachesForBenchmark()
+    {
+        lock (gate)
+        {
+            foreach (var session in sessions)
+            {
+                session.BodyCache = null;
+                foreach (var entry in session.Log) entry.Wrapped = null;
+            }
+        }
+    }
+
+    // Test/benchmark-only counter of real log re-wraps.
+    internal long RebuildsForTest
+    {
+        get { lock (gate) return rebuilds; }
+    }
+
+    // Test-only: the selected log overflows the body, so a scrollbar gesture is meaningful.
+    internal bool ScrollbarTestable(int width, int height)
+    {
+        lock (gate)
+        {
+            if (Find(selectedId) is not { } session) return false;
+            if (!session.Built) Build(Math.Max(1, width), Math.Max(1, height), true);
+            return session.BodyScrollable && session.BodyMap.Length > 0;
+        }
+    }
+
+    // Test-only: the thumb length and the content bound the scrollbar maps onto right now.
+    internal int ScrollbarThumbRowsForTest
+    {
+        get { lock (gate) return Find(selectedId)?.ScrollbarThumbRows ?? 0; }
+    }
+
+    internal int ScrollMaximumForTest
+    {
+        get
+        {
+            lock (gate)
+                return Find(selectedId) is { } session ? Math.Max(0, session.BodyLines - session.BodyRows) : 0;
+        }
+    }
+
+    // Test-only: a scrollbar gesture is currently held.
+    internal bool ScrollbarDraggingForTest
+    {
+        get { lock (gate) return Find(selectedId)?.ScrollbarDragging == true; }
+    }
+
+    // Test-only: the first absolute body line the viewport draws (the content the reader sees).
+    internal int TopLineForTest
+    {
+        get { lock (gate) return Find(selectedId) is { } session ? TopLine(session) : -1; }
+    }
+
+    // Test-only: the absolute body line the selection focus currently sits on, so a regression can
+    // prove the focus follows the row a layout actually drew for a held, stationary pointer.
+    internal int SelectionFocusLineForTest
+    {
+        get { lock (gate) return Find(selectedId)?.SelectionFocusLine ?? -1; }
+    }
+
+    // Test-only: how many rows the last layout actually drew in the body.
+    internal int BodyRowsForTest
+    {
+        get { lock (gate) return Find(selectedId)?.BodyRows ?? 0; }
+    }
+
+    // Test-only view of the live scroll offset (rows back from the newest line).
+    internal int ScrollForTest
+    {
+        get { lock (gate) return Find(selectedId)?.Scroll ?? 0; }
     }
 
     // Whether middle-click auto-scroll is armed for the selected conversation.
@@ -1575,6 +2651,7 @@ internal sealed class SessionDashboard : IDisposable
     private static string Color(Tone tone) => tone switch
     {
         Tone.Title => "1;38;2;105;211;229",
+        Tone.Strong => "1;38;2;236;242;250",
         Tone.Accent => "38;2;122;196;214",
         // Readable slate, not near-black: the previous #3a4554 labels were illegible on a black terminal.
         Tone.Dim => "38;2;125;140;158",
@@ -1903,14 +2980,36 @@ internal sealed class SessionDashboard : IDisposable
         session.BodyLines = lines.Count;
         session.BodyRows = rows;
         session.BodyWidth = width;
-        session.Scroll = Math.Clamp(session.Scroll, 0, Math.Max(0, lines.Count - rows));
+        var maximum = Math.Max(0, lines.Count - rows);
+        // A browsing viewport is pinned to the CONTENT it was showing, not to a line number. New
+        // entries below, a streamed block growing in place and a retention drop all leave those
+        // rows where they are; only when the anchored text itself is gone does the view fall back.
+        // The same rule keeps a held scrollbar grab still: the anchor is the content under the
+        // pointer, so output arriving below never moves it and nothing snaps back to the bottom.
+        if (session.Scroll > 0 && maximum > 0 && session.ViewEntry is not null)
+        {
+            var anchored = AnchorLine(session);
+            session.Scroll = anchored < 0
+                ? Math.Clamp(session.Scroll, 0, maximum)
+                : Math.Clamp(lines.Count - (anchored + rows), 1, maximum);
+        }
+        else session.Scroll = Math.Clamp(session.Scroll, 0, maximum);
         var end = Math.Max(0, lines.Count - session.Scroll);
         var start = Math.Max(0, end - rows);
+        // Re-derive the anchor from the row that will actually be drawn, so what is pinned is always
+        // what the user sees (a clamp or a follow-to-bottom can never leave a stale anchor behind).
+        // The bottom is the ONLY place that resumes following: a gesture that reverses at the oldest
+        // end keeps its anchor, and nothing here ever snaps the view to the newest row on its own.
+        if (session.Scroll > 0 && maximum > 0) PinAnchor(session, start);
+        else { session.ViewEntry = null; session.ViewRow = -1; }
         // Absolute body line for each drawn row, so a drag hit test maps the screen back to the log.
         // Every drawn row has an entry, including the empty filler rows of a short log (-1 there).
         session.BodyMap = new int[rows];
         for (var index = 0; index < rows; index++) session.BodyMap[index] = start + index < end ? start + index : -1;
+        if (session.Selecting && session.DragEdge != 0)
+            ExtendSelection(session, session.DragLastX, session.DragLastY, width);
         var view = ApplySelection(session, lines.GetRange(start, end - start), start, textWidth);
+        session.Built = true;
         return Scrollbar(session, view, width, rows, lines.Count);
     }
 
@@ -1926,27 +3025,393 @@ internal sealed class SessionDashboard : IDisposable
 
     // Rebuilds the wrapped view. Line kinds are kept on the session, so a selection can tell a
     // wrapped continuation from a new entry.
+    //
+    // The log as a whole is still walked (its line geometry has to be), but each ENTRY's own rows
+    // come from that entry's cache. Only the entry whose text actually changed is laid out again,
+    // which is what keeps a live streamed block cheap: a delta re-wraps that one block, not the
+    // thousands of rows of history above it.
     private List<List<Seg>> Rebuild(Session session, int textWidth)
     {
+        rebuilds++;
         var lines = new List<List<Seg>>();
         var kinds = new List<int>();
-        foreach (var entry in session.Log)
+        var starts = new int[session.Log.Count];
+        var counts = new int[session.Log.Count];
+        for (var index = 0; index < session.Log.Count; index++)
         {
+            var entry = session.Log[index];
+            starts[index] = lines.Count;
+            var before = lines.Count;
             // Kind 0: entry badge row. Kind 1: first wrapped text row. Kind 2: a later wrapped row.
             lines.Add([new Seg("  " + entry.At.ToString("HH:mm:ss", Culture) + "  ", Tone.Dim),
                 new Seg(TagLabel(entry.Tag), TagTone(entry.Tag))]);
             kinds.Add(0);
-            // Model output is the reading surface: brighter than tool/response plumbing.
-            var tone = entry.Tag == "output" ? Tone.Output : Tone.Text;
-            foreach (var (text, hard) in Wrap(entry.Text, textWidth))
+            foreach (var row in CachedRows(entry, textWidth))
             {
-                lines.Add([new Seg("  │ ", Tone.Dim), new Seg(text, tone)]);
-                // 1 = starts a hard line, 2 = soft wrap of the row above it.
-                kinds.Add(hard ? 1 : 2);
+                lines.Add(row.Segments);
+                // 1 = starts a hard line, 2 = soft wrap of the row above it. A continuation row of a
+                // styled markdown line joins the copy exactly like any other soft wrap.
+                kinds.Add(row.Hard ? 1 : 2);
             }
+            counts[index] = lines.Count - before;
         }
+        session.EntryStarts = starts;
+        session.EntryCounts = counts;
         session.Kinds = [.. kinds];
         return lines;
+    }
+
+    // One entry's wrapped rows, reused while neither its text nor the body width changed. A settled
+    // entry is therefore never laid out twice, and a growing streamed block is laid out once per
+    // text it actually carries (two repaints of the same text share the same rows).
+    private static List<BodyRow> CachedRows(Entry entry, int textWidth)
+    {
+        if (entry.Wrapped is not null && entry.WrappedWidth == textWidth && entry.WrappedText == entry.Text)
+            return entry.Wrapped;
+        entry.WrappedText = entry.Text;
+        entry.WrappedWidth = textWidth;
+        entry.Wrapped = [.. OutputRows(entry, textWidth)];
+        return entry.Wrapped;
+    }
+
+    // One drawn body row of an entry. `Hard` marks the first row of a hard (source) line, so
+    // selection copy joins only soft wraps and an explicit newline stays a newline.
+    private readonly record struct BodyRow(List<Seg> Segments, bool Hard);
+
+    // An OUTPUT entry is laid out as lightweight terminal Markdown; every other tag (task, tool,
+    // system, result, error…) is drawn literally. Decoration never changes the characters a row
+    // carries (a marker is replaced by its own glyph), so copy, redaction and CJK wrapping see the
+    // same text the screen shows.
+    private static IEnumerable<BodyRow> OutputRows(Entry entry, int textWidth)
+    {
+        var tone = entry.Tag == "output" ? Tone.Output : Tone.Text;
+        var prefix = new Seg("  │ ", Tone.Dim);
+        if (entry.Tag != "output")
+        {
+            foreach (var (text, hard) in Wrap(entry.Text, textWidth))
+                yield return new BodyRow([prefix, new Seg(text, tone)], hard);
+            yield break;
+        }
+        // Parsed once per text version: a growing streamed block re-parses, a settled entry never does.
+        if (entry.MdLines is null || entry.MdSource != entry.Text || entry.MdWidth != textWidth)
+        {
+            entry.MdSource = entry.Text;
+            entry.MdWidth = textWidth;
+            entry.MdLines = [.. MarkdownLines(entry.Text, textWidth)];
+        }
+        foreach (var line in entry.MdLines)
+        {
+            foreach (var (row, hard) in WrapSpans(line, textWidth))
+            {
+                var segments = new List<Seg>(row.Count + 1) { prefix };
+                segments.AddRange(row);
+                yield return new BodyRow(segments, hard);
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- terminal markdown (OUTPUT only)
+
+    private readonly record struct MdSpan(string Text, Tone Style);
+
+    // Lightweight Markdown for the reading surface: headings, unordered lists, block quotes, bold,
+    // inline code, fenced code and pipe tables. Every rule is line-local and fails open: a delimiter
+    // that is not closed on the same line stays literal text, so a half-streamed `**`/backtick never
+    // swallows the rest of the body. A table is only laid out when its header, delimiter row and every
+    // body row agree on the column count; anything else is drawn literally, so no cell can be lost.
+    // `width` is the body text width, so a table reflows (and is re-cached) on resize.
+    private static IEnumerable<List<MdSpan>> MarkdownLines(string text, int width)
+    {
+        var fence = false;
+        var raw = text.Split('\n');
+        for (var index = 0; index < raw.Length; index++)
+        {
+            var line = raw[index];
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith("```", StringComparison.Ordinal) || trimmed.StartsWith("~~~", StringComparison.Ordinal))
+            {
+                // The fence marker (and its language tag) is structural, not body text.
+                fence = !fence;
+                continue;
+            }
+            if (fence)
+            {
+                yield return [new MdSpan(line, Tone.Text)];
+                continue;
+            }
+            var indent = line.Length - trimmed.Length;
+            var indented = new string(' ', indent);
+            // ATX heading: # .. ###### followed by a space (or the bare marker). The marker becomes
+            // emphasis rather than punctuation, so the heading reads as a heading at any width.
+            var level = 0;
+            while (level < trimmed.Length && level < 6 && trimmed[level] == '#') level++;
+            if (level > 0 && (level == trimmed.Length || trimmed[level] == ' '))
+            {
+                var content = trimmed[level..].TrimStart();
+                if (content.Length == 0) continue;             // a bare "###" is an empty heading
+                yield return Inline(content, Tone.Title);
+                continue;
+            }
+            if (trimmed.Length > 0 && trimmed[0] == '>')
+            {
+                var quoted = trimmed[1..].TrimStart();
+                yield return [new MdSpan("│ ", Tone.Dim), .. Inline(quoted, Tone.Text)];
+                continue;
+            }
+            // Unordered list: keep the author's bullet glyph so indentation and nesting survive.
+            if (trimmed.Length >= 2 && (trimmed[0] is '-' or '*' or '+') && trimmed[1] == ' ')
+            {
+                yield return [new MdSpan(indented + "• ", Tone.Gold), .. Inline(trimmed[2..], Tone.Output)];
+                continue;
+            }
+            // A pipe table: header row, delimiter row, then every contiguous row with the same
+            // column count. Only this exact shape is structural; everything else stays literal.
+            if (index + 1 < raw.Length
+                && SplitCells(trimmed, out var header) && header.Count >= 1
+                && SplitCells(raw[index + 1].TrimStart(), out var delimiter) && IsDelimiter(delimiter, header.Count))
+            {
+                var rows = new List<List<string>> { header };
+                var end = index + 2;
+                while (end < raw.Length && SplitCells(raw[end].TrimStart(), out var cells))
+                {
+                    if (cells.Count != header.Count) break;
+                    rows.Add(cells);
+                    end++;
+                }
+                if (rows.Count > 1)
+                {
+                    var block = Table(rows, delimiter, width);
+                    if (block is not null)
+                    {
+                        foreach (var row in block) yield return row;
+                        index = end - 1;
+                        continue;
+                    }
+                }
+            }
+            yield return Inline(line, Tone.Output);
+        }
+    }
+
+    // Splits one table line into trimmed cells. A backslash-escaped pipe is a literal pipe and a
+    // pipe inside an inline code span belongs to that code, so neither ends a cell. Optional outer
+    // pipes are dropped. Returns false when the line has no structural pipe at all.
+    private static bool SplitCells(string line, out List<string> cells)
+    {
+        cells = [];
+        var text = new StringBuilder();
+        var code = false;
+        var pipes = 0;
+        for (var index = 0; index < line.Length; index++)
+        {
+            var ch = line[index];
+            if (ch == '\\' && index + 1 < line.Length && line[index + 1] is '|' or '\\')
+            {
+                text.Append(line[index + 1]);
+                index++;
+                continue;
+            }
+            if (ch == '`') { code = !code; text.Append(ch); continue; }
+            if (ch == '|' && !code)
+            {
+                pipes++;
+                cells.Add(text.ToString().Trim());
+                text.Clear();
+                continue;
+            }
+            text.Append(ch);
+        }
+        if (pipes == 0) { cells.Clear(); return false; }
+        cells.Add(text.ToString().Trim());
+        // Outer pipes leave an empty cell on each side; drop exactly those.
+        if (cells.Count > 0 && cells[0].Length == 0) cells.RemoveAt(0);
+        if (cells.Count > 0 && cells[^1].Length == 0) cells.RemoveAt(cells.Count - 1);
+        if (cells.Count == 0) { cells = [""]; return true; }
+        return true;
+    }
+
+    // A delimiter row ("| :--- | ---: |") is structural, never drawn. Every cell must be an
+    // alignment marker with at least one dash and the count must match the header.
+    private static bool IsDelimiter(List<string> cells, int columns)
+    {
+        if (cells.Count != columns) return false;
+        foreach (var cell in cells)
+        {
+            var text = cell.Trim();
+            if (text.Length < 1) return false;
+            var inner = text[0] == ':' ? text[1..] : text;
+            if (inner.EndsWith(':')) inner = inner[..^1];
+            if (inner.Length < 1 || inner.Any(ch => ch != '-')) return false;
+        }
+        return true;
+    }
+
+    private enum Align { Left, Right, Center }
+
+    private static Align Alignment(string cell)
+    {
+        var text = cell.Trim();
+        var left = text.StartsWith(':');
+        var right = text.EndsWith(':');
+        return left && right ? Align.Center : right ? Align.Right : Align.Left;
+    }
+
+    // Lays a table out over the available body width. Columns keep their natural width when they
+    // all fit; otherwise the widest columns shrink (never below two cells, so a wide CJK glyph still
+    // fits) and each cell wraps inside its column, with the short cells staying in their own column.
+    // When even that cannot fit, the whole table falls back to literal wrapped source: values are
+    // never dropped to make a layout work.
+    private static List<List<MdSpan>>? Table(List<List<string>> rows, List<string> delimiter, int width)
+    {
+        var columns = rows[0].Count;
+        const int gap = 3;                                   // " │ " between two columns
+        var separators = (columns - 1) * gap;
+        if (width < separators + columns * 2) return null;
+        var align = new Align[columns];
+        for (var column = 0; column < columns; column++) align[column] = Alignment(delimiter[column]);
+        var cells = new List<List<MdSpan>>[rows.Count];
+        var natural = new int[columns];
+        for (var row = 0; row < rows.Count; row++)
+        {
+            cells[row] = [];
+            for (var column = 0; column < columns; column++)
+            {
+                var spans = Inline(rows[row][column], row == 0 ? Tone.Strong : Tone.Output);
+                cells[row].Add(spans);
+                natural[column] = Math.Max(natural[column], spans.Sum(span => CellWidth(span.Text)));
+            }
+        }
+        var widths = (int[])natural.Clone();
+        while (widths.Sum() + separators > width)
+        {
+            var widest = 0;
+            for (var column = 1; column < columns; column++) if (widths[column] > widths[widest]) widest = column;
+            if (widths[widest] <= 2) return null;            // no column can give up another cell
+            widths[widest]--;
+        }
+        var lines = new List<List<MdSpan>>();
+        for (var row = 0; row < rows.Count; row++)
+        {
+            // Each cell wraps inside its own column; the tallest cell decides the row's height.
+            var wrapped = new List<List<Seg>>[columns];
+            var height = 1;
+            for (var column = 0; column < columns; column++)
+            {
+                wrapped[column] = [.. WrapSpans(cells[row][column], widths[column]).Select(part => part.Row)];
+                height = Math.Max(height, wrapped[column].Count);
+            }
+            for (var line = 0; line < height; line++)
+            {
+                var output = new List<MdSpan>();
+                for (var column = 0; column < columns; column++)
+                {
+                    if (column > 0) output.Add(new MdSpan(" │ ", Tone.Dim));
+                    var spans = line < wrapped[column].Count ? wrapped[column][line] : [];
+                    var used = SegWidth(spans);
+                    var spare = Math.Max(0, widths[column] - used);
+                    var before = align[column] switch { Align.Right => spare, Align.Center => spare / 2, _ => 0 };
+                    if (before > 0) output.Add(new MdSpan(new string(' ', before), Tone.Output));
+                    output.AddRange(spans.Select(seg => new MdSpan(seg.Text, seg.Style)));
+                    var after = spare - before;
+                    if (after > 0) output.Add(new MdSpan(new string(' ', after), Tone.Output));
+                }
+                lines.Add(output);
+            }
+        }
+        return lines;
+    }
+
+    // Inline bold and code spans, scanned left to right. Code wins over bold at the same position,
+    // and an unclosed delimiter is emitted literally.
+    private static List<MdSpan> Inline(string text, Tone body)
+    {
+        var spans = new List<MdSpan>();
+        var literal = new StringBuilder();
+        void Flush(Tone style)
+        {
+            if (literal.Length == 0) return;
+            spans.Add(new MdSpan(literal.ToString(), style));
+            literal.Clear();
+        }
+        var index = 0;
+        while (index < text.Length)
+        {
+            var ch = text[index];
+            if (ch == '`')
+            {
+                var close = text.IndexOf('`', index + 1);
+                if (close > index + 1)
+                {
+                    Flush(body);
+                    spans.Add(new MdSpan(text[(index + 1)..close], Tone.Gold));
+                    index = close + 1;
+                    continue;
+                }
+                literal.Append(ch);
+                index++;
+                continue;
+            }
+            if (ch == '*' && index + 1 < text.Length && text[index + 1] == '*')
+            {
+                var close = text.IndexOf("**", index + 2, StringComparison.Ordinal);
+                if (close > index + 2)
+                {
+                    Flush(body);
+                    // Nested inline code inside bold still reads as code.
+                    var emphasis = body == Tone.Title ? Tone.Title : Tone.Strong;
+                    foreach (var span in Inline(text[(index + 2)..close], emphasis))
+                        spans.Add(span.Style == Tone.Gold ? span : span with { Style = emphasis });
+                    index = close + 2;
+                    continue;
+                }
+                literal.Append(ch);
+                index++;
+                continue;
+            }
+            literal.Append(ch);
+            index++;
+        }
+        Flush(body);
+        return spans;
+    }
+
+    // Wraps styled spans to the body width. Rows keep their segment styles (a bold run stays bold
+    // across a soft wrap) and never split a wide CJK glyph; `hard` is true only on the first row of
+    // a source line, so selection copy joins soft wraps exactly as before.
+    private static IEnumerable<(List<Seg> Row, bool Hard)> WrapSpans(List<MdSpan> spans, int width)
+    {
+        var hard = true;
+        var row = new List<Seg>();
+        var run = new StringBuilder();
+        var style = Tone.Plain;
+        var columns = 0;
+        foreach (var span in spans)
+        {
+            foreach (var rune in span.Text.EnumerateRunes())
+            {
+                var size = RuneWidth(rune.Value);
+                if (columns + size > width && (row.Count > 0 || run.Length > 0))
+                {
+                    if (run.Length > 0) row.Add(new Seg(run.ToString(), style));
+                    run.Clear();
+                    yield return (row, hard);
+                    row = [];
+                    hard = false;
+                    columns = 0;
+                }
+                if (run.Length == 0) style = span.Style;
+                else if (style != span.Style)
+                {
+                    row.Add(new Seg(run.ToString(), style));
+                    run.Clear();
+                    style = span.Style;
+                }
+                run.Append(rune.ToString());
+                columns += size;
+            }
+        }
+        if (run.Length > 0) row.Add(new Seg(run.ToString(), style));
+        yield return (row, hard);
     }
 
     private sealed class BodyCache
@@ -2263,7 +3728,7 @@ internal sealed class SessionDashboard : IDisposable
 
     private void Run(CancellationToken cancel)
     {
-        var console = new NativeConsole();
+        var console = new NativeConsole { Owner = this };
         using var closing = new ManualResetEventSlim(false);
         using (cancel.Register(() => closing.Set()))
         {
@@ -2283,13 +3748,24 @@ internal sealed class SessionDashboard : IDisposable
                     if (resized && width != 0) { PressEnd(); ResetInteraction(); console.EndBrowse(); }
                     width = columns;
                     height = rows;
-                    // Middle-click browsing keeps moving on a short local interval while armed.
-                    var browsing = console.BrowseActive && console.ContinueBrowse(this);
+                    // A minimized window must not keep scrolling: timed motion is suspended while it
+                    // is iconic, and the clamp in the accumulator means the time spent away is never
+                    // replayed as a burst when it comes back.
+                    var minimized = OwnedWindow != 0 && Window.IsIconic(OwnedWindow);
+                    if (minimized) SuspendMotion();
                     var second = Environment.TickCount64 / 1000;
                     var tick = second != lastSecond;
                     lastSecond = second;
+                    // FRESH INPUT FIRST. A drag or a click that arrived while the timer was sleeping
+                    // must be applied before any timed motion, or the gesture would be interpreted
+                    // against a view the timer has already moved.
                     var drain = console.Drain(this, width, height);
                     if (drain < 0) { RequestStop(); break; }
+                    // Timed motion runs on the clamped wall clock, so the cadence of this call never
+                    // decides the speed. Browsing and a selection's edge scroll share the interval.
+                    var browsing = !minimized && console.BrowseActive && console.ContinueBrowse(this);
+                    var edge = !minimized && console.ContinueEdge(this);
+                    var moving = browsing || edge;
                     var animate = false;
                     animated = console.CanAnimate && width >= 62 && height >= 16 && (OwnedWindow == 0 || !Window.IsIconic(OwnedWindow));
                     if (animated)
@@ -2298,10 +3774,18 @@ internal sealed class SessionDashboard : IDisposable
                         animate = frame != frames;
                         frames = frame;
                     }
-                    if (resized || tick || drain > 0 || animate || browsing) console.Draw(this, width, height, resized, animate);
-                    // While browsing or animated, wake on the short local interval; otherwise exactly
-                    // on the one-second clock boundary.
-                    if (console.Wait(UntilNextWake(animated, console.BrowseActive), closing.WaitHandle) == 1) break;
+                    // One paint per pass, and only when something can have changed. Timed motion that
+                    // produced no actual row change (a clamped end, a deadzone) never repaints.
+                    if (resized || tick || drain > 0 || animate || moving)
+                    {
+                        console.Draw(this, width, height, resized, animate);
+                    }
+                    // The console anchor and the dashboard can end a gesture independently (Escape,
+                    // End, a resize, a new task). Keeping them in step stops a stale timer from waking.
+                    console.SyncBrowse(this);
+                    // While something can still move or is animating, wake on the short local
+                    // interval; otherwise exactly on the one-second clock boundary.
+                    if (console.Wait(UntilNextWake(animated, !minimized && (moving || console.AwaitingTimer(this))), closing.WaitHandle) == 1) break;
                 }
             }
             finally { console.Restore(); }
@@ -2642,7 +4126,14 @@ internal sealed class SessionDashboard : IDisposable
             PaintedRevision++;
             frame.Append("\u001b[").Append(height).Append(";1H\u001b[0m");
             Console.Write(frame);
+            // Readiness is claimed only for a frame that already shows a conversation; the host then
+            // asks the OS for a preview refresh, and the window's minimized composition is the real
+            // dashboard instead of the empty startup frame.
+            if (dashboard.HasConversation) Owner?.MarkConversationFrame();
         }
+
+        // The pump's dashboard, so a painted frame can satisfy the preview-readiness barrier.
+        internal SessionDashboard? Owner;
 
         // A row update at column `left` (0-based display column). At column 0 it erases the row
         // first; to the right of the image it writes only the tail, which is padded to the row's
@@ -2717,9 +4208,8 @@ internal sealed class SessionDashboard : IDisposable
         // button never repeats a copy/toggle on every movement record.
         private bool pressedLeft, pressedRight, pressedMiddle;
         private int lastMouseY = -1;
-        // Middle-click auto-browse: the anchor row where browsing started and the last motion time.
+        // Middle-click auto-browse: the anchor row where browsing started.
         private int browseAnchorY = -1;
-        private long browseTick;
 
         private bool Mouse(SessionDashboard dashboard, MouseRecord mouse, int width, int height)
         {
@@ -2757,13 +4247,14 @@ internal sealed class SessionDashboard : IDisposable
                 handled |= dashboard.CopySelection();
             }
             // Middle click toggles free browsing on the press transition; then, while it is on and
-            // the pointer stays away from the anchor row, the view keeps moving in whole steps at a
-            // bounded local frame rate — no polling of model or worker state is involved.
+            // the pointer stays away from the anchor row, the view keeps moving at a speed derived
+            // from the pointer's distance — elapsed time decides how far each step actually goes.
             if (middle && !pressedMiddle)
             {
                 pressedMiddle = true;
-                browseAnchorY = dashboard.MiddleClick() ? y : -1;
-                browseTick = Environment.TickCount64;
+                // The press row is the anchor: distance and direction are measured from it, exactly
+                // like classic middle-click auto-scroll, and a reversal is visible the record after.
+                browseAnchorY = dashboard.MiddleClick(y, Environment.TickCount64) ? y : -1;
                 handled |= browseAnchorY >= 0;
             }
             // Motion while browsing is owned by the pump's short local timer (ContinueBrowse), which
@@ -2771,29 +4262,48 @@ internal sealed class SessionDashboard : IDisposable
             return handled;
         }
 
+        // A button held down ends browsing; the dashboard keeps the user's scroll position.
+        internal void EndBrowse() => browseAnchorY = -1;
+
+        // An explicit stop (Escape, End, resize, a session or task change) also disarms the pump's
+        // browse anchor, so no timer keeps waking for a gesture the dashboard already ended.
+        internal void SyncBrowse(SessionDashboard dashboard)
+        {
+            if (browseAnchorY >= 0 && !dashboard.BrowsingForTest) browseAnchorY = -1;
+        }
+
         // True while middle-click browsing is armed, so the pump can wake on a short local interval
         // instead of the one-second clock; this is console-local input state, never a poll.
         internal bool BrowseActive => browseAnchorY >= 0;
 
-        // One continuous-browse step, called by the pump each short wake. The direction and speed are
-        // fixed by how far the pointer sits from the anchor row, exactly like classic auto-scroll.
+        // True while a drag holds the pointer outside the body, so the pump keeps its short timer
+        // armed for the selection's own edge scrolling.
+        internal bool EdgeActive(SessionDashboard dashboard) => dashboard.DragEdgeActive;
+
+        // Whether the pump still has a reason to wake on its short interval: browsing, a selection
+        // edge scroll, or a middle click it still has to watch. Any other state falls back to the
+        // one-second clock, so no timer keeps the console spinning after a gesture ended.
+        internal bool AwaitingTimer(SessionDashboard dashboard)
+            => browseAnchorY >= 0 || dashboard.DragEdgeActive;
+
+        // One continuous-browse tick, called by the pump each short wake while browsing is armed.
+        // The anchor row and the pointer row give the direction and speed; the dashboard converts the
+        // clamped elapsed time into a bounded number of rows, so the cadence of this call no longer
+        // decides the speed and a stall cannot be replayed as a burst.
         internal bool ContinueBrowse(SessionDashboard dashboard)
         {
             if (browseAnchorY < 0) return false;
-            // Escape or a session-level reset may have stopped browsing; never keep waking for it.
+            // Escape, End or a session-level reset may have stopped browsing; never keep waking.
             if (!dashboard.BrowsingForTest) { browseAnchorY = -1; return false; }
-            var now = Environment.TickCount64;
-            if (now - browseTick < BrowseInterval) return false;
-            var delta = lastMouseY - browseAnchorY;
-            if (Math.Abs(delta) <= 1) return false;
-            browseTick = now;
-            return dashboard.Browse(Math.Sign(delta) * Math.Min(Math.Abs(delta), 4));
+            if (lastMouseY < 0) return false;
+            return dashboard.BrowseAt(lastMouseY, Environment.TickCount64);
         }
 
-        private const int BrowseInterval = 60;
-
-        // A button held down ends browsing; the dashboard keeps the user's scroll position.
-        internal void EndBrowse() => browseAnchorY = -1;
+        // One tick of the selection's edge scrolling. It runs on the same timer as browsing, and it
+        // is driven by the wall clock rather than by movement records, so a pointer held still past
+        // the last body row keeps revealing text.
+        internal bool ContinueEdge(SessionDashboard dashboard)
+            => dashboard.DragEdgeActive && dashboard.EdgeScroll(Environment.TickCount64);
 
         // The left-button latch must not survive a drained batch boundary.
         internal void ResetPress() => pressedLeft = false;
@@ -3462,6 +4972,465 @@ internal sealed class SessionDashboard : IDisposable
             Require(longSecret.LogText("L").Contains(Redacted));
         }
 
+        // ------------------------------------------------------- live streamed text body
+
+        // A text_delta reaches the log BEFORE any assistant snapshot, message_stop or result, and
+        // every delta of one block grows that block's SINGLE entry instead of appending a row.
+        using (var streaming = new SessionDashboard())
+        {
+            streaming.Add("st", "stream body", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); streaming.Observe("st", doc.RootElement); }
+            string Log() => streaming.LogText("st");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task live body\"}}");
+            var before = streaming.LogItemCount("st");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"s1\",\"usage\":{\"input_tokens\":10}}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}}");
+            // Visible while the message is still open: no assistant/message_stop/result has arrived.
+            Require(Log().Contains("Hello"));
+            var oneEntry = streaming.LogItemCount("st");
+            Require(oneEntry == before + 1);                       // exactly one OUTPUT entry
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" world\"}}}");
+            Require(Log().Contains("Hello world"));
+            Require(streaming.LogItemCount("st") == oneEntry);     // grew in place, no second entry
+            // Newlines, indentation and CJK survive the live growth.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n    if (x) {\\n        return 中文字符;\\n    }\"}}}");
+            Require(Log().Contains("Hello world\n    if (x) {\n        return 中文字符;\n    }"));
+            // The unchanged 0.8.9 stream estimate is still display-only and provisional.
+            var tokens = streaming.Frame(100, 24).FirstOrDefault(row => row.Contains("TOKENS")) ?? "";
+            Require(tokens.Contains("out ~"));
+            // The completed snapshot repeats what the stream showed: nothing is appended.
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"s1\",\"content\":[{\"type\":\"text\",\"text\":\"Hello world\\n    if (x) {\\n        return 中文字符;\\n    }\"}]}}");
+            Require(Regex.Matches(Log(), "Hello world").Count == 1);
+            Require(streaming.LogItemCount("st") == oneEntry);
+            // The final result echoes the same body: still exactly one copy on screen.
+            Feed("{\"type\":\"result\",\"is_error\":false,\"result\":\"Hello world\\n    if (x) {\\n        return 中文字符;\\n    }\"}");
+            Require(Regex.Matches(Log(), "Hello world").Count == 1);
+        }
+
+        // A snapshot that had not finished streaming adds ONLY its missing suffix to the same entry,
+        // and a text block the stream never carried is appended once, so no text is lost or doubled.
+        using (var reconcile = new SessionDashboard())
+        {
+            reconcile.Add("r", "reconcile", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); reconcile.Observe("r", doc.RootElement); }
+            string Log() => reconcile.LogText("r");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task reconcile\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"r1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}}");
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"r1\",\"content\":[{\"type\":\"text\",\"text\":\"partial + completed tail\"}]}}");
+            Require(Regex.Matches(Log(), "partial").Count == 1);
+            Require(Log().Contains("partial + completed tail"));
+            // A later duplicate delivery is the ordinary repeat path and appends nothing new.
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"r1\",\"content\":[{\"type\":\"text\",\"text\":\"partial + completed tail\"}]}}");
+            Require(Regex.Matches(Log(), "completed tail").Count == 1);
+            // A LATE duplicate message_start for the completed response is not re-opened, and its
+            // deltas cannot print the body a second time.
+            var settled = reconcile.LogItemCount("r");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"r1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial + completed tail\"}}}");
+            Require(Regex.Matches(Log(), "completed tail").Count == 1);
+            Require(reconcile.LogItemCount("r") == settled);
+        }
+
+        // Mixed text and tool blocks keep protocol order: the text that streamed first stays first,
+        // the completed tool call is shown once, and later text follows it.
+        using (var mixed = new SessionDashboard())
+        {
+            mixed.Add("mx", "mixed", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); mixed.Observe("mx", doc.RootElement); }
+            string Log() => mixed.LogText("mx");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task mixed\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"x1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"First thought\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tu-1\",\"name\":\"Bash\",\"input\":{}}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"command\\\":\\\"dotnet build\\\"}\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":1}}");
+            Require(Log().Contains("Bash: dotnet build"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"text_delta\",\"text\":\" after the tool\"}}}");
+            // Same completed message: the tool id must not be counted twice.
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"x1\",\"content\":["
+                + "{\"type\":\"text\",\"text\":\"First thought\"},"
+                + "{\"type\":\"tool_use\",\"id\":\"tu-1\",\"name\":\"Bash\",\"input\":{\"command\":\"dotnet build\"}},"
+                + "{\"type\":\"text\",\"text\":\" after the tool\"}]}}");
+            var mixedLog = Log();
+            Require(mixedLog.IndexOf("First thought", StringComparison.Ordinal) < mixedLog.IndexOf("dotnet build", StringComparison.Ordinal));
+            Require(mixedLog.IndexOf("dotnet build", StringComparison.Ordinal) < mixedLog.IndexOf("after the tool", StringComparison.Ordinal));
+            Require(Regex.Matches(mixedLog, "dotnet build").Count == 1);
+            Require(Regex.Matches(mixedLog, "First thought").Count == 1);
+            Require(mixed.Frame(110, 24).Any(row => row.Contains("TOOLS") && row.Contains("1 ")));
+        }
+
+        // Thinking chunks stay hidden from the live display and from the completed snapshot.
+        using (var thinking = new SessionDashboard())
+        {
+            thinking.Add("th", "thinking", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); thinking.Observe("th", doc.RootElement); }
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task thinking\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"h1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"RAW-STREAM-REASONING\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Answer body\"}}}");
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"h1\",\"content\":["
+                + "{\"type\":\"thinking\",\"thinking\":\"RAW-STREAM-REASONING\"},{\"type\":\"text\",\"text\":\"Answer body\"}]}}");
+            Require(thinking.LogText("th").Contains("Answer body"));
+            Require(!thinking.LogText("th").Contains("RAW-STREAM-REASONING"));
+            Require(Regex.Matches(thinking.LogText("th"), "Answer body").Count == 1);
+        }
+
+        // A secret split across deltas must never flash a prefix, and an ANSI escape split across
+        // deltas must not leak its bytes. Control characters are dropped from the live body.
+        using (var split = new SessionDashboard())
+        {
+            const string liveSecret = "sk-live-SPLIT-9931";
+            split.Add("sp", "split", "", "", [liveSecret]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); split.Observe("sp", doc.RootElement); }
+            string Log() => split.LogText("sp");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task split secret\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"sp1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"token sk-live-\"}}}");
+            // Every strict prefix of the secret is withheld, so no partial credential is visible.
+            Require(!Log().Contains("sk-"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SPLIT-99\"}}}");
+            Require(!Log().Contains("SPLIT"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"31 end\"}}}");
+            Require(!Log().Contains(liveSecret));
+            Require(Log().Contains("token [redacted] end"));
+            // A control/ANSI sequence split over chunks is removed, not rendered as garbage.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\nA\\u001b[3\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"1mB\\u001b[0m\\u0007C\"}}}");
+            Require(Log().Contains("\nABC"));
+            Require(!Log().Contains('\u001b') && !Log().Contains('\u0007'));
+            // A CRLF split across deltas is one newline, never two.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\r\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\nnext\"}}}");
+            Require(Log().Contains("C\nnext") && !Log().Contains("\n\nnext"));
+            Require(split.Frame(100, 24).All(row => !StripAnsi(row).Contains('\u001b')));
+            // A pending tail is flushed when its block ends, still redacted.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" tail sk-live\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0}}");
+            Require(!Log().Contains("sk-live"));
+            Require(Log().Contains("tail [redacted]"));
+        }
+
+        // The content index belongs to the EVENT, not to its delta: an interleaved delta still lands
+        // in its own block, and each block keeps one entry.
+        using (var indexed = new SessionDashboard())
+        {
+            indexed.Add("ix", "indexed", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); indexed.Observe("ix", doc.RootElement); }
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task indexed\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"i1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"first\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"ix-t\",\"name\":\"Bash\",\"input\":{}}}}");
+            // Event-level index 0, delta WITHOUT its own index: must still reach block 0.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"-tail\"}}}");
+            var indexedLog = indexed.LogText("ix");
+            Require(indexedLog.Contains("first-tail"));
+            Require(!indexedLog.Contains("tool:"));
+        }
+
+        // A self-overlapping secret is matched at every start position, so no short strict prefix is
+        // ever published, and every split of it is safe.
+        using (var overlap = new SessionDashboard())
+        {
+            overlap.Add("ov", "overlap", "", "", ["ABAB"]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); overlap.Observe("ov", doc.RootElement); }
+            string Log() => overlap.LogText("ov");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task overlap\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"o1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ABAB\"}}}");
+            Require(Log().Contains("[redacted]"));
+            Require(!Log().Contains("AB"));
+            // Overlapping run, split so the second complete match starts before the first one ends.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"AB\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"AB\"}}}");
+            Require(!Log().Contains("AB"));
+            // Every split of a fresh secret stays hidden until it is complete.
+            using (var splitOverlap = new SessionDashboard())
+            {
+                splitOverlap.Add("so", "split overlap", "", "", ["ABAB"]);
+                void FeedSplit(string json) { using var doc = JsonDocument.Parse(json); splitOverlap.Observe("so", doc.RootElement); }
+                FeedSplit("{\"type\":\"user\",\"message\":{\"content\":\"Task split overlap\"}}");
+                FeedSplit("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"so1\"}}}");
+                foreach (var piece in new[] { "A", "B", "A", "B" })
+                {
+                    FeedSplit("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + piece + "\"}}}");
+                    Require(!splitOverlap.LogText("so").Contains("AB"));
+                }
+                Require(splitOverlap.LogText("so").Contains("[redacted]"));
+            }
+        }
+
+        // Prefixes at the hold limit defer their remainder until the full snapshot, including text
+        // after the secret. No intermediate frame may publish either side of a long credential.
+        foreach (var boundedCredential in new[] { new string('X', 5000), string.Concat(Enumerable.Range(0, 5000).Select(index => (char)(0x4e00 + index))) })
+        foreach (var prefix in new[] { MaxStreamHeld - 1, MaxStreamHeld, MaxStreamHeld + 1, 4500 })
+        {
+            using var cappedSecret = new SessionDashboard();
+            cappedSecret.Add("cap", "capped secret", "", "", [boundedCredential]);
+            void FeedCap(object message)
+            {
+                using var document = JsonDocument.Parse(JsonSerializer.Serialize(message));
+                cappedSecret.Observe("cap", document.RootElement);
+            }
+            FeedCap(new { type = "user", message = new { content = "Task cap" } });
+            FeedCap(new { type = "stream_event", @event = new { type = "message_start", message = new { id = "cap-message" } } });
+            void DeltaCap(string text) => FeedCap(new { type = "stream_event", @event = new { type = "content_block_delta", index = 0, delta = new { type = "text_delta", text } } });
+            DeltaCap("begin " + boundedCredential[..prefix]);
+            Require(!cappedSecret.LogText("cap").Contains(boundedCredential[..32]));
+            var cappedBlock = cappedSecret.Find("cap")!.StreamMessages.Values.Single().Blocks.Values.Single();
+            Require(cappedBlock.Pending.Length < MaxStreamHeld);
+            DeltaCap(boundedCredential[prefix..] + " SAFE-AFTER");
+            Require(!cappedSecret.LogText("cap").Contains(boundedCredential[^32..]));
+            if (prefix >= MaxStreamHeld) Require(!cappedSecret.LogText("cap").Contains("SAFE-AFTER"));
+            FeedCap(new { type = "assistant", message = new { id = "cap-message", content = new[] { new { type = "text", text = "begin " + boundedCredential + " SAFE-AFTER" } } } });
+            Require(cappedSecret.LogText("cap").Contains("begin [redacted] SAFE-AFTER"));
+            Require(Regex.Matches(cappedSecret.LogText("cap"), "SAFE-AFTER").Count == 1);
+        }
+
+        // A deferred block whose completed snapshot NEVER arrives (block stop, message stop, or only
+        // a result) fails closed: the withheld remainder is never published, and a result that does
+        // carry it is redacted and shown once. There is no path where an intermediate frame, a
+        // following chunk or the turn's end exposes credential characters.
+        using (var incomplete = new SessionDashboard())
+        {
+            var credential = new string('V', 5000);
+            incomplete.Add("inc", "incomplete", "", "", [credential]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); incomplete.Observe("inc", doc.RootElement); }
+            string Log() => incomplete.LogText("inc");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task incomplete\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"inc1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"begin " + credential[..4096] + "\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + credential[4096..] + " SAFE-AFTER\"}}}");
+            Require(!Log().Contains(credential[..32]));
+            Require(!Log().Contains(credential[^32..]));
+            Require(!Log().Contains("SAFE-AFTER"));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_stop\"}}");
+            Require(Log().Contains("begin [redacted]"));
+            Require(!Log().Contains("SAFE-AFTER"));
+            // The turn's result repeats the body the stream withheld. It cannot be claimed as an echo
+            // (the user never saw it), so it is shown once — still fully redacted.
+            Feed("{\"type\":\"result\",\"is_error\":false,\"result\":\"begin " + credential + " SAFE-AFTER\"}");
+            Require(!Log().Contains(credential[..32]));
+            Require(!Log().Contains(credential[^32..]));
+            Require(Regex.Matches(Log(), "SAFE-AFTER").Count == 1);
+            Require(Log().Contains("begin [redacted] SAFE-AFTER"));
+        }
+
+        // Two capped text blocks defer independently and are each restored from their own snapshot
+        // text, in protocol order, exactly once.
+        using (var twoCapped = new SessionDashboard())
+        {
+            var first = new string('A', 5000);
+            var second = new string('B', 5000);
+            twoCapped.Add("tc", "two capped", "", "", [first, second]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); twoCapped.Observe("tc", doc.RootElement); }
+            string Log() => twoCapped.LogText("tc");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task two capped\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"tc1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"one " + first[..4096] + "\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"two " + second[..4096] + "\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + first[4096..] + "\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + second[4096..] + "\"}}}");
+            Require(!Log().Contains(first[..32]) && !Log().Contains(second[..32]));
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"tc1\",\"content\":["
+                + "{\"type\":\"text\",\"text\":\"one " + first + "\"},"
+                + "{\"type\":\"text\",\"text\":\"two " + second + "\"}]}}");
+            Require(Log().Contains("one [redacted]\ntwo [redacted]"));
+            Require(!Log().Contains(first[..32]) && !Log().Contains(second[..32]));
+            Require(Regex.Matches(Log(), "\\[redacted\\]").Count == 2);
+        }
+
+        // An id-less capped stream that stops and is then repeated by an id-less snapshot is restored
+        // once. (Its key is the usage key, so a capped block still dedupes against that snapshot.)
+        using (var idlessCapped = new SessionDashboard())
+        {
+            var credential = new string('H', 5000);
+            idlessCapped.Add("ilc", "idless capped", "", "", [credential]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); idlessCapped.Observe("ilc", doc.RootElement); }
+            string Log() => idlessCapped.LogText("ilc");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task idless capped\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + credential[..4096] + "\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + credential[4096..] + "\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_stop\"}}");
+            Feed("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"" + credential + "\"}]}}");
+            Require(Log().Contains("[redacted]"));
+            Require(!Log().Contains(credential[..32]) && !Log().Contains(credential[^32..]));
+            Require(Regex.Matches(Log(), "\\[redacted\\]").Count == 1);
+        }
+
+        // Text that first looks exactly like a credential prefix is deferred at the hold limit even
+        // when it later diverges. The divergence is NOT guessed at: nothing of it is published until
+        // the completed snapshot, which shows the safe text once. That is the documented overflow
+        // trade-off — withheld text may wait, never leak.
+        using (var nearMiss = new SessionDashboard())
+        {
+            var credential = new string('V', 5000);
+            var near = credential[..4096] + "DIVERGED";
+            nearMiss.Add("nm", "near miss", "", "", [credential]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); nearMiss.Observe("nm", doc.RootElement); }
+            string Log() => nearMiss.LogText("nm");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task near miss\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"nm1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"begin " + credential[..4096] + "\"}}}");
+            Require(!Log().Contains(credential[..32]));
+            // The chunk that proves it is NOT the secret still does not publish it early.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"DIVERGED\"}}}");
+            Require(!Log().Contains(credential[..32]));
+            Require(!Log().Contains("DIVERGED"));
+            // The completed snapshot settles the whole block once; the near-miss is safe text.
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"nm1\",\"content\":[{\"type\":\"text\",\"text\":\"begin " + near + "\"}]}}");
+            Require(Regex.Matches(Log(), "DIVERGED").Count == 1);
+            Require(!Log().Contains(credential));
+        }
+
+        // An escape sequence split across chunks INSIDE a long credential is reassembled by the
+        // sanitiser, so the sanitised secret stays contiguous and is redacted, never published.
+        using (var ansiLong = new SessionDashboard())
+        {
+            var credential = new string('Z', 5000);
+            ansiLong.Add("az", "ansi long", "", "", [credential]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); ansiLong.Observe("az", doc.RootElement); }
+            string Log() => ansiLong.LogText("az");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task ansi long\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"az1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + credential[..2000] + "\\u001b[3\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"1m" + credential[2000..2600] + "\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"" + credential[2600..] + "\\u001b[0m\"}}}");
+            Require(!Log().Contains(credential[..32]));
+            Require(!Log().Contains(credential[^32..]));
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"az1\",\"content\":[{\"type\":\"text\",\"text\":\"" + credential + "\"}]}}");
+            Require(Log().Contains("[redacted]"));
+            Require(!Log().Contains(credential[..32]));
+            Require(!Log().Contains('\u001b'));
+            Require(ansiLong.Frame(120, 30).All(row => !StripAnsi(row).Contains('\u001b')));
+        }
+
+        // A snapshot may carry only some blocks: it settles those blocks and the later block keeps
+        // streaming into its own entry.
+        using (var partialSnapshot = new SessionDashboard())
+        {
+            partialSnapshot.Add("ps", "partial", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); partialSnapshot.Observe("ps", doc.RootElement); }
+            string Log() => partialSnapshot.LogText("ps");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task partial snapshot\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"ps1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"first\"}}}");
+            // Only block 0 is reported so far.
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"ps1\",\"content\":[{\"type\":\"text\",\"text\":\"first\"}]}}");
+            // Block 1 keeps streaming afterwards.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"SECOND-LIVE\"}}}");
+            Require(Log().Contains("SECOND-LIVE"));
+            Require(Regex.Matches(Log(), "first").Count == 1);
+            // The complete snapshot then settles both blocks without duplicating either.
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"ps1\",\"content\":[{\"type\":\"text\",\"text\":\"first\"},{\"type\":\"text\",\"text\":\"SECOND-LIVE\"}]}}");
+            Require(Regex.Matches(Log(), "SECOND-LIVE").Count == 1);
+            Require(Regex.Matches(Log(), "first").Count == 1);
+        }
+
+        // An id-less streamed body that stops and is then repeated by an id-less snapshot is shown
+        // once; a later, genuinely different turn is still displayed.
+        using (var idless = new SessionDashboard())
+        {
+            idless.Add("il", "idless", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); idless.Observe("il", doc.RootElement); }
+            string Log() => idless.LogText("il");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task idless\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"IDLESS-BODY\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_stop\"}}");
+            Feed("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"IDLESS-BODY\"}]}}");
+            Require(Regex.Matches(Log(), "IDLESS-BODY").Count == 1);
+            // A later turn's different body is displayed normally.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task idless next\"}}");
+            Feed("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"LATER-BODY\"}]}}");
+            Require(Log().Contains("LATER-BODY"));
+        }
+
+        // A tool whose streamed input JSON exceeds the bound is not shown early (no truncated detail
+        // line); the completed snapshot emits the full row exactly once.
+        using (var cappedTool = new SessionDashboard())
+        {
+            cappedTool.Add("ct", "capped tool", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); cappedTool.Observe("ct", doc.RootElement); }
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task capped tool\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"ct1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"ct-tool\",\"name\":\"Bash\",\"input\":{}}}}");
+            for (var index = 0; index < 64; index++)
+                Feed(JsonSerializer.Serialize(new { type = "stream_event", @event = new { type = "content_block_delta", index = 0, delta = new { type = "input_json_delta", partial_json = new string('p', 1024) } } }));
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0}}");
+            Require(!cappedTool.LogText("ct").Contains("Bash"));
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"ct1\",\"content\":[{\"type\":\"tool_use\",\"id\":\"ct-tool\",\"name\":\"Bash\",\"input\":{\"command\":\"dotnet build\"}}]}}");
+            Require(Regex.Matches(cappedTool.LogText("ct"), "dotnet build").Count == 1);
+            Require(cappedTool.Frame(110, 24).Any(row => row.Contains("TOOLS") && row.Contains("1 ")));
+        }
+
+        // Bounded accumulation: many deltas stay ONE entry and a long body hits the same guard as
+        // completed output; a later turn starts fresh blocks without touching the earlier entry.
+        using (var bounded = new SessionDashboard())
+        {
+            bounded.Add("bd", "bounded", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); bounded.Observe("bd", doc.RootElement); }
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task bounded\"}}");
+            var baseline = bounded.LogItemCount("bd");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"b1\"}}}");
+            for (var index = 0; index < 500; index++)
+                Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"chunk" + index + " \"}}}");
+            Require(bounded.LogItemCount("bd") == baseline + 1);
+            Require(bounded.LogText("bd").Contains("chunk499"));
+            var huge = new string('z', MaxItemChars + 5000);
+            Feed(JsonSerializer.Serialize(new { type = "stream_event", @event = new { type = "content_block_delta", index = 0, delta = new { type = "text_delta", text = huge } } }));
+            Require(bounded.LogText("bd").Contains(TruncatedMark));
+            // A new turn's streamed text is its own entry; the first turn's text is untouched.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task bounded next\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"b2\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"second turn body\"}}}");
+            Require(bounded.LogText("bd").Contains("second turn body"));
+            Require(bounded.LogText("bd").Contains("chunk499"));
+            // Id-less and empty frames stay sensible: an empty delta adds nothing and no id-less
+            // assistant delivery invents a duplicate of the streamed text.
+            var afterSecond = bounded.LogItemCount("bd");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{}}}");
+            Require(bounded.LogItemCount("bd") == afterSecond);
+            Require(Regex.Matches(bounded.LogText("bd"), "second turn body").Count == 1);
+        }
+
+        // Id-less streamed text is shown once and a plain delta envelope with no block metadata
+        // still reaches the screen (the provider may omit content_block_start).
+        using (var bare = new SessionDashboard())
+        {
+            bare.Add("ba", "bare", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); bare.Observe("ba", doc.RootElement); }
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task bare\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"delta\":{\"text\":\"bare body\"}}}");
+            Require(bare.LogText("ba").Contains("bare body"));
+            // A text seeded in content_block_start (no delta) is shown too.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task seeded\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"seeded\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"seeded text\"}}}");
+            Require(bare.LogText("ba").Contains("seeded text"));
+            // Without any stream, the complete-only path still shows the assistant text once and
+            // still suppresses its result echo.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task complete only\"}}");
+            Feed("{\"type\":\"assistant\",\"message\":{\"id\":\"c1\",\"content\":[{\"type\":\"text\",\"text\":\"complete only body\"}]}}");
+            Feed("{\"type\":\"result\",\"is_error\":false,\"result\":\"complete only body\"}");
+            Require(Regex.Matches(bare.LogText("ba"), "complete only body").Count == 1);
+        }
+
         // Usage is cumulative over the whole native conversation. Each unique message id contributes
         // once, a zero placeholder never erases a confirmed count, and a result is applied once.
         using (var usage = new SessionDashboard())
@@ -3763,6 +5732,43 @@ internal sealed class SessionDashboard : IDisposable
             Require(after.Any(row => row.Contains("1 conversation")));   // still one conversation
         }
 
+        // The first task heading stores the WHOLE title. An early Fit would lose text permanently, so a
+        // wide window could never show the rest; the heading row fits at draw time instead. A narrow
+        // window still ellipsizes the drawn title, and CJK/wide glyphs stay inside the cell budget.
+        using (var wide = new SessionDashboard())
+        {
+            const string longTitle = "Implement minimal proxy surface and single Windows entry point with aligned Markdown table output";
+            wide.Add("w", "Conversation 01", "", "", []);
+            using var heading = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "user", message = new { content = "Task renderer-review (contract revision 1): " + longTitle + "\nBody." } }));
+            wide.Observe("w", heading.RootElement);
+            var wideFrame = wide.Frame(160, 30);
+            Require(wideFrame.Any(row => row.Contains(longTitle)));                  // no stored truncation
+            Require(!wideFrame[0].Contains(Ellipsis));                          // and no drawn truncation at 160
+            var heading0 = wideFrame[0];
+            var statusAt = heading0.IndexOf("●", StringComparison.Ordinal);
+            Require(statusAt > 0 && !heading0[..statusAt].Contains(Ellipsis));
+            // The title column ends before the right metadata; the gap is only the intended breathing room.
+            var titleEnd = heading0.IndexOf("●", StringComparison.Ordinal);
+            Require(CellWidth(heading0) == 160 && titleEnd > 0);
+            // A narrow window truncates the DRAWN row only; the stored name and the log keep every word.
+            var narrowFrame = wide.Frame(60, 30);
+            Require(narrowFrame.Any(row => row.Contains("Implement minimal prox")));
+            Require(!narrowFrame.Any(row => row.Contains(longTitle)));
+            Require(narrowFrame.All(row => CellWidth(row) <= 60));
+            Require(wide.LogText("w").Contains(longTitle));
+            // And returning to a wide window restores the full title: nothing was lost on the way.
+            Require(wide.Frame(160, 30).Any(row => row.Contains(longTitle)));
+            // CJK titles are fitted by display cells, so a wide glyph is never split at the boundary.
+            using var cjk = new SessionDashboard();
+            cjk.Add("c", "Conversation 01", "", "", []);
+            var cjkTitle = string.Concat(Enumerable.Repeat("中文标题检查", 12));
+            using var cjkTask = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "user", message = new { content = "Task " + cjkTitle } }));
+            cjk.Observe("c", cjkTask.RootElement);
+            Require(cjk.Frame(120, 30).All(row => CellWidth(row) <= 120));
+            Require(cjk.Frame(41, 20).All(row => CellWidth(row) <= 41));
+            Require(cjk.LogText("c").Contains(cjkTitle));
+        }
+
         // Startup order: a user prompt can arrive BEFORE system/init. The starting pane must be promoted
         // to the first real session id, keeping its task, history, clock and selection - and it must still
         // count as exactly one conversation, with no selector strip.
@@ -3853,6 +5859,306 @@ internal sealed class SessionDashboard : IDisposable
             scrolling.Select("b"); Require(BodyText() == secondScrolled);
             scrolling.WheelDelta(int.MaxValue / 1000);
             Require(scrolling.Frame(100, 24).Length == 24);
+        }
+
+        // ------------------------------------------------------ terminal markdown (OUTPUT only)
+
+        using (var markdown = new SessionDashboard())
+        {
+            markdown.Add("md", "markdown", "", "", ["sk-md-SECRET"]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); markdown.Observe("md", doc.RootElement); }
+            void Body(string text) => Feed(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+            string Log() => markdown.LogText("md");
+            string[] Screen(int width = 100) => markdown.Frame(width, 30);
+            var body = string.Join("\n", new[]
+            {
+                "## Findings",
+                "",
+                "- first **important** item",
+                "- second item with `inline_code()`",
+                "",
+                "> quoted guidance",
+                "",
+                "```csharp",
+                "if (x < 3) {",
+                "    Run(\"中文\");",
+                "}",
+                "```",
+                "",
+                "Trailing **bold** text."
+            });
+            Body(body);
+            var screen = Screen();
+            var source = Log();
+            // The markers are consumed as decoration; the words themselves survive.
+            Require(screen.Any(row => row.Contains("Findings")));
+            Require(!screen.Any(row => row.Contains("## ")));
+            Require(screen.Any(row => row.Contains("first important item")));
+            Require(!screen.Any(row => row.Contains("**")));
+            var styled = markdown.FrameStyled(100, 30, true);
+            Require(styled.Any(row => row.Contains("\u001b[1;38;2;105;211;229mFindings")));
+            Require(styled.Any(row => row.Contains("\u001b[1;38;2;236;242;250mimportant")));
+            // A heading is cyan and body emphasis is the neutral bright tone: never swapped, so
+            // the two levels stay visually distinct instead of both looking like accent text.
+            Require(!styled.Any(row => row.Contains("\u001b[1;38;2;105;211;229mimportant")));
+            Require(!styled.Any(row => row.Contains("\u001b[1;38;2;236;242;250mFindings")));
+            Require(screen.Any(row => row.Contains("second item with inline_code()")));
+            Require(!screen.Any(row => row.Contains('`')));
+            Require(screen.Any(row => row.Contains("quoted guidance")));
+            // A fenced code block keeps its indentation and its fence lines do not reach the screen.
+            Require(screen.Any(row => row.Contains("    Run(\"中文\");")));
+            Require(!screen.Any(row => row.Contains("```")));
+            Require(!screen.Any(row => row.Contains("csharp")));
+            // Copy is exactly what the screen shows: markers are gone, and a soft wrap rejoins.
+            var listRow = Array.FindIndex(screen, row => row.Contains("second item"));
+            Require(listRow > 0);
+            var listColumn = CellWidth(screen[listRow][..screen[listRow].IndexOf("second item", StringComparison.Ordinal)]);
+            Require(markdown.PressBegin(listColumn, listRow, 100, 30));
+            Require(markdown.DragMove(listColumn + CellWidth("second item with inline_code()"), listRow, 100, 30));
+            Require(markdown.SelectedText() == "second item with inline_code()");
+            Require(markdown.ClearSelection());
+            // The audit log keeps the ORIGINAL source text: the display is a rendering, not data loss.
+            Require(source.Contains("## Findings") && source.Contains("**important**"));
+            // No escape sequence can enter through markdown text.
+            foreach (var row in markdown.FrameStyled(100, 30, true))
+                Require(!StripAnsi(row).Contains('\u001b'));
+        }
+
+        // Fails open while streaming: an unclosed fence or inline delimiter never swallows the body,
+        // and a credential split across deltas stays redacted through the markdown pass.
+        using (var partialMarkdown = new SessionDashboard())
+        {
+            partialMarkdown.Add("pm", "partial markdown", "", "", ["sk-md-SECRET"]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); partialMarkdown.Observe("pm", doc.RootElement); }
+            string Log() => partialMarkdown.LogText("pm");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"md1\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"## Heading\\n- item one \\n- item t\"}}}");
+            // An inline bold that is not closed on this line yet stays literal until it is.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"wo with **half\"}}}");
+            Require(Log().Contains("half"));
+            var partial = partialMarkdown.Frame(100, 30);
+            Require(partial.Any(row => row.Contains("half")));
+            // Closing the delimiter turns it into bold without losing characters.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" closed**\"}}}");
+            var closed = partialMarkdown.Frame(100, 30);
+            Require(closed.Any(row => row.Contains("half closed")));
+            Require(!closed.Any(row => row.Contains("**")));
+            // An unterminated fence keeps its body visible rather than hiding everything after it.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n```\\ncode line inside an unfinished fence\"}}}");
+            Require(Log().Contains("code line inside an unfinished fence"));
+            Require(partialMarkdown.Frame(100, 30).Any(row => row.Contains("code line inside an unfinished fence")));
+            // A credential split across deltas inside markdown stays redacted.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\\n`sk-md-\\n\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"SECRET` done\"}}}");
+            Require(!string.Join("\n", partialMarkdown.Frame(120, 30)).Contains("sk-md-SECRET"));
+            Require(!Log().Contains("sk-md-SECRET"));
+            // Thinking deltas remain invisible; only OUTPUT is styled or shown.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"## HIDDEN-REASONING\"}}}");
+            Require(!string.Join("\n", partialMarkdown.Frame(120, 30)).Contains("HIDDEN-REASONING"));
+        }
+
+        // ------------------------------------------------------ pipe tables (OUTPUT only)
+
+        // The user's real shape: a Chinese header with long inline-code commands and short exit codes.
+        // Wide: aligned columns, no pipes or separator row on screen, every value present. Narrow: the
+        // long column wraps while the short exit-code column stays whole. Resize: the same table
+        // reflows back. Malformed/partial/escaped/code-pipe/fenced input all stay lossless.
+        using (var table = new SessionDashboard())
+        {
+            table.Add("tb", "tables", "", "", ["sk-tbl-SECRET"]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); table.Observe("tb", doc.RootElement); }
+            void Say(string text) => Feed(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+            var body = string.Join("\n", new[]
+            {
+                "| 检查 | 退出码 |",
+                "| :--- | ---: |",
+                "| `python -m unittest test_usage_bridge`（20 项） | 0 |",
+                "| `python test_classifier_keepalive.py` | 0 |",
+                "| `npx tsc -b`（web） | 0 |",
+                "尾行内容应当保留。"
+            });
+            Say(body);
+            var wide = table.Frame(140, 40);
+            var text = string.Join("\n", wide);
+            Require(text.Contains("检查") && text.Contains("退出码"));
+            Require(text.Contains("python -m unittest test_usage_bridge") && text.Contains("（20 项）"));
+            Require(text.Contains("│"));                                     // the column rule
+            Require(!text.Contains("| :---") && !text.Contains("---:"));       // separator is structural
+            Require(!text.Contains("| 检查 |"));                              // outer pipes are structural
+            Require(text.Contains("尾行内容应当保留。"));
+            // The header and every body row start their cells at the same display columns.
+            var headerRow = Array.FindIndex(wide, row => row.Contains("检查") && row.Contains("退出码"));
+            var firstRow = Array.FindIndex(wide, row => row.Contains("test_usage_bridge"));
+            Require(headerRow >= 0 && firstRow > headerRow);
+            var ruleAt = wide[headerRow].IndexOf('│');
+            Require(ruleAt > 0 && wide[firstRow].IndexOf('│') == ruleAt);
+            // Right alignment on the exit-code column: every body value ends at the SAME display
+            // column as the header's last glyph, so a short "0" lines up under "退出码".
+            static int RightEdge(string row)
+            {
+                var text = row.TrimEnd();
+                return CellWidth(text);
+            }
+            var headerEdge = RightEdge(wide[headerRow]);
+            foreach (var row in wide.Skip(firstRow).Take(3))
+            {
+                Require(row.Contains('0') && RightEdge(row) == headerEdge);
+            }
+            // Styled: the header is the neutral Strong tone, body text stays body output tone.
+            var styled = table.FrameStyled(140, 40, true);
+            Require(styled.Any(row => row.Contains("\u001b[1;38;2;236;242;250m检查")));
+            Require(!styled.Any(row => row.Contains("\u001b[1;38;2;105;211;229m检查")));
+            // Narrow: the long column wraps, and every exit code and every word survives.
+            var narrowTable = string.Join("\n", table.Frame(52, 60));
+            // A wrapped cell stays one cell: each column's drawn rows are concatenated in order and
+            // stripped of layout spacing, so a long command is intact wherever its column wrapped.
+            var leftColumn = new StringBuilder();
+            var rightColumn = new StringBuilder();
+            foreach (var row in table.Frame(52, 60))
+            {
+                // The body gutter is '│' too, so the COLUMN rule is the last one on the row.
+                var split = row.LastIndexOf('│');
+                if (split < BodyGutterCells) continue;
+                leftColumn.Append(row[..split]);
+                rightColumn.Append(row[(split + 1)..]);
+            }
+            var leftText = leftColumn.ToString().Replace(" ", "").Replace("│", "");
+            var rightText = rightColumn.ToString().Replace(" ", "").Replace("│", "");
+            Require(narrowTable.Contains("退出码"));
+            Require(leftText.Contains("python-munittesttest_usage_bridge"));
+            Require(leftText.Contains("（20项）"));
+            Require(leftText.Contains("pythontest_classifier_keepalive.py"));
+            Require(leftText.Contains("npxtsc-b（web）"));
+            // Every short exit code stays in its own column: three body rows, three visible zeros.
+            Require(rightText.Contains("000"));
+            Require(table.Frame(52, 60).All(row => CellWidth(row) <= 52));
+            Require(table.Frame(31, 60).All(row => CellWidth(row) <= 31));
+            // Resize back: the wide layout is restored from the same source (the cache reflows).
+            Require(string.Join("\n", table.Frame(140, 40)) == text);
+            // Escaped pipes and pipes inside inline code are cell content, not column separators.
+            Say("| A | B |\n| --- | --- |\n| `a \\| b` | plain \\| pipe |");
+            var escaped = string.Join("\n", table.Frame(100, 30));
+            Require(escaped.Contains("a | b") && escaped.Contains("plain | pipe"));
+            Require(table.Frame(100, 30).All(row => CellWidth(row) <= 100));
+            // A table that cannot keep two cells per column falls back to the literal source: nothing lost.
+            var cramped = table.Frame(18, 60);
+            Require(cramped.All(row => CellWidth(row) <= 18));
+            // A row whose cell count disagrees ends the table: the remainder is drawn literally, not lost.
+            Say("| X | Y |\n| --- | --- |\n| 1 | 2 |\n| stray | row | extra |");
+            // A partial stream (header and delimiter only, no body yet) is not yet a table.
+            using (var partialTable = new SessionDashboard())
+            {
+                partialTable.Add("pt", "partial table", "", "", []);
+                void PFeed(string json) { using var doc = JsonDocument.Parse(json); partialTable.Observe("pt", doc.RootElement); }
+                void PSay(string text) => PFeed(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+                PSay("| 检查 | 退出码 |\n| :--- | ---: |");
+                var half = string.Join("\n", partialTable.Frame(100, 30));
+                Require(half.Contains("检查") && half.Contains("退出码"));
+                PSay("| 检查 | 退出码 |\n| :--- | ---: |\n| `run` | 0 |");
+                var grown = string.Join("\n", partialTable.Frame(100, 30));
+                Require(grown.Contains("run") && grown.Contains('│'));
+                // A fence wins over table detection: fenced pipes stay literal code.
+                PSay("```\n| not | a table |\n| --- | --- |\n```");
+                var fenced = string.Join("\n", partialTable.Frame(100, 30));
+                Require(fenced.Contains("| not | a table |"));
+            }
+            // Copy agrees with the drawn row: a selected table line yields exactly the cells, the
+            // column rule and the padding as shown, with no pipe or separator syntax reappearing.
+            var copyRow = Array.FindIndex(table.Frame(140, 40), row => row.Contains("test_classifier_keepalive"));
+            Require(copyRow > 0);
+            var copyText = table.Frame(140, 40)[copyRow].TrimEnd();
+            Require(table.PressBegin(BodyGutterCells, copyRow, 140, 40));
+            Require(table.DragMove(CellWidth(copyText), copyRow, 140, 40));
+            var copied = table.SelectedText();
+            Require(copied.Contains("python test_classifier_keepalive.py"));
+            Require(copied.Contains("│") && copied.Contains('0'));
+            Require(!copied.Contains("| ") && !copied.Contains("---"));
+            Require(table.ClearSelection());
+            // Redaction runs BEFORE parsing, so a secret inside a table cell never reaches the screen.
+            using (var secretTable = new SessionDashboard())
+            {
+                secretTable.Add("st", "secret table", "", "", ["sk-tbl-SECRET"]);
+                using var doc = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "| Key | Value |\n| --- | --- |\n| token | sk-tbl-SECRET |" } } } }));
+                secretTable.Observe("st", doc.RootElement);
+                var shown = string.Join("\n", secretTable.Frame(100, 30));
+                Require(shown.Contains("token") && shown.Contains(Redacted));
+                Require(!shown.Contains("sk-tbl-SECRET"));
+                // The audit log keeps the table SOURCE row (redacted, as all log text is), so the
+                // pipe layout is a display form and no cell content was discarded by it.
+                Require(secretTable.LogText("st").Contains("| token |"));
+                Require(!secretTable.LogText("st").Contains("sk-tbl-SECRET"));
+            }
+        }
+
+        // TOOL and TASK text stays literal: no markdown processing can rewrite plumbing rows.
+        using (var literal = new SessionDashboard())
+        {
+            literal.Add("lt", "literal", "", "", []);
+            using var tool = JsonDocument.Parse("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"echo '## not a heading'\"}}]}}");
+            literal.Observe("lt", tool.RootElement);
+            using var task = JsonDocument.Parse("{\"type\":\"user\",\"message\":{\"content\":\"Task Fix the **parser** and `runner`\"}}");
+            literal.Observe("lt", task.RootElement);
+            var rows = literal.Frame(120, 30);
+            Require(rows.Any(row => row.Contains("echo '## not a heading'")));
+            Require(rows.Any(row => row.Contains("Fix the **parser** and `runner`")));
+        }
+
+        // ---------------------------------------------- browsing history stays put
+
+        // While the user reads older output, new entries, a streamed block growing in place and the
+        // bounded-log drop below the viewport must not move the visible rows. Only returning to the
+        // bottom (End, or scrolling all the way down) resumes following the newest output.
+        using (var browsing = new SessionDashboard())
+        {
+            browsing.Add("h", "history", "", "", []);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); browsing.Observe("h", doc.RootElement); }
+            void Line(string text) => Feed(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+            for (var index = 0; index < 60; index++) Line("History line " + index);
+            // Trailing paint padding and the right-hand scrollbar cell are chrome, not content; the
+            // thumb legitimately moves when the total grows, the text underneath must not.
+            string Body() => string.Join("\n", browsing.Frame(100, 24).Skip(7)
+                .Select(row => (row.Length > 0 ? row[..^1] : row).TrimEnd()));
+            // Lay the view out once (as the pump does) so the body geometry exists, then scroll up.
+            Body();
+            // Two wheel notches up: the viewport no longer shows the newest rows.
+            Require(browsing.WheelDelta(120) && browsing.WheelDelta(120));
+            var pinned = Body();
+            Require(pinned.Length > 0 && !pinned.Contains("History line 59"));
+            // A new completed entry below the viewport, then a second one: repeated appends must not
+            // accumulate drift.
+            Line("History line 60 appended while reading");
+            Require(Body() == pinned);
+            Line("History line 61 appended while reading");
+            Require(Body() == pinned);
+            // A live streamed block that grows in place below the viewport.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"live\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"streaming first line\\n\"}}}");
+            Require(Body() == pinned);
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"and a second streamed line\\nand a third\\n\"}}}");
+            Require(Body() == pinned);
+            // The bounded log starts dropping its OLDEST entries — none of them is under the reader —
+            // so the retained rows still do not move.
+            for (var index = 0; index < 150; index++) Line("History overflow " + index);
+            Require(browsing.LogItemCount("h") == MaxLogItems);
+            Require(Body() == pinned);
+            // End resumes following: the newest output is visible again and stays so as text arrives.
+            Require(browsing.Key(ConsoleKey.End));
+            var following = Body();
+            Require(following.Contains("History overflow 149"));
+            Line("History line after End");
+            Require(Body().Contains("History line after End"));
+            // Scrolling fully back down also resumes following.
+            Require(browsing.WheelDelta(120));
+            var away = Body();
+            Require(browsing.WheelDelta(-120 * 1000));
+            Require(Body() != away && Body().Contains("History line after End"));
+            Line("History line after wheel down");
+            Require(Body().Contains("History line after wheel down"));
+            // The scrollbar drag pins the content it lands on, and a later append cannot move it.
+            Require(browsing.ScrollbarDrag(10, 100, 24));
+            var dragged = Body();
+            Line("History line after drag");
+            Require(Body() == dragged);
         }
         using (var live = new SessionDashboard())
         {
@@ -4031,6 +6337,237 @@ internal sealed class SessionDashboard : IDisposable
             Require(before != picked);
         }
 
+        // A scrollbar gesture is STABLE while the log keeps streaming. The reported symptom was a
+        // drag that reversed direction near the oldest end and snapped back: the thumb map changed
+        // under the pointer, and the layout re-derived the offset from a view anchor mid-gesture.
+        // One gesture is one affine map, so holding the pointer still holds the content still even
+        // though new output is arriving, and the same pointer rows always mean the same direction.
+        using (var stable = new SessionDashboard())
+        {
+            stable.Add("t", "streaming", "", "", []);
+            void Grow(string text)
+            {
+                using var line = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+                stable.Observe("t", line.RootElement);
+            }
+            for (var index = 0; index < 120; index++) Grow("Streamed row " + index);
+            var stableFrame = stable.Frame(80, 24);
+            var stableRule = Array.FindIndex(stableFrame, row => row.TrimStart().StartsWith('─'));
+            Require(stableRule >= 0 && stable.ScrollbarTestable(80, 24));
+            // Grab the thumb mid-track, then hold that pointer row while output keeps arriving. The
+            // view must not move at all: the gesture's own map is still in force, so streamed growth
+            // can neither shift the grabbed content nor snap anything towards the bottom.
+            // Park the view mid-track so the thumb really is under the press row, then grab it.
+            Require(stable.ScrollbarDrag(stableRule + 10, 80, 24));
+            Require(stable.PressBegin(79, stableRule + 10, 80, 24));
+            // The press itself never jumps: grabbing the thumb keeps the content under the pointer.
+            Require(!stable.DragMove(79, stableRule + 10, 80, 24));
+            var grabbed = stable.ScrollForTest;
+            Require(grabbed > 0);
+            // The scrollbar's own last column is excluded: its thumb legitimately shrinks as the log
+            // grows. What must not move is the TEXT the pointer is holding.
+            static string Text(string[] rows, int rule) => string.Join("\n",
+                rows.Skip(rule + 1).Select(row => row.Length > 0 ? row[..^1] : row));
+            var heldFrame = Text(stable.Frame(80, 24), stableRule);
+            var heldRow = stable.TopLineForTest;
+            for (var index = 0; index < 25; index++) Grow("While dragging " + index);
+            // A larger document makes the thumb shorter, so the DISPLAYED thumb row drifts even though
+            // the content under the pointer does not; the grab holds the CONTENT, which is the point:
+            // the first drawn body row is still the same absolute log line, and the same text.
+            Require(stable.TopLineForTest == heldRow);
+            Require(Text(stable.Frame(80, 24), stableRule) == heldFrame);
+            Require(grabbed > 0);
+            // Streaming growth must not change what one pointer row MEANS. The grab freezes the
+            // content-per-thumb-row scale; the live bounds still clamp, so the endpoints and
+            // retention keep working while the pointer keeps its direction.
+            var grownThumb = stable.ScrollbarThumbRowsForTest;
+            var grownMax = stable.ScrollMaximumForTest;
+            // Keep the grabbed entry retained so older content still exists for the UP assertion.
+            // Bounded-history eviction is covered separately by the trimming regressions.
+            for (var index = 0; index < 40; index++) Grow("Scale probe " + index);
+            stable.Frame(80, 24);
+            Require(stable.ScrollbarThumbRowsForTest <= grownThumb);    // the thumb never grew
+            Require(stable.ScrollMaximumForTest > grownMax);            // and the content really grew
+            // UP one thumb row after growth still reveals OLDER content; DOWN still reveals newer.
+            var preUp = stable.ScrollForTest;
+            Require(stable.DragMove(79, stableRule + 9, 80, 24));
+            var postUp = stable.ScrollForTest;
+            Require(postUp > preUp);                                   // up the track = older
+            Require(stable.DragMove(79, stableRule + 10, 80, 24));
+            Require(stable.ScrollForTest < postUp);                    // down again = newer
+            // Reversal is immediate and monotone: rows down the track are strictly newer, rows up are
+            // strictly older, so turning round at any point never fights the pointer.
+            var held = stable.ScrollForTest;
+            Require(stable.DragMove(79, stableRule + 12, 80, 24));
+            var downScroll = stable.ScrollForTest;
+            Require(downScroll < held);                            // down the track = newer rows
+            Require(stable.DragMove(79, stableRule + 10, 80, 24));
+            var backScroll = stable.ScrollForTest;
+            Require(backScroll > downScroll && backScroll <= held); // back up = older rows, no overshoot
+            Require(stable.DragMove(79, stableRule + 8, 80, 24));
+            Require(stable.ScrollForTest > backScroll);            // further up = older still
+            // A burst of growth between two drag records cannot reverse the direction the pointer says.
+            for (var index = 0; index < 40; index++) Grow("Burst " + index);
+            stable.Frame(80, 24);
+            var beforeBurst = stable.ScrollForTest;
+            Require(stable.DragMove(79, stableRule + 9, 80, 24));
+            Require(stable.ScrollForTest < beforeBurst);           // the pointer still decides
+            Require(stable.PressEnd());
+            // Releasing ends the gesture, so the next press is a text drag and not a swallowed one.
+            Require(!stable.ScrollbarDraggingForTest);
+            // Toggling the direction at an end is a no-op rather than a jump: the oldest row stays put.
+            Require(stable.ScrollbarDrag(stableRule + 1, 80, 24));
+            var atOldest = stable.ScrollForTest;
+            Require(stable.ScrollbarDrag(stableRule + 1, 80, 24));
+            Require(stable.ScrollForTest == atOldest);
+            // Only the newest row resumes following; nothing else snaps the view to the bottom.
+            Require(stable.ScrollbarDrag(stableRule + 23, 80, 24));
+            Require(stable.ScrollForTest == 0);
+            Grow("tail");
+            stable.Frame(80, 24);
+            Require(stable.ScrollForTest == 0);                    // following the newest output again
+            // A gesture that never reaches the bottom keeps its view while the stream grows.
+            Require(stable.ScrollbarDrag(stableRule + 10, 80, 24));
+            var pinned = stable.ScrollForTest;
+            Require(pinned > 0);
+            var pinnedBody = Text(stable.Frame(80, 24), stableRule);
+            for (var index = 0; index < 10; index++) Grow("more " + index);
+            stable.Frame(80, 24);
+            Require(stable.ScrollForTest > pinned);                // same content, now further back
+            Require(Text(stable.Frame(80, 24), stableRule) == pinnedBody);
+            // BOTH directions after growth, driven from a fresh grab: the frozen map must keep one
+            // pointer row meaning the same direction however much arrived since the press, and the
+            // oldest end must clamp instead of flipping. Exercised from the middle so neither
+            // direction starts already clamped.
+            Require(stable.ScrollbarDrag(stableRule + 10, 80, 24));
+            Require(stable.PressBegin(79, stableRule + 10, 80, 24));
+            var twoWay = stable.ScrollForTest;
+            Require(twoWay > 0);
+            for (var index = 0; index < 30; index++) Grow("Two way " + index);
+            stable.Frame(80, 24);
+            Require(stable.DragMove(79, stableRule + 6, 80, 24));   // four rows UP
+            var upAfterGrowth = stable.ScrollForTest;
+            Require(upAfterGrowth > twoWay);                        // UP = older, never the reverse
+            Require(stable.DragMove(79, stableRule + 14, 80, 24));   // eight rows DOWN, past the start
+            var downAfterGrowth = stable.ScrollForTest;
+            Require(downAfterGrowth < upAfterGrowth);               // DOWN = newer again
+            // One more row down, then back up: the pair must move in the pointer's direction too.
+            var reversed = downAfterGrowth;
+            Require(stable.DragMove(79, stableRule + 15, 80, 24));
+            Require(stable.ScrollForTest <= reversed);
+            var beforeUpAtEnd = stable.ScrollForTest;
+            Require(stable.DragMove(79, stableRule + 14, 80, 24));
+            Require(stable.ScrollForTest >= beforeUpAtEnd);
+            // NEAR THE OLDEST END an upward row still means older, and cannot overshoot the stop.
+            Require(stable.DragMove(79, stableRule + 1, 80, 24));
+            var oldest = stable.ScrollForTest;
+            Require(oldest == stable.ScrollMaximumForTest);
+            for (var index = 0; index < 15; index++) Grow("Near oldest " + index);
+            stable.Frame(80, 24);
+            // Growth moves the maximum, so the frozen gesture stays inside the live bounds rather
+            // than snapping towards the newest rows.
+            Require(stable.DragMove(79, stableRule + 2, 80, 24));
+            Require(stable.ScrollForTest < oldest);                 // DOWN is still newer here
+            var backTowardsOldest = stable.ScrollForTest;
+            Require(stable.DragMove(79, stableRule + 1, 80, 24));
+            Require(stable.ScrollForTest > backTowardsOldest);      // and UP is older again
+            Require(stable.ScrollForTest <= stable.ScrollMaximumForTest);
+            Require(stable.PressEnd());
+        }
+
+        // A grab on the MIDDLE of a multi-row thumb moves by its own delta, not to the track end.
+        // Endpoint clamps are thumb-TOP coordinates, so the gesture has to normalize the grab
+        // offset; otherwise the first drag row reads as "already at the newest" and snaps there.
+        foreach (var wheel in new[] { 2, 4 })
+        {
+            using var wide = new SessionDashboard();
+            wide.Add("w", "wide thumb", "", "", []);
+            void Feed(string text)
+            {
+                using var entry = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+                wide.Observe("w", entry.RootElement);
+            }
+            for (var index = 0; index < 20; index++) Feed("Wide row " + index);
+            wide.Frame(80, 24);
+            Require(wide.Wheel(true, wheel));
+            var wideFrame = wide.Frame(80, 24);
+            var wideTrack = wideFrame
+                .Select((text, index) => (text, index))
+                .Where(row => row.text.EndsWith('▐'))
+                .Select(row => row.index)
+                .ToArray();
+            // The fixture is only meaningful with a thumb several rows tall.
+            Require(wideTrack.Length >= 3);
+            var wideGrab = wideTrack[wideTrack.Length / 2];
+            var wideBefore = wide.TopLineForTest;
+            var wideMaximum = wide.ScrollMaximumForTest;
+            var wideBodyTop = Array.FindIndex(wideFrame, row => row.TrimStart().StartsWith('─')) + 1;
+            var wideTravel = Math.Max(1, (24 - wideBodyTop) - wideTrack.Length);
+            var wideBound = (int)Math.Ceiling((double)wideMaximum / wideTravel);
+            Require(wide.PressBegin(79, wideGrab, 80, 24));
+            Require(wide.DragMove(79, wideGrab + 1, 80, 24));      // ONE row down the track
+            wide.Frame(80, 24);
+            var wideAfter = wide.TopLineForTest;
+            // One row down reveals NEWER content, and by no more than the frozen scale allows.
+            Require(wideAfter > wideBefore);
+            Require(wideAfter - wideBefore <= wideBound);
+            // One row back up restores older content; the grab offset did not shift the origin.
+            Require(wide.DragMove(79, wideGrab, 80, 24));
+            var wideBack = wide.TopLineForTest;
+            Require(wideBack < wideAfter);
+            Require(wideBack <= wideBefore);
+            // The same normalization makes the endpoints reachable: the top row is the track's top.
+            Require(wide.DragMove(79, wideBodyTop, 80, 24));
+            Require(wide.ScrollForTest == wide.ScrollMaximumForTest);
+            Require(wide.DragMove(79, 23, 80, 24));
+            Require(wide.ScrollForTest == 0);
+            Require(wide.PressEnd());
+        }
+
+        // The highlight follows the row an edge scroll just revealed: the pointer never moves, so
+        // the focus has to be re-mapped against the geometry the pump painted LAST.
+        using (var syncing = new SessionDashboard())
+        {
+            syncing.Add("y", "sync", "", "", []);
+            void Line(string text)
+            {
+                using var entry = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+                syncing.Observe("y", entry.RootElement);
+            }
+            for (var index = 0; index < 120; index++) Line("Sync row " + index);
+            var syncFrame = syncing.Frame(80, 24);
+            var syncRule = Array.FindIndex(syncFrame, row => row.TrimStart().StartsWith('─'));
+            var syncTop = syncRule + 1;
+            // Anchor inside the body, then drag above it: the edge scroll owns the motion.
+            Require(syncing.PressBegin(10, syncTop + 4, 80, 24));
+            Require(syncing.DragMove(10, syncTop - 3, 80, 24));
+            Require(syncing.DragEdgeActive);
+            long clock = 4000;
+            var scrolled = false;
+            for (var step = 0; step < 4 && !scrolled; step++)
+                scrolled = syncing.EdgeScroll(clock += 40);
+            Require(scrolled);
+            // A stationary pointer has to end up highlighting the row the layout actually painted:
+            // the layout re-maps it against the row map it just built, so the focus lands on the
+            // older row the edge scroll uncovered instead of lagging one frame behind.
+            var syncFrameAfter = syncing.Frame(80, 24);
+            var focusAfterScroll = syncing.SelectionFocusLineForTest;
+            Require(syncing.SelectionFocusLineForTest == syncing.TopLineForTest);
+            // The highlight is painted on the FIRST drawn body row, not on a row that shifted away.
+            var highlighted = syncing.RenderFrame(80, 24, true).Lines[syncRule + 1];
+            Require(highlighted.Contains(SelectionBackground));
+            Require(!syncing.RenderFrame(80, 24, true).Lines[^1].Contains(SelectionBackground));
+            // A second layout with no motion leaves the focus on that same row: it never drifts back.
+            syncing.Frame(80, 24);
+            Require(syncing.SelectionFocusLineForTest == focusAfterScroll);
+            Require(syncFrameAfter.Length == 24);
+            // Release keeps the committed selection and stops the edge, so the view stops moving.
+            Require(syncing.PressEnd());
+            var released = syncing.ScrollForTest;
+            Require(!syncing.EdgeScroll(clock += 40) && syncing.ScrollForTest == released);
+            Require(syncing.HasSelection);
+        }
+
         // Middle-button browsing toggles on and off, moves vertically and leaves End working.
         using (var browse = new SessionDashboard())
         {
@@ -4040,18 +6577,192 @@ internal sealed class SessionDashboard : IDisposable
                     browse.Observe("b", line.RootElement);
             static string BodyText(SessionDashboard view) => string.Join(((char)10).ToString(), view.Frame(80, 24).Skip(7));
             var newest = BodyText(browse);
-            Require(browse.MiddleClick());                     // on
-            Require(browse.Browse(-2));                        // movement up the pointer scrolls content
+            // Timed browsing: the pointer row and the elapsed time together decide the step, so the
+            // fixture advances an explicit clock instead of relying on one call per movement record.
+            var clock = 1000L;
+            bool Tick(int pointerRow, int ticks = 12, int stepMs = 33)
+            {
+                var moved = false;
+                for (var index = 0; index < ticks; index++)
+                {
+                    clock += stepMs;
+                    moved |= browse.BrowseAt(pointerRow, clock);
+                }
+                return moved;
+            }
+            Require(browse.MiddleClick(browse.Frame(80, 24).Length - 3, clock));   // on, anchored low
+            var anchor = browse.BrowseAnchorForTest;
+            Require(!Tick(anchor + 1));                        // deadzone: a jitter never moves it
+            Require(BodyText(browse) == newest);
+            Require(Tick(anchor - 4));                         // pointer above the anchor: older rows
             Require(BodyText(browse) != newest);
-            Require(!browse.MiddleClick());                    // a second click turns it off
-            Require(!browse.Browse(-2));                       // inert while off
-            Require(browse.MiddleClick());                     // on again
+            // A stall never becomes a catch-up burst: a tick that arrives minutes late moves only
+            // what one clamped step allows (the cap is 50 ms), so a blocked or minimized process
+            // cannot make the view leap when it resumes.
+            var before_stall = browse.ScrollForTest;
+            browse.BrowseAt(anchor - 4, clock + 60_000);
+            browse.BrowseAt(anchor - 4, clock + 120_000);
+            Require(browse.ScrollForTest - before_stall <= 3);
+            Require(!browse.MiddleClick(-1, clock + 130_000));  // a second click turns it off
+            var stopped = BodyText(browse);
+            Require(!Tick(anchor - 4));                        // inert while off
+            Require(BodyText(browse) == stopped);
+            Require(browse.MiddleClick(-1, clock));            // on again
             Require(browse.Key(ConsoleKey.End));               // End still reaches the newest row
             Require(BodyText(browse) == newest);
             // End also stops browsing, so the next middle click is a fresh ON transition.
             Require(!browse.BrowsingForTest);
             Require(browse.MiddleClick() && browse.BrowsingForTest);
             Require(!browse.MiddleClick() && !browse.BrowsingForTest);   // leave it off
+        }
+
+        // Timed middle-click browsing: direction and speed come from the pointer's distance to the
+        // anchor, the STEP comes from elapsed time (never from how often a record arrived), a small
+        // jitter stays inside the deadzone, a reversal turns immediately, and a minimize/resume gap is
+        // never replayed as a burst.
+        using (var middle = new SessionDashboard())
+        {
+            middle.Add("n", "middle", "", "", []);
+            for (var index = 0; index < 120; index++)
+                using (var line = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Middle row " + index } } } })))
+                    middle.Observe("n", line.RootElement);
+            var midFrame = middle.Frame(80, 24);
+            var midRule = Array.FindIndex(midFrame, row => row.TrimStart().StartsWith('─'));
+            var anchorRow = midRule + 1 + 10;
+            long clock = 5000;
+            Require(middle.MiddleClick(anchorRow, clock));
+            // Distance 0 and the one-row deadzone never move the view, however long it ticks.
+            for (var index = 0; index < 20; index++) Require(!middle.BrowseAt(anchorRow, clock += 33));
+            for (var index = 0; index < 20; index++) Require(!middle.BrowseAt(anchorRow + 1, clock += 33));
+            Require(middle.ScrollForTest == 0);
+            // Far above the anchor: older rows, and the late tick is no faster than a usual one.
+            Require(middle.BrowseAt(anchorRow - 12, clock += 33));
+            var upOne = middle.ScrollForTest;
+            Require(upOne > 0);
+            // A very late tick is clamped, so a stall cannot become a jump.
+            Require(middle.BrowseAt(anchorRow - 12, clock += 60_000));
+            Require(middle.ScrollForTest - upOne <= 3);
+            // Reversal: the very next tick moves the OTHER way, with no leftover banked fraction.
+            var beforeReverse = middle.ScrollForTest;
+            for (var index = 0; index < 10; index++) middle.BrowseAt(anchorRow + 12, clock += 33);
+            Require(middle.ScrollForTest < beforeReverse);
+            // Nearest the anchor is slow, farthest is fast: equal time, different distance.
+            Require(SpeedFor(2, 3, 40) < SpeedFor(20, 3, 40));
+            Require(SpeedFor(200, 3, 40) == SpeedFor(24, 3, 40));      // ramps out, never beyond
+            Require(SpeedFor(1, 3, 40) >= SpeedFor(0, 3, 40));
+            // Middle click again stops the motion for good.
+            Require(!middle.MiddleClick(-1, clock += 33));
+            var stoppedAt = middle.ScrollForTest;
+            for (var index = 0; index < 20; index++) Require(!middle.BrowseAt(anchorRow - 12, clock += 33));
+            Require(middle.ScrollForTest == stoppedAt);
+            // A minimize pauses the motion without ending the gesture; coming back resumes it from
+            // the current time instead of replaying the time spent away.
+            Require(middle.MiddleClick(anchorRow, clock += 33));
+            Require(middle.BrowseAt(anchorRow - 12, clock += 200));
+            var atMinimize = middle.ScrollForTest;
+            middle.SuspendMotion();
+            Require(middle.BrowsingForTest);                       // still armed, just not moving
+            Require(middle.BrowseAt(anchorRow - 12, Environment.TickCount64 + 600_000) == false
+                || middle.ScrollForTest - atMinimize <= 3);
+            // End stops browsing as well, and only the newest row resumes following.
+            Require(middle.MiddleClick(-1, clock += 33) == false);
+            Require(middle.MiddleClick(anchorRow, clock += 33));
+            middle.BrowseAt(anchorRow - 12, clock += 200);
+            Require(middle.ScrollForTest > 0);
+            Require(middle.Key(ConsoleKey.End));
+            Require(middle.ScrollForTest == 0 && !middle.BrowsingForTest);
+        }
+
+        // Dragging a selection past the bottom keeps revealing text: the edge scroll is TIMER driven
+        // and bounded, so it advances with the pointer held perfectly still and stops on release.
+        using (var edge = new SessionDashboard())
+        {
+            edge.Add("e", "edge", "", "", []);
+            for (var index = 0; index < 120; index++)
+                using (var line = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text = "Edge row " + index } } } })))
+                    edge.Observe("e", line.RootElement);
+            var edgeFrame = edge.Frame(80, 24);
+            var edgeRule = Array.FindIndex(edgeFrame, row => row.TrimStart().StartsWith('─'));
+            var bodyTop = edgeRule + 1;
+            var bodyHeight = 24 - bodyTop;
+            // Anchor inside the body, then drag WELL past the oldest row (above the body).
+            Require(edge.PressBegin(10, bodyTop + 2, 80, 24));
+            Require(edge.DragMove(10, bodyTop - 4, 80, 24));
+            Require(edge.DragEdgeActive);
+            // The pointer does not move at all, yet the view keeps scrolling towards older rows.
+            long edgeClock = 2000;
+            var seen = edge.ScrollForTest;
+            var ticks = 0;
+            for (var step = 0; step < 6; step++)
+            {
+                var moved = edge.EdgeScroll(edgeClock += 40);
+                ticks++;
+                if (moved) Require(edge.ScrollForTest > seen);
+                seen = edge.ScrollForTest;
+            }
+            Require(ticks == 6 && edge.ScrollForTest > 0);
+            // Bounded: a handful of ticks can never outrun the body several times over.
+            Require(edge.ScrollForTest < bodyHeight * 6);
+            // A stall is clamped, not replayed.
+            var beforeStall = edge.ScrollForTest;
+            edge.EdgeScroll(edgeClock += 120_000);
+            Require(edge.ScrollForTest - beforeStall <= 4);
+            // Release stops every motion at once.
+            Require(edge.PressEnd());
+            var released = edge.ScrollForTest;
+            Require(!edge.DragEdgeActive);
+            for (var step = 0; step < 10; step++) Require(!edge.EdgeScroll(edgeClock += 40));
+            Require(edge.ScrollForTest == released);
+            // The committed selection survives the release; Escape then clears it.
+            Require(edge.HasSelection);
+            Require(edge.ClearSelection() && !edge.HasSelection);
+            // Dragging the other way (below the body) scrolls towards newer rows.
+            Require(edge.PressBegin(10, bodyTop + bodyHeight - 2, 80, 24));
+            Require(edge.DragMove(10, bodyTop + bodyHeight + 5, 80, 24));
+            Require(edge.DragEdgeActive);
+            // It scrolls towards the NEWEST rows: downwards until it either follows the log again or
+            // reaches the bottom. Either way that is monotonically newer, never a jump past it.
+            var newestSide = edge.ScrollForTest;
+            var towardNewest = 0;
+            for (var step = 0; step < 6 && edge.ScrollForTest > 0; step++)
+                if (edge.EdgeScroll(edgeClock += 40)) towardNewest++;
+            Require(towardNewest > 0);
+            Require(edge.ScrollForTest < newestSide);
+            Require(edge.PressEnd());
+        }
+
+        // A successful copy clears the highlight and the gesture; a FAILED copy keeps the selection
+        // for a retry and never claims the text reached the clipboard.
+        using (var copy = new SessionDashboard())
+        {
+            copy.Add("c", "copy", "", "", []);
+            using (var text = JsonDocument.Parse("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"copy this exact span\"}]}}"))
+                copy.Observe("c", text.RootElement);
+            var copyFrame = copy.Frame(80, 24);
+            var copyRow = Array.FindIndex(copyFrame, row => row.Contains("copy this"));
+            Require(copyRow > 0);
+            var copyAt = CellWidth(copyFrame[copyRow][..copyFrame[copyRow].IndexOf("copy this", StringComparison.Ordinal)]);
+            Require(copy.PressBegin(copyAt, copyRow, 80, 24));
+            Require(copy.DragMove(copyAt + 9, copyRow, 80, 24));
+            Require(copy.PressEnd());
+            var expected = copy.SelectedText();
+            Require(expected == "copy this");
+            // Failure: the selection stays, nothing is selected-looking-cleared, a retry can still copy.
+            copy.WithClipboardForTest(false, () => Require(!copy.CopySelection()));
+            Require(copy.HasSelection);
+            Require(copy.SelectedText() == expected);
+            // Success: highlight and gesture clear, the selected TEXT is untouched and reusable.
+            copy.WithClipboardForTest(true, () => Require(copy.CopySelection()));
+            Require(!copy.HasSelection);
+            Require(copy.SelectedText() == "");
+            Require(copy.LogText("c").Contains("copy this exact span"));   // the body is never altered
+            // The cleared state is real: a right click now does nothing and a new drag starts clean.
+            copy.WithClipboardForTest(true, () => Require(!copy.CopySelection()));
+            Require(copy.PressBegin(copyAt, copyRow, 80, 24));
+            Require(copy.DragMove(copyAt + 4, copyRow, 80, 24));
+            Require(copy.SelectedText() == "copy");
+            copy.WithClipboardForTest(true, () => Require(copy.CopySelection()));
+            Require(!copy.HasSelection);
         }
 
         // Drag selection: highlight, exact copy text (wrapped and CJK included), and a right click
@@ -4290,6 +7001,51 @@ internal sealed class SessionDashboard : IDisposable
             // The pump's resize path calls ClearSelection, which also disarms browsing.
             Require(resized.ClearSelection());
             Require(!resized.HasSelection && !resized.BrowsingForTest);
+        }
+
+        // Wrapped rows are cached PER ENTRY: interactivity (repaint, scroll, scrollbar drag, selection
+        // drag) reuses every cached row, and a live delta re-wraps only the block that grew, not the
+        // history above it. This is the invariant the headless benchmark measures.
+        using (var cached = new SessionDashboard())
+        {
+            cached.Add("k", "cache", "", "", []);
+            using (var cachePrompt = JsonDocument.Parse("{\"type\":\"user\",\"message\":{\"content\":\"Task Cache fixture\"}}"))
+                cached.Observe("k", cachePrompt.RootElement);
+            void Push(string text)
+            {
+                using var doc = JsonDocument.Parse(JsonSerializer.Serialize(new { type = "assistant", message = new { content = new[] { new { type = "text", text } } } }));
+                cached.Observe("k", doc.RootElement);
+            }
+            for (var index = 0; index < 80; index++) Push("## Section " + index + "\nBody 第" + index + "段 with `code`\n");
+            cached.Frame(100, 30);
+            var afterLayout = cached.RebuildsForTest;
+            // Repaints, wheel steps, a scrollbar drag and a text drag never rebuild the log.
+            for (var index = 0; index < 5; index++) cached.Frame(100, 30);
+            for (var index = 0; index < 5; index++) cached.Wheel(up: true);
+            var cacheRule = Array.FindIndex(cached.Frame(100, 30), row => row.TrimStart().StartsWith('─'));
+            cached.ScrollbarDrag(cacheRule + 3, 100, 30);
+            Require(cached.PressBegin(10, cacheRule + 2, 100, 30));
+            cached.DragMove(30, cacheRule + 3, 100, 30);
+            cached.PressEnd();
+            Require(cached.RebuildsForTest == afterLayout);
+            // A streamed delta re-wraps exactly once (the growing block), and a second repaint of that
+            // same text costs nothing.
+            using (var start = JsonDocument.Parse("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"cache-stream\",\"usage\":{\"input_tokens\":5}}}}"))
+                cached.Observe("k", start.RootElement);
+            using (var delta = JsonDocument.Parse("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"streamed 流式\\n\"}}}"))
+                cached.Observe("k", delta.RootElement);
+            var beforeStream = cached.RebuildsForTest;
+            cached.Frame(100, 30);
+            Require(cached.RebuildsForTest == beforeStream + 1);
+            cached.Frame(100, 30);
+            Require(cached.RebuildsForTest == beforeStream + 1);
+            // A resize re-wraps because the width changed: the cache is keyed by width, never stale.
+            cached.Frame(80, 30);
+            Require(cached.RebuildsForTest == beforeStream + 2);
+            // The rendered result is identical to a fresh, uncached layout of the same log.
+            var rendered = cached.Frame(80, 30);
+            cached.InvalidateWrapCachesForBenchmark();
+            Require(cached.Frame(80, 30).SequenceEqual(rendered));
         }
 
         // A short log has nothing to scroll, so no scrollbar is drawn at all.

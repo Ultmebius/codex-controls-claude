@@ -18,6 +18,14 @@ export interface TerminalInfo {
   windowPid?: number;
   startedMinimized?: boolean;
   windowLaunchMs?: number;
+  /** Milliseconds from the start message to the first painted conversation frame. */
+  firstFrameMs?: number;
+  /** Whether that first frame carried a conversation (false when the readiness cap was reached). */
+  firstFramePainted?: boolean;
+  paintedColumns?: number;
+  paintedRows?: number;
+  /** True when the user brought the window forward, so startup deliberately did not minimize it. */
+  userRestored?: boolean;
   effort?: string;
   effortSource?: string;
 }
@@ -25,7 +33,28 @@ interface WindowInfo {
   launchMs?: number;
   handle: string;
   pid: number;
+  /**
+   * The window was created minimized so Windows Terminal never steals focus. It is then restored
+   * without activation so the dashboard paints behind the user's window, and the host minimizes it
+   * exactly once after the first conversation frame.
+   */
+  launchedMinimized?: boolean;
+  /** Live state at claim time: false while the window is painting behind the foreground window. */
   minimized: boolean;
+  /**
+   * System-wide last-input tick observed before Windows Terminal was spawned. A user restore is
+   * always preceded by user input; the host compares this baseline at first-frame time so Windows
+   * Terminal's own startup activation is not mistaken for a restore.
+   */
+  inputBaseline?: number;
+  /**
+   * The launcher observed the user take the window during its startup settle (in front with user
+   * input after the launch baseline), so it deliberately did not bury it again. The host honours this
+   * as final and never minimizes the window.
+   */
+  userRestoredAtLaunch?: boolean;
+  /** Where the claim ended: "claimed" then "painting", or a legacy "claimed". */
+  stage?: string;
 }
 interface LaunchInfo {
   pipe: string;
@@ -146,6 +175,10 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
   private finished = false;
   private connected = false;
   private started = false;
+  /** Last user-input tick at spawn time; the host uses it to tell self-activation from a restore. */
+  private inputBaseline?: number;
+  /** The launcher saw the user take the window; the host must neither bury nor minimize it. */
+  private restoredAtLaunch = false;
   private socket?: Socket;
   private readonly sockets = new Set<Socket>();
   private readonly server = createServer();
@@ -232,6 +265,22 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
         if (message.type === "spawned") {
           this.info.workerPid = Number(message.pid);
           this.ready();
+        } else if (message.type === "ready") {
+          // The host reports a REAL painted conversation frame, not a timer: the window is
+          // minimized exactly once after that frame, so the taskbar preview is composed from the
+          // real dashboard. Advisory only, so a missing report changes nothing.
+          if (Number.isSafeInteger(message.firstFrameMs))
+            this.info.firstFrameMs = Number(message.firstFrameMs);
+          if (typeof message.firstFramePainted === "boolean")
+            this.info.firstFramePainted = message.firstFramePainted;
+          // The host minimizes exactly once, AFTER the first painted conversation frame. A window the
+          // user already brought forward is deliberately not minimized and is reported as such.
+          if (typeof message.minimized === "boolean")
+            this.info.startedMinimized = message.minimized;
+          if (message.userRestored === true) this.info.userRestored = true;
+          if (Number.isSafeInteger(message.columns))
+            this.info.paintedColumns = Number(message.columns);
+          if (Number.isSafeInteger(message.rows)) this.info.paintedRows = Number(message.rows);
         } else if (message.type === "stdout" && typeof message.data === "string") {
           if (!this.stdout.write(Buffer.from(message.data, "base64"))) {
             socket.pause();
@@ -259,10 +308,22 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
         (window) => {
           this.info.windowHandle = window.handle;
           this.info.windowPid = window.pid;
-          this.info.startedMinimized = window.minimized;
+          // Captured before the worker existed; the host compares it against input at first-frame
+          // time so Windows Terminal's own activation is never mistaken for a user restore.
+          if (typeof window.inputBaseline === "number") this.inputBaseline = window.inputBaseline;
+          // A user restore observed by the launcher is final: it must reach the host so the single
+          // post-frame minimization is skipped rather than overriding the user's choice.
+          if (window.userRestoredAtLaunch === true) this.restoredAtLaunch = true;
+          // `startedMinimized` is EVIDENCE, never a launch intent: it is set only when the window was
+          // actually minimized. The production host minimizes after the first painted conversation
+          // frame, so this stays unset until its `ready` report confirms it. `launchedMinimized` is
+          // just the spawn intent (Windows Terminal never steals focus), and `minimized` is the live
+          // state at claim time — false while the dashboard paints behind the foreground window.
+          if (window.minimized) this.info.startedMinimized = true;
           this.info.windowLaunchMs = window.launchMs;
           if (this.finished) closeWindow(this.info);
-          else if (!window.minimized) fail(new Error("Windows Terminal did not minimize"));
+          else if (window.launchedMinimized === false && !window.minimized)
+            fail(new Error("Windows Terminal did not minimize"));
           else {
             this.startWorker();
             this.ready();
@@ -274,7 +335,10 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
     if (opts.signal.aborted) queueMicrotask(abort);
   }
   private startWorker() {
-    if (this.started || this.finished || !this.socket || !this.info.startedMinimized) return;
+    // The gate is "this exact window has been claimed", not "the window is already minimized": the
+    // worker must start while the dashboard paints, because the host minimizes only after the first
+    // conversation frame. Requiring a completed minimization here would deadlock the two sides.
+    if (this.started || this.finished || !this.socket || !this.info.windowHandle) return;
     this.started = true;
     const { command, args, cwd, env } = this.opts;
     this.send({
@@ -286,6 +350,12 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
       effort: this.options.effort ?? "unknown",
       effortSource: this.options.effortSource ?? "not reported",
       windowHandle: this.info.windowHandle,
+      // Observed before the worker existed: the host compares it against the system input tick when
+      // the first frame is painted, so Windows Terminal's own startup activation is not mistaken for
+      // the user bringing the window forward.
+      inputBaseline: this.inputBaseline,
+      // The launcher's own restore decision; the host treats it as final and does not minimize.
+      windowRestoredAtLaunch: this.restoredAtLaunch,
     });
     this.stdin.on("data", (chunk: Buffer) => {
       if (!this.send({ type: "stdin", data: chunk.toString("base64") })) {
@@ -296,7 +366,10 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
     this.stdin.once("end", () => this.send({ type: "end" }));
   }
   private ready() {
-    if (this.info.workerPid && this.info.startedMinimized) clearTimeout(this.timer);
+    // Startup is complete once the exact window is claimed and the worker is spawned. The single
+    // post-first-frame minimization happens later and must not extend the startup timeout: a quiet
+    // worker is not a failed launch.
+    if (this.info.workerPid && this.info.windowHandle) clearTimeout(this.timer);
   }
   private send(value: unknown) {
     return this.socket?.write(JSON.stringify(value) + "\n") ?? false;
