@@ -8,7 +8,7 @@
 
 A local Codex plugin for supervising Claude Code with your configured model and tools. Codex breaks work into bounded tasks, delegates implementation, waits for actionable events, and independently runs the acceptance checks before unlocking dependent work.
 
-[Install](#install) · [First task](#first-task) · [Dashboard](#worker-dashboard) · [How it works](#how-it-works) · [Testing](docs/testing.md) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [First task](#first-task) · [Dashboard](#worker-dashboard) · [How it works](#how-it-works) · [Development and testing](docs/testing.md)
 
 </div>
 
@@ -135,7 +135,7 @@ From a checkout, `node scripts/doctor.mjs` provides the same configuration diagn
 
 ## Development and provenance
 
-The public repository includes maintained source, the shared engine's regression suite and pinned development dependencies. Start with [CONTRIBUTING.md](CONTRIBUTING.md), [testing](docs/testing.md) and the [changelog](CHANGELOG.md). Git marketplace checkouts include tracked development files; the documented runtime export uses an explicit file list.
+The public repository includes maintained source, the shared engine's regression suite and pinned development dependencies. See [development and testing](docs/testing.md) for setup, builds and runtime export, and the [changelog](CHANGELOG.md) for version history. Git marketplace checkouts include tracked development files; the documented runtime export uses an explicit file list.
 
 Execution and session functionality derives from [xihuai18/claude-code-mcp](https://github.com/xihuai18/claude-code-mcp) at commit [`47aa47b4`](https://github.com/xihuai18/claude-code-mcp/tree/47aa47b4f7f02f5dd5c6bc9174d30a42f54484f2) (MIT). The Claude Agent SDK query consumer, session lifecycle, executable selection and permission normalization come from there. The Codex task ledger, event subscriptions, independent acceptance gate, local process ownership, native terminal dashboard and plugin packaging are built on top of it.
 

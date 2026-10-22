@@ -81,7 +81,7 @@ test("runtime export excludes the development harness and preserves the launch f
 });
 
 test("local documentation links resolve and prose contains no invisible zero-width spaces", () => {
-  const files = ["README.md", "CONTRIBUTING.md", "CHANGELOG.md", ...readdirSync(path.join(root, "docs")).filter(name => name.endsWith(".md")).map(name => `docs/${name}`)];
+  const files = ["README.md", "CHANGELOG.md", ...readdirSync(path.join(root, "docs")).filter(name => name.endsWith(".md")).map(name => `docs/${name}`)];
   for (const name of files) {
     const file = path.join(root, name), text = readFileSync(file, "utf8");
     assert.ok(!text.includes("\u200b"), name);

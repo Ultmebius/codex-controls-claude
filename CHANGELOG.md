@@ -5,6 +5,7 @@
 - Replaced the terminal mark with a centred circular pixel ring in the existing 144×96 canvas and 24×16 logical grid.
 - Added a clockwise Codex-blue-to-Claude-red gradient loop and matching fallback colours.
 - Updated the native dashboard demonstration and README terminal capture to use English throughout.
+- Consolidated development setup, build and runtime-export instructions in the testing guide.
 
 ## 0.10.3 — 2026-10-22
 

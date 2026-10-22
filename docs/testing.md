@@ -1,6 +1,17 @@
-# Testing and acceptance
+# Development, testing and acceptance
 
-The public checkout contains the maintained plugin/shared-engine source and its regression tests. Start with [CONTRIBUTING.md](../CONTRIBUTING.md). Default automated checks use synthetic inputs and mocked SDK queries; they do not start a paid model, import an account or require credentials.
+The public checkout contains the maintained plugin/shared-engine source and its regression tests. Default automated checks use synthetic inputs and mocked SDK queries; they do not start a paid model, import an account or require credentials.
+
+## Development setup
+
+Use Node.js 22 or newer. Windows tests and native builds use the .NET SDK pinned in `server/source/global.json` (10.0.204). POSIX ownership tests require `flock`. Real Claude Code execution also needs the prerequisites in the [README](../README.md#requirements).
+
+```bash
+git clone https://github.com/Ultmebius/codex-controls-claude.git
+cd codex-controls-claude/server/source
+```
+
+The maintained TypeScript source lives in `server/source/src/`, with `src/plugin-entry.ts` exposing the plugin's ten orchestration tools. Ordinary plugin use runs the bundled `server/index.mjs`; TypeScript changes take effect after rebuilding and reconnecting the plugin. Regression tests live in `server/source/tests/`, and package contracts live in `server/source/package-tests/`.
 
 ## Deterministic checks
 
@@ -48,6 +59,10 @@ The Windows/native build also regenerates and decodes all cached logo frames bef
 npm run build:native
 ```
 
+`npm run build` performs both builds. JavaScript is written to `server/index.mjs`; native outputs go to `server/native/`. Source changes must include the corresponding rebuilt artifacts. Native builds use the pinned SDK and omit checkout-specific Git revision stamping so another clone can reproduce the committed DLL.
+
+When changing dependencies, update `server/source/package.json` and its lockfile together, then run `npm ci` and the checks above. Package and manifest versions must agree. Runtime dependencies are bundled, so ordinary plugin users do not run `npm install`.
+
 After a release build, from the repository root:
 
 ```bash
@@ -56,7 +71,15 @@ git diff --exit-code -- server/index.mjs server/native server/source/native/Term
 
 Run the deterministic checks on both Ubuntu/Node 22 and Windows/Node 24 before a release. Both runs rebuild and check the bundled JavaScript; Windows additionally runs the native self-tests and checks the DLL and generated logo for drift. No model credentials are involved.
 
-The runtime exporter is tested against an explicit list of files. It omits development source, tests, dependencies and test output. A Git marketplace installation includes tracked repository files; the exporter, rather than an assumed ignore mechanism, defines the smaller standalone release.
+## Runtime export
+
+From `server/source`, export a clean installable directory:
+
+```bash
+npm run package:runtime -- ../../artifacts/runtime
+```
+
+The destination must be empty. The exporter uses an explicit file list containing manifests, marketplace metadata, skills, documentation, assets, launch scripts and built server/native files. It omits development source, tests, dependencies, CI and test output. A Git marketplace installation includes tracked repository files; the exporter defines the smaller standalone release. Rebuilding or running the regression suite requires the public repository checkout.
 
 ## Optional real-model and desktop acceptance
 

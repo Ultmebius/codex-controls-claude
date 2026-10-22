@@ -5,7 +5,7 @@ import path from "node:path";
 export const runtimeEntries = [
   "plugin.json", "mcp.json", ".codex-plugin", ".mcp.json", ".agents/plugins/marketplace.json",
   "skills", "assets", "docs", "scripts", "server/index.mjs", "server/native",
-  "README.md", "CONTRIBUTING.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md",
+  "README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md",
 ];
 
 export function exportRuntime(root, destination) {
