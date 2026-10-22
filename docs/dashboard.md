@@ -1,6 +1,6 @@
 # Windows worker dashboard
 
-The [README](../README.md#worker-dashboard) shows the public default logo in a demonstration capture. Each actual Windows worker runs in its own Windows Terminal with a compiled C#/.NET host. Rendering uses its native event stream without extra model calls or supervisor polling. Other supported execution paths use stdio.
+The [README](../README.md#worker-dashboard) shows the public default logo in a demonstration capture. Each actual Windows worker runs in its own Windows Terminal with a compiled C#/.NET host. Rendering uses its native event stream without extra model calls or supervisor polling.
 
 ## Header and activity
 

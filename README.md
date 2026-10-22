@@ -20,10 +20,10 @@ A local Codex plugin for supervising Claude Code with your configured model and 
 | Node.js 22+ | Local MCP server; dependencies are bundled for normal use |
 | Claude Code | Installed locally, with working native authentication or gateway configuration |
 | Windows Terminal and .NET 10 runtime | Native Windows worker dashboard; SIXEL enables the pixel logo |
-| Git Bash | Native Claude Code toolchain on Windows |
-| `flock` | Process ownership and metadata locking on POSIX systems |
 
-Windows worker execution and the native dashboard have been exercised locally, and the deterministic suite runs on Windows and Ubuntu. Other POSIX environments use the stdio path and require `flock`; they have no verified desktop dashboard in this project. Building the native helper requires the **.NET 10 SDK**; running the shipped helper requires only its runtime.
+Claude Code manages shell selection through its native settings. When its PowerShell tool is enabled, it is the primary shell and prefers PowerShell 7 (`pwsh.exe`), with Windows PowerShell 5.1 as a fallback. The worker inherits your existing shell configuration. See the [Claude Code PowerShell documentation](https://code.claude.com/docs/en/tools-reference#powershell-tool).
+
+Building the native helper requires the **.NET 10 SDK**; running the shipped helper requires only its runtime.
 
 ## Install
 

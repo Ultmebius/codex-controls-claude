@@ -4,7 +4,7 @@ The public checkout contains the maintained plugin/shared-engine source and its 
 
 ## Development setup
 
-Use Node.js 22 or newer. Windows tests and native builds use the .NET SDK pinned in `server/source/global.json` (10.0.204). POSIX ownership tests require `flock`. Real Claude Code execution also needs the prerequisites in the [README](../README.md#requirements).
+Use Node.js 22 or newer. Tests and native builds use the .NET SDK pinned in `server/source/global.json` (10.0.204). Real Claude Code execution also needs the prerequisites in the [README](../README.md#requirements).
 
 ```bash
 git clone https://github.com/Ultmebius/codex-controls-claude.git
@@ -27,7 +27,7 @@ npm test
 
 The TypeScript suite covers task dependencies and acceptance, rework, event waits, guidance, budgets, recovery, ownership, worker slots, native permission forwarding, streaming and the shared engine. The shared engine includes entry points used by regression tests; the installed plugin still exposes only its ten orchestration tools.
 
-On Windows, `pretest` builds a native lease helper from the checked-out C# sources into `.test-build/`. Install the SDK version pinned in `server/source/global.json`. Ubuntu uses `flock` for process-lock tests. These tests do not open worker terminals.
+`pretest` builds a native lease helper from the checked-out C# sources into `.test-build/`. Install the SDK version pinned in `server/source/global.json`. These tests do not open worker terminals.
 
 Node contract tests cover manifest/catalog identity, contained icons and skills, MCP launch settings, an explicit runtime export, documentation links and cold discovery of the bundled server's ten tools. The event-wait tests prove cursor continuation, cancellation and terminal/error handling.
 
@@ -69,7 +69,7 @@ After a release build, from the repository root:
 git diff --exit-code -- server/index.mjs server/native server/source/native/TerminalHost/LogoSixelData.g.cs
 ```
 
-Run the deterministic checks on both Ubuntu/Node 22 and Windows/Node 24 before a release. Both runs rebuild and check the bundled JavaScript; Windows additionally runs the native self-tests and checks the DLL and generated logo for drift. No model credentials are involved.
+Before a release, run the deterministic checks, rebuild and check the bundled JavaScript, run the native self-tests, and check the DLL and generated logo for drift. No model credentials are involved.
 
 ## Runtime export
 
