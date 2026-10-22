@@ -95,7 +95,7 @@ Guidance can also reach a worker through `orchestrator_message`:
 - **`queue`** delivers exactly one input at the next native turn boundary, in FIFO order, with the follow-on segment reserved from the persistent turn budget first;
 - **`interrupt`** additionally asks the runtime to end the current turn; the segment drains, then the message lands in the same saved conversation ahead of still-unsent queued messages.
 
-Reported states are transport truth only — `queued`, `interruption_requested`, `delivering`, `delivered`, `failed`, `cancelled`. `delivered` never claims the model read the text; the worker's own visible reply is where it states what it understood.
+Limits are eight unsent messages, 32 accepted guidance records per run and 4000 characters per message. Reported states are transport truth only — `queued`, `interruption_requested`, `delivering`, `delivered`, `failed`, `cancelled`. `delivered` never claims the model read the text; the worker's own visible reply is where it states what it understood.
 
 ### Recovery and continuity
 
