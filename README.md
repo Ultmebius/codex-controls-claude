@@ -69,7 +69,7 @@ Codex chooses a single run or a team according to the work. See [usage and recov
 
 The dashboard shows the reported model, effort, native permissions, tool count, elapsed time, cumulative conversation tokens and streaming output. It supports terminal Markdown, scrolling, text selection and copying. A `~` marks a partly estimated token count; `—` marks a value the runtime has not reported.
 
-The logo uses cached animation frames and pauses while minimized. Terminals without SIXEL use a half-block fallback. Thinking blocks stay out of the dashboard, and displayed fields are sanitized. See [dashboard controls and accounting](docs/dashboard.md) for the complete interaction and rendering behavior.
+The circular logo cycles clockwise through Codex blue, Claude red and the shades between them. It uses cached animation frames and pauses while minimized. Terminals without SIXEL use a half-block fallback. Thinking blocks stay out of the dashboard, and displayed fields are sanitized. See [dashboard controls and accounting](docs/dashboard.md) for the complete interaction and rendering behavior.
 
 ## How it works
 

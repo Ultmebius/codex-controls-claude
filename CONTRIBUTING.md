@@ -33,7 +33,7 @@ npm run build:native
 npm run test:native
 ```
 
-`npm run build` performs both builds. The JavaScript bundle is written to `server/index.mjs`; native outputs go to `server/native/`. The native build regenerates the cached animation from the manifest's packaged logo before compiling. Build-only PNG/SIXEL dependencies are pinned alongside the other development dependencies.
+`npm run build` performs both builds. The JavaScript bundle is written to `server/index.mjs`; native outputs go to `server/native/`. The native build generates the circular terminal logo and decodes its cached clockwise animation before compiling. Build-only PNG/SIXEL dependencies are pinned alongside the other development dependencies.
 
 Review the rebuilt files together with their source. `npm run build:js` regenerates the bundled JavaScript, and on Windows `npm run build:native` also rebuilds the native helper and generated graphic data; both rebuilds are checked against the tracked files for drift. Changes to the bundled source must include the corresponding artifacts.
 

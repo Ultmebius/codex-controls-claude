@@ -1,8 +1,8 @@
-// Build-time only: derives the dashboard logo assets from the packaged PNG.
+// Build-time only: generates the dashboard's circular pixel ring.
 // Runtime never decodes images or runs an encoder; it emits cached Sixel payloads.
 //
-// Pixel-art contract: sample the logo silhouette on a 24x16 logical grid, colour each logical
-// pixel once from a cyclic violet->blue->cyan ramp, then replicate that exact colour in a 6x6
+// Pixel-art contract: centre a 16x16 circle on the existing 24x16 logical grid, colour each logical
+// pixel once from a cyclic Codex-blue -> Claude-red -> blue ramp, then replicate that colour in a 6x6
 // output square (nearest neighbour, no antialias, no dithering). The 144x96 stored image fits the
 // six-row header at the verified 8x16 console cell (6 rows, 18 columns).
 //
@@ -10,35 +10,29 @@
 // same cyclic gradient. The host cycles cached strings locally at ~30fps; no per-tick encoding.
 // Every payload is decoded again below, so a dithering or background regression in the encoder
 // fails the build instead of reaching the terminal.
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { PNG } from "pngjs";
 import { decode, sixelEncode, toRGBA8888 } from "sixel";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { values } = parseArgs({ options: {
-  input: { type: "string" }, output: { type: "string" },
-  "legacy-eye": { type: "boolean", default: false }
+  output: { type: "string" }
 } });
-const pngPath = values.input ? path.resolve(values.input) : [
-  path.resolve(here, "../../../../codex-controls-claude/assets/codex-controls-claude.png"),
-  path.resolve(here, "../../../../assets/codex-controls-claude.png")
-].find(candidate => existsSync(candidate));
-if (!pngPath) throw new Error("Packaged logo PNG not found");
 const outPath = values.output ? path.resolve(values.output) : path.resolve(here, "../TerminalHost/LogoSixelData.g.cs");
 
-// Closed loop: violet -> blue -> cyan -> violet, so a phase shift never shows a seam.
+// Interpolate directly between both endpoints, returning through the same intermediate shades.
 const STOPS = [
-  [0x8b, 0x5c, 0xf6],
   [0x3b, 0x82, 0xf6],
-  [0x22, 0xd3, 0xee],
-  [0x8b, 0x5c, 0xf6]
+  [0xd9, 0x77, 0x57],
+  [0x3b, 0x82, 0xf6]
 ];
 const LOGICAL_WIDTH = 24;
 const LOGICAL_HEIGHT = 16;
 const SCALE = 6;
+const OUTER_RADIUS = 8;
+const INNER_RADIUS = 5; // Three logical pixels (18 output pixels) of ring thickness.
 // 30fps over a two-second loop: small enough phase steps not to read as stepping, and the host
 // can hold every payload in memory (~4.5KB each).
 const FRAMES = 60;
@@ -54,40 +48,15 @@ function ramp(t) {
   return a.map((value, channel) => Math.round(value + (b[channel] - value) * local));
 }
 
-const png = PNG.sync.read(readFileSync(pngPath));
-let minX = png.width, minY = png.height, maxX = -1, maxY = -1;
-for (let y = 0; y < png.height; y++) {
-  for (let x = 0; x < png.width; x++) {
-    if (png.data[(y * png.width + x) * 4 + 3] > 8) {
-      if (x < minX) minX = x;
-      if (y < minY) minY = y;
-      if (x > maxX) maxX = x;
-      if (y > maxY) maxY = y;
-    }
-  }
-}
-const inkWidth = maxX - minX + 1;
-const inkHeight = maxY - minY + 1;
-
-// Binary silhouette at logical pixel centres: pixel art wants a hard edge, not coverage.
-function sourceInkAt(x, y, columns, rows) {
-  const sx = Math.max(minX, Math.min(maxX, Math.floor(minX + ((x + 0.5) * inkWidth) / columns)));
-  const sy = Math.max(minY, Math.min(maxY, Math.floor(minY + ((y + 0.5) * inkHeight) / rows)));
-  return png.data[(sy * png.width + sx) * 4 + 3] >= 128;
-}
-
 function inkAt(x, y, columns, rows) {
-  // Restore the reference's separate small pupil without redrawing the rest of the silhouette.
-  if (values["legacy-eye"] && columns === LOGICAL_WIDTH && rows === LOGICAL_HEIGHT && x === 12 && y === 7) return false;
-  return sourceInkAt(x, y, columns, rows);
+  // Equal physical axes: the wider canvas adds horizontal space, never stretches the circle.
+  const dx = (x + 0.5) * LOGICAL_WIDTH / columns - LOGICAL_WIDTH / 2;
+  const dy = (y + 0.5) * LOGICAL_HEIGHT / rows - LOGICAL_HEIGHT / 2;
+  const radiusSquared = dx * dx + dy * dy;
+  return radiusSquared <= OUTER_RADIUS ** 2 && radiusSquared >= INNER_RADIUS ** 2;
 }
-const corrections = [];
 const logicalRows = Array.from({length: LOGICAL_HEIGHT}, (_, y) =>
-  Array.from({length: LOGICAL_WIDTH}, (_, x) => {
-    if (sourceInkAt(x, y, LOGICAL_WIDTH, LOGICAL_HEIGHT) !== inkAt(x, y, LOGICAL_WIDTH, LOGICAL_HEIGHT)) corrections.push([x,y]);
-    return inkAt(x, y, LOGICAL_WIDTH, LOGICAL_HEIGHT) ? '#' : '.';
-  }).join(''));
-if (JSON.stringify(corrections) !== (values["legacy-eye"] ? '[[12,7]]' : '[]')) throw new Error('Unexpected silhouette change');
+  Array.from({length: LOGICAL_WIDTH}, (_, x) => inkAt(x, y, LOGICAL_WIDTH, LOGICAL_HEIGHT) ? '#' : '.').join(''));
 
 // One colour per logical pixel, then an exact SCALE x SCALE replication. The palette is a
 // 256-step ramp so every frame has fine shades; sixelEncode matches palette entries exactly, so no
@@ -121,7 +90,10 @@ for (let frame = 0; frame < FRAMES; frame++) {
   for (let ly = 0; ly < LOGICAL_HEIGHT; ly++) {
     for (let lx = 0; lx < LOGICAL_WIDTH; lx++) {
       if (!inkAt(lx, ly, LOGICAL_WIDTH, LOGICAL_HEIGHT)) continue;
-      const t = 0.25 * (lx / (LOGICAL_WIDTH - 1) + ly / (LOGICAL_HEIGHT - 1)) - frame / FRAMES;
+      // Screen y grows downwards: atan2 increases clockwise. Subtracting time advances each
+      // colour clockwise, with blue initially at the top and red at the bottom.
+      const angle = (Math.atan2(ly + 0.5 - LOGICAL_HEIGHT / 2, lx + 0.5 - LOGICAL_WIDTH / 2) + Math.PI / 2) / (2 * Math.PI);
+      const t = angle - frame / FRAMES;
       const color = nearest(ramp(t));
       used.set(color.join(","), color);
       for (let dy = 0; dy < SCALE; dy++) {
@@ -143,7 +115,7 @@ for (let frame = 0; frame < FRAMES; frame++) {
 // every step including last->first moves the gradient with no duplicate frames.
 const inkMap = Array.from({length: LOGICAL_HEIGHT}, (_, ly) =>
   Array.from({length: LOGICAL_WIDTH}, (_, lx) => inkAt(lx, ly, LOGICAL_WIDTH, LOGICAL_HEIGHT)));
-// Pure green is outside the violet/blue/cyan ramp, so it unambiguously marks transparent pixels.
+// Pure green is outside the blue/red ramp, so it unambiguously marks transparent pixels.
 const fill = toRGBA8888(0, 255, 0);
 const transparent = [0, 255, 0, 255].join(",");
 const decoded = payloads.map(payload => {
@@ -190,11 +162,27 @@ if (largestStep > seamStep * 1.5 + 0.005) throw new Error(`Loop seam ${seamStep.
 // One colour per block is the user-visible contract, not a generator detail: a frame that tinted
 // a block's pixels differently would read as a grey/flashing patch at 6x6.
 if (uniformBlocks !== FRAMES * LOGICAL_WIDTH * LOGICAL_HEIGHT) throw new Error(`Checked ${uniformBlocks} blocks, expected ${FRAMES * LOGICAL_WIDTH * LOGICAL_HEIGHT}`);
+// Independently inspect decoded pixels: a quarter-loop must rotate every coloured block 90
+// degrees clockwise around the canvas centre, while the ring itself stays stationary and round.
+let clockwiseBlocks = 0;
+for (let y = 0; y < LOGICAL_HEIGHT; y++) {
+  for (let x = 4; x < 20; x++) {
+    const rotatedX = 19 - y, rotatedY = x - 4;
+    if (inkMap[y][x] !== inkMap[rotatedY][rotatedX]) throw new Error("Ring is not circularly symmetric");
+    if (!inkMap[y][x]) continue;
+    const start = (y * SCALE * width + x * SCALE) * 4;
+    const rotated = (rotatedY * SCALE * width + rotatedX * SCALE) * 4;
+    if (!decoded[0].subarray(start, start + 4).every((value, channel) => value === decoded[FRAMES / 4][rotated + channel]))
+      throw new Error(`Gradient does not rotate clockwise at ${x},${y}`);
+    clockwiseBlocks++;
+  }
+}
 const decodedEvidence = {
   decodedBy: "sixel 0.16.0 decoder, WASM",
   frames: FRAMES,
   uniformBlocks,
   silhouetteMismatches,
+  clockwiseBlocks,
   interiorStepPercent: [+(smallestStep * 100).toFixed(2), +(largestStep * 100).toFixed(2)],
   loopSeamStepPercent: +(seamStep * 100).toFixed(2),
   payloadBytes: payloads.reduce((total, payload) => total + Buffer.byteLength(payload, "latin1"), 0)
@@ -223,7 +211,7 @@ const payloadLines = payloads.flatMap((payload, frame) => [
 ]);
 const lines = [
   "// <auto-generated />",
-  `// Derived from assets/${path.basename(pngPath)} by native/logo-tools/generate-logo.mjs.`,
+  "// Circular ring generated by native/logo-tools/generate-logo.mjs.",
   "// Runtime uses only this compiled data: no image decoder, encoder, process or package at paint time.",
   "internal static class LogoSixelData",
   "{",
@@ -232,11 +220,11 @@ const lines = [
   `    internal const int LogicalWidth = ${LOGICAL_WIDTH};`,
   `    internal const int LogicalHeight = ${LOGICAL_HEIGHT};`,
   `    internal const int Scale = ${SCALE};`,
-  `    internal static readonly bool LegacyEyeCorrection = ${values["legacy-eye"]};`,
   `    internal const int FallbackColumns = ${FALLBACK_COLUMNS};`,
   `    // Build-time decoded evidence: ${JSON.stringify(decodedEvidence)}`,
   `    internal const int UniformBlocks = ${uniformBlocks};`,
   `    internal const int SilhouetteMismatches = ${silhouetteMismatches};`,
+  `    internal const int ClockwiseBlocks = ${clockwiseBlocks};`,
   `    internal const int InteriorMaxStepPercentX100 = ${Math.round(largestStep * 10000)};`,
   `    internal const int LoopSeamStepPercentX100 = ${Math.round(seamStep * 10000)};`,
   "    // One cached answer per gradient phase; the host cycles them locally.",

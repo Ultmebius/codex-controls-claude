@@ -487,7 +487,7 @@ internal static class Program
         using var cancel = new CancellationTokenSource();
         // Demo data is explicitly labelled: it is not a model actually running on this machine.
         Seed(dashboard, "demo-session-06", null, DemoModel);
-        if (multi) { Seed(dashboard, "demo-session-07", "Demo · review of usage reporting", DemoModel); Seed(dashboard, "demo-session-08", "演示 · 中文任务标题", DemoModel); }
+        if (multi) { Seed(dashboard, "demo-session-07", "Demo · review of usage reporting", DemoModel); Seed(dashboard, "demo-session-08", "Demo · implementation review", DemoModel); }
         dashboard.StopRequested += cancel.Cancel;
         // Bounded even without --hold so an unattended invocation always returns.
         using var timer = new CancellationTokenSource(hold ? TimeSpan.FromMinutes(2) : TimeSpan.FromSeconds(15));
@@ -1004,7 +1004,7 @@ internal static class Program
             "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"" + id + "\",\"model\":\"" + model + "\",\"permissionMode\":\"bypassPermissions\",\"mcp_servers\":[{\"name\":\"ccc_probe\",\"status\":\"connected\"}]}",
             "{\"type\":\"user\",\"message\":{\"content\":\"Orchestrator preamble.\\nTask " + (name ?? "Demo · native dashboard preview") + "\\nBounded repair of the existing view.\"}}",
             "{\"type\":\"assistant\",\"message\":{\"usage\":{\"input_tokens\":1840,\"output_tokens\":392},\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"dotnet build -c Release\"}}]}}",
-            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Console handles, row diffing and the one-second clock are in place.\\n几何图标与受限配色已核对；等待 Codex 独立验收。\"}]}}",
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"Console handles, row diffing and the one-second clock are in place.\\nCircular logo and clockwise gradient are ready for review.\"}]}}",
             "{\"type\":\"result\",\"is_error\":false,\"num_turns\":6,\"usage\":{\"input_tokens\":1840,\"output_tokens\":392},\"result\":\"Native view compiles; no remaining blockers.\"}" })
         { using var doc = JsonDocument.Parse(raw); dashboard.Observe(id, doc.RootElement); }
     }

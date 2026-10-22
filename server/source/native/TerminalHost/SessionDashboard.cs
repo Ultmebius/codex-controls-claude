@@ -2758,11 +2758,11 @@ internal sealed class SessionDashboard : IDisposable
         Tone.Gold => "1;38;2;237;193;111",
         Tone.Green => "1;38;2;133;214;168",
         Tone.Error => "1;38;2;249;133;133",
-        // Animated logo gradient: indigo to cyan.
-        Tone.LogoA => "38;2;99;102;241",
-        Tone.LogoB => "38;2;90;126;245",
-        Tone.LogoC => "38;2;70;160;246",
-        Tone.LogoD => "38;2;56;189;248",
+        // Half-block fallback uses the same blue-to-red palette as the circular pixel logo.
+        Tone.LogoA => "38;2;59;130;246",
+        Tone.LogoB => "38;2;112;126;193",
+        Tone.LogoC => "38;2;164;123;140",
+        Tone.LogoD => "38;2;217;119;87",
         // Muted gray thumb, quieter track: a native look without the accent colour.
         Tone.ScrollThumb => "38;2;128;138;152",
         _ => "38;2;139;149;163"
@@ -4737,9 +4737,9 @@ internal sealed class SessionDashboard : IDisposable
         Require(LogoSixelData.LogicalRows.Length == 16 && LogoSixelData.LogicalRows.All(row => row.Length == 24));
         Require(LogoSixelData.LogicalRows.Any(row => row.Contains('#'))
             && LogoSixelData.LogicalRows.Any(row => row.Contains('.')));
-        if (LogoSixelData.LegacyEyeCorrection)
-            Require(LogoSixelData.LogicalRows[7][12] == '.' && LogoSixelData.LogicalRows[7][13] == '#'
-                && LogoSixelData.LogicalRows[7][14] == '.'); // separate reference pupil and brow
+        Require(LogoSixelData.LogicalRows.All(row => row[..4] == "...." && row[20..] == "...."));
+        Require(LogoSixelData.LogicalRows[7][11] == '.' && LogoSixelData.LogicalRows[0][11] == '#');
+        Require(LogoSixelData.ClockwiseBlocks > 0);
         // 30fps needs fine phase steps: 60 phases over ~2s, and the decoded build evidence is
         // compiled in so a regenerated asset that broke uniformity could not pass silently.
         Require(SixelLogo.FrameCount is >= 48 and <= 120);

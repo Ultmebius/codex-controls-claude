@@ -12,7 +12,7 @@ if (!process.argv.includes("--native-only")) await build({ absWorkingDir: fileUR
   banner: { js: 'import { createRequire as __cccCreateRequire } from "node:module"; const require = __cccCreateRequire(import.meta.url);' } });
 
 if (!process.argv.includes("--js-only")) {
-  execFileSync(process.execPath, [fileURLToPath(new URL("native/logo-tools/generate-logo.mjs", import.meta.url)), "--input", path.resolve(fileURLToPath(new URL("../../", import.meta.url)), manifest.extensions["com.openai"].interface.logo)], { stdio: "inherit", windowsHide: true });
+  execFileSync(process.execPath, [fileURLToPath(new URL("native/logo-tools/generate-logo.mjs", import.meta.url))], { stdio: "inherit", windowsHide: true });
   const scratch = mkdtempSync(path.join(tmpdir(), "ccc-native-build-"));
   try {
     execFileSync("dotnet", ["publish", fileURLToPath(new URL("native/TerminalHost/TerminalHost.csproj", import.meta.url)), "-c", "Release", "-o", fileURLToPath(new URL("../native", import.meta.url)), "--artifacts-path", scratch, "--ignore-failed-sources"], { stdio: "inherit", windowsHide: true });

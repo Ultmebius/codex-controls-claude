@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.4 — 2026-10-22
+
+- Replaced the terminal mark with a centred circular pixel ring in the existing 144×96 canvas and 24×16 logical grid.
+- Added a clockwise Codex-blue-to-Claude-red gradient loop and matching fallback colours.
+- Updated the native dashboard demonstration and README terminal capture to use English throughout.
+
 ## 0.10.3 — 2026-10-22
 
 - Added a first-task walkthrough, public-logo dashboard demonstration and linked usage, dashboard and testing guides.

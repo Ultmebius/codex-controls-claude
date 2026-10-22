@@ -2,7 +2,7 @@
   "name": "codex-controls-claude-server",
   "private": true,
   "type": "module",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "scripts": {
     "build": "node build.mjs",
     "build:js": "node build.mjs --js-only",
