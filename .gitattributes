@@ -1,0 +1,5 @@
+# Preserve committed bundle/native/source bytes for reproducible artifact checks.
+* -text
+server/index.mjs -whitespace
+THIRD_PARTY_NOTICES.md -whitespace
+server/source/native/logo-tools/LICENSES.md -whitespace

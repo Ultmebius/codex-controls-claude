@@ -1,6 +1,10 @@
 MIT License
 
-Copyright (c) 2026 claude-code-mcp contributors
+Copyright (c) 2026 Ultmebius
+
+Portions of this software derive from xihuai18/claude-code-mcp (commit
+47aa47b4f7f02f5dd5c6bc9174d30a42f54484f2), Copyright (c) 2026
+claude-code-mcp contributors, also released under the MIT License.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

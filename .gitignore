@@ -4,6 +4,8 @@ dist/
 obj/
 bin/
 coverage/
+.test-build/
+artifacts/
 *.tgz
 
 # Logs and edit leftovers

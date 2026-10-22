@@ -1,0 +1,57 @@
+import { describe, it, expect } from "vitest";
+import {
+  TOOL_CATALOG,
+  ToolDiscoveryCache,
+  buildInternalToolsDescription,
+  discoverToolsFromInit,
+  mergeToolLists,
+} from "../src/tools/tool-discovery.js";
+
+describe("tool-discovery", () => {
+  it("discoverToolsFromInit maps descriptions and preserves unknown tools", () => {
+    const tools = discoverToolsFromInit(["Read", "UnknownTool", "Read"]);
+    expect(tools.find((t) => t.name === "Read")?.description).toBe(TOOL_CATALOG.Read.description);
+    expect(tools.find((t) => t.name === "UnknownTool")?.description).toBe("UnknownTool");
+    expect(tools.find((t) => t.name === "Read")?.permissionModel).toBe("policy_controlled");
+    expect(tools.find((t) => t.name === "Read")?.schemaAvailability).toBe("none");
+  });
+
+  it("catalog descriptions include important tool gotchas", () => {
+    expect(TOOL_CATALOG.Read.description).toContain("offset/limit");
+    expect(TOOL_CATALOG.Edit.description).toContain("replace_all");
+    expect(TOOL_CATALOG.NotebookEdit.description).toContain("Windows");
+    expect(TOOL_CATALOG.TeamDelete.description).toContain("shutdown_approved");
+  });
+
+  it("ToolDiscoveryCache starts from catalog and updates from init.tools", () => {
+    const cache = new ToolDiscoveryCache();
+    const initial = cache.getTools().map((t) => t.name);
+    expect(initial.length).toBeGreaterThan(0);
+
+    const { updated, tools } = cache.updateFromInit(["Read", "Write", "UnknownTool"]);
+    expect(updated).toBe(true);
+    expect(tools.map((t) => t.name)).toContain("UnknownTool");
+
+    const second = cache.updateFromInit(["Read", "Write", "UnknownTool"]);
+    expect(second.updated).toBe(false);
+  });
+
+  it("mergeToolLists prefers primary entries", () => {
+    const merged = mergeToolLists(
+      [{ name: "Read", description: "PRIMARY", category: "file_read" }],
+      [{ name: "Read", description: "FALLBACK", category: "file_read" }]
+    );
+    expect(merged.find((t) => t.name === "Read")?.description).toBe("PRIMARY");
+  });
+
+  it("buildInternalToolsDescription includes guidance about includeTools and claude_code_check", () => {
+    const desc = buildInternalToolsDescription([{ name: "Read", description: "Read files." }]);
+    expect(desc).toContain("claude_code_check");
+    expect(desc).toContain("includeTools=true");
+    expect(desc).toContain("10+ minutes");
+    expect(desc).toContain("claude_code_reply");
+    expect(desc).toContain("No final result is returned here");
+    expect(desc).toContain("respond_user_input is not supported");
+    expect(desc).toContain("strictAllowedTools=true");
+  });
+});

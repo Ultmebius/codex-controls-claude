@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import path from "node:path";
 
 // Always use win32 path semantics in this module so that the logic works
-// correctly even when the test-suite runs on a non-Windows CI host.
+// correctly even when the test-suite runs on a non-Windows host.
 const { join, dirname, normalize, isAbsolute } = path.win32;
 const LONG_PATH_PREFIX = "\\\\?\\";
 const UNC_LONG_PATH_PREFIX = "\\\\?\\UNC\\";

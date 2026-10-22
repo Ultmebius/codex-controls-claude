@@ -1,6 +1,6 @@
 {
   "name": "codex-controls-claude",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "Codex plans, dispatches and independently accepts Claude Code work through an event-driven local MCP.",
   "author": {
     "name": "CaesarEmperor",
