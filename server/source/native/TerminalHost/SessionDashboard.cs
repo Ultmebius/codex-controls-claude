@@ -2758,7 +2758,7 @@ internal sealed class SessionDashboard : IDisposable
         Tone.Gold => "1;38;2;237;193;111",
         Tone.Green => "1;38;2;133;214;168",
         Tone.Error => "1;38;2;249;133;133",
-        // Logo gradient, sampled once from the packaged codex-controls-claude.png: indigo to cyan.
+        // Animated logo gradient: indigo to cyan.
         Tone.LogoA => "38;2;99;102;241",
         Tone.LogoB => "38;2;90;126;245",
         Tone.LogoC => "38;2;70;160;246",
@@ -2840,7 +2840,7 @@ internal sealed class SessionDashboard : IDisposable
     // content band, so the logo and the metadata share one offset.
     internal int ImageRow { get; private set; } = 1;
 
-    // The mark is the cached Sixel whale (144x96: a 24x16 logical grid enlarged 6x) painted over the
+    // The mark is the cached Sixel logo (144x96: a 24x16 logical grid enlarged 6x) painted over the
     // reserved cells left of the metadata. Terminals without Sixel get six plain half-block rows;
     // both occupy the same reserved width, so the text column never moves.
     private Built Build(int width, int height, bool graphics = true)
@@ -4735,8 +4735,11 @@ internal sealed class SessionDashboard : IDisposable
         // Enlarged square pixels fit the six-row header with a bounded cyclic frame cache.
         Require(SixelLogo.PixelWidth == 144 && SixelLogo.PixelHeight == 96);
         Require(LogoSixelData.LogicalRows.Length == 16 && LogoSixelData.LogicalRows.All(row => row.Length == 24));
-        Require(LogoSixelData.LogicalRows[7][12] == '.' && LogoSixelData.LogicalRows[7][13] == '#'
-            && LogoSixelData.LogicalRows[7][14] == '.'); // separate reference pupil and brow
+        Require(LogoSixelData.LogicalRows.Any(row => row.Contains('#'))
+            && LogoSixelData.LogicalRows.Any(row => row.Contains('.')));
+        if (LogoSixelData.LegacyEyeCorrection)
+            Require(LogoSixelData.LogicalRows[7][12] == '.' && LogoSixelData.LogicalRows[7][13] == '#'
+                && LogoSixelData.LogicalRows[7][14] == '.'); // separate reference pupil and brow
         // 30fps needs fine phase steps: 60 phases over ~2s, and the decoded build evidence is
         // compiled in so a regenerated asset that broke uniformity could not pass silently.
         Require(SixelLogo.FrameCount is >= 48 and <= 120);
