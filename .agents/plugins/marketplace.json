@@ -1,0 +1,26 @@
+{
+  "name": "codex-controls-claude",
+  "interface": {
+    "displayName": "Codex Controls Claude"
+  },
+  "description": "Codex plans, dispatches and independently accepts Claude Code work through an event-driven local MCP.",
+  "owner": {
+    "name": "CaesarEmperor",
+    "url": "https://github.com/Ultmebius"
+  },
+  "plugins": [
+    {
+      "name": "codex-controls-claude",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "description": "Codex designs the plan, delegates bounded tasks to Claude Code with your configured model, waits on real events and independently accepts each task.",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

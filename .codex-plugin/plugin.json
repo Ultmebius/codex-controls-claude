@@ -3,8 +3,11 @@
   "version": "0.10.1",
   "description": "Codex plans, dispatches and independently accepts Claude Code work through an event-driven local MCP.",
   "author": {
-    "name": "CaesarEmperor"
+    "name": "CaesarEmperor",
+    "url": "https://github.com/Ultmebius"
   },
+  "homepage": "https://github.com/Ultmebius/codex-controls-claude",
+  "repository": "https://github.com/Ultmebius/codex-controls-claude",
   "license": "MIT",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
@@ -19,8 +22,8 @@
       "Read",
       "Write"
     ],
-    "logo": "./assets/deepseek-color.png",
-    "composerIcon": "./assets/deepseek-color.png",
+    "logo": "./assets/codex-controls-claude.png",
+    "composerIcon": "./assets/codex-controls-claude.png",
     "defaultPrompt": "Use Codex Controls Claude to design the plan, delegate implementation to Claude Code, and independently verify every task."
   }
 }
