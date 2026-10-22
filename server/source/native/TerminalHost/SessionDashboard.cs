@@ -39,6 +39,9 @@ internal sealed class SessionDashboard : IDisposable
     // A tool call's streamed input JSON is only used for its detail line; past this bound the row is
     // deferred to the completed snapshot, whose input is complete and bounded by the protocol.
     private const int MaxStreamToolJson = 32768;
+    // Answer rows are keyed by the tool_use ids this query issued. The bound only stops a runaway
+    // question loop from growing the map; the oldest identity is dropped first.
+    private const int MaxAnswerTools = 64;
     // One right-hand column always belongs to the scrollbar, so the body never reflows when it appears.
     private const int ScrollbarCells = 1;
     // The body prefix "  │ " is a gutter, not user text; selection starts after it.
@@ -235,6 +238,12 @@ internal sealed class SessionDashboard : IDisposable
         // the stored text is the ORIGINAL sanitised/redacted text, never a whitespace-collapsed copy.
         public Dictionary<string, string> AssistantMessages = [];
         public HashSet<string> ToolUseIds = [];
+        // Tool calls whose successful result carries Codex's own answer: the supervisor question tool
+        // and the native AskUserQuestion, keyed by the tool_use id THIS session issued. An unrelated
+        // tool's output can therefore never be shown as an answer. Bounded FIFO, cleared per query,
+        // and an id is dropped as soon as its result has been handled.
+        public Dictionary<string, string> AnswerTools = [];
+        public Queue<string> AnswerToolOrder = [];
         // Set when an entry was cut by the runaway guard: an echo cannot be claimed against text
         // the user never saw in full.
         public bool QueryTruncated;
@@ -777,6 +786,9 @@ internal sealed class SessionDashboard : IDisposable
         session.QueryOutputs.Clear();
         session.AssistantMessages.Clear();
         session.ToolUseIds.Clear();
+        // Answer rows are transport evidence of THIS query; a later turn never echoes them.
+        session.AnswerTools.Clear();
+        session.AnswerToolOrder.Clear();
         session.QueryTruncated = false;
         session.StreamMessages.Clear();
         session.DisplayStreamKey = "";
@@ -1394,6 +1406,7 @@ internal sealed class SessionDashboard : IDisposable
         block.Recorded = true;
         if (block.ToolId.Length > 0 && !session.ToolUseIds.Add(block.ToolId)) return;
         session.Tools++;
+        RememberAnswerTool(session, block.ToolName, block.ToolId);
         var detail = StreamToolDetail(session, block.ToolJson);
         Append(session, "tool", (block.ToolName.Length > 0 ? block.ToolName : "tool") + detail);
     }
@@ -1675,6 +1688,9 @@ internal sealed class SessionDashboard : IDisposable
         foreach (var item in content.EnumerateArray())
             if (Text(item, "type") == "tool_result")
             {
+                // The identity is one-shot: whichever result concludes this call consumes it, so a
+                // re-delivered or contradictory later payload for the same id adds nothing.
+                var answerKind = TakeAnswerTool(session, Text(item, "tool_use_id"));
                 var failed = item.TryGetProperty("is_error", out var flag) && flag.ValueKind == JsonValueKind.True;
                 if (failed)
                 {
@@ -1684,7 +1700,87 @@ internal sealed class SessionDashboard : IDisposable
                             : errorContent.ValueKind == JsonValueKind.Array ? string.Join("\n", errorContent.EnumerateArray().Where(x => Text(x, "type") == "text").Select(x => Text(x, "text"))) : "";
                     Append(session, "error", detail.Length > 0 ? detail : "tool reported an error");
                 }
+                else AnswerResult(session, message, item, answerKind);
             }
+    }
+
+    // A call whose success carries Codex's own answer is remembered by the id this session issued,
+    // so only that call's own result can become a CODEX row. Ordinary tools stay silent as before.
+    private static void RememberAnswerTool(Session session, string name, string id)
+    {
+        if (id.Length == 0) return;
+        var kind = name switch
+        {
+            "mcp__codex_supervisor__ask_supervisor" => "codex",
+            "AskUserQuestion" => "question",
+            _ => ""
+        };
+        if (kind.Length == 0 || session.AnswerTools.ContainsKey(id)) return;
+        session.AnswerTools[id] = kind;
+        session.AnswerToolOrder.Enqueue(id);
+        // A query that asks more than this many questions keeps only the newest identities; the
+        // oldest row can no longer be produced as a false CODEX confirmation.
+        while (session.AnswerToolOrder.Count > MaxAnswerTools && session.AnswerToolOrder.TryDequeue(out var dropped))
+            session.AnswerTools.Remove(dropped);
+    }
+
+    // Claims this result's identity. Only an id THIS session issued as an answer tool can match, so
+    // an unrelated tool result can never reach the CODEX path.
+    private static string TakeAnswerTool(Session session, string toolUseId)
+        => toolUseId.Length > 0 && session.AnswerTools.Remove(toolUseId, out var kind) ? kind : "";
+
+    // The visible CODEX record for a successful supervisor answer. It is transport evidence that the
+    // answer reached the model's tool result, never a claim that the model read or accepted it.
+    private void AnswerResult(Session session, JsonElement message, JsonElement item, string kind)
+    {
+        if (kind.Length == 0) return;
+        var text = "";
+        if (item.TryGetProperty("content", out var content))
+            text = content.ValueKind == JsonValueKind.String ? content.GetString() ?? ""
+                : content.ValueKind == JsonValueKind.Array ? string.Join("\n", content.EnumerateArray().Where(x => Text(x, "type") == "text").Select(x => Text(x, "text"))) : "";
+        if (kind == "codex")
+        {
+            // Only the mailbox's own answered envelope is an answer; a malformed or non-answered
+            // payload is not shown as a confirmation.
+            JsonDocument document;
+            try { document = JsonDocument.Parse(text); }
+            catch (JsonException) { return; }
+            using (document)
+            {
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object || Text(root, "status") != "answered") return;
+                // `answer` must be text: a boolean or number coerced to its JSON spelling would
+                // present a malformed envelope as a decision the supervisor never made.
+                if (!root.TryGetProperty("answer", out var answerNode)
+                    || answerNode.ValueKind != JsonValueKind.String) return;
+                var answer = answerNode.GetString() ?? "";
+                if (answer.Trim().Length == 0) return;
+                Append(session, "codex", answer);
+            }
+            return;
+        }
+        // A native AskUserQuestion result is rendered from the answers the tool actually returned.
+        // The stream carries them as `tool_use_result` (an MCP-style wrapper adds `content`); the
+        // transcript's camelCase spelling is accepted too so a replayed line renders identically.
+        var answers = "";
+        foreach (var key in new[] { "tool_use_result", "toolUseResult" })
+        {
+            if (!message.TryGetProperty(key, out var result)) continue;
+            if (result.ValueKind == JsonValueKind.Object
+                && result.TryGetProperty("answers", out var map) && map.ValueKind == JsonValueKind.Object)
+            {
+                answers = string.Join("\n", map.EnumerateObject()
+                    .Select(entry => entry.Value.ValueKind == JsonValueKind.String
+                        ? entry.Name + " → " + entry.Value.GetString()
+                        : ""));
+                break;
+            }
+            // A wrapped result only repeats the tool's own text; the text below covers it.
+            if (result.ValueKind == JsonValueKind.Object && result.TryGetProperty("content", out _)) break;
+        }
+        if (answers.Trim().Length > 0) { Append(session, "codex", answers); return; }
+        // Older/other providers only return the tool's sentence: show that sentence itself.
+        if (text.Trim().Length > 0) Append(session, "codex", text);
     }
 
     private void Assistant(Session session, JsonElement message)
@@ -1742,6 +1838,7 @@ internal sealed class SessionDashboard : IDisposable
                         session.Tools++;
                         // No arbitrary truncation: the body wraps the whole path/command to the width.
                         Append(session, "tool", Text(item, "name") + ToolDetail(session, item));
+                        RememberAnswerTool(session, Text(item, "name"), toolId);
                         break;
                     case "thinking":
                         // Keep reasoning out of the display, including placeholder chatter.
@@ -3658,6 +3755,7 @@ internal sealed class SessionDashboard : IDisposable
     {
         "task" => Tone.Title,
         "output" => Tone.Output,
+        "codex" => Tone.Gold,
         "result" or "tool" => Tone.Green,
         "permission" => Tone.Gold,
         "error" => Tone.Error,
@@ -6225,6 +6323,124 @@ internal sealed class SessionDashboard : IDisposable
             Feed("{\"type\":\"result\",\"is_error\":false}");
             Require(Screen().Contains("failed") && !Screen().Contains("○ review"));
             Require(Screen().Contains("in 2,600") && Screen().Contains("out 40"));
+        }
+
+        // ------------------------------------------------------------ supervisor answers as evidence
+        // A successful ask_supervisor result is the one place Codex's decision reaches the model, so
+        // it is shown as its own CODEX row keyed by the tool_use id this session issued. Ordinary
+        // successful tool results stay silent and no unrelated tool can fabricate a confirmation.
+        using (var answers = new SessionDashboard())
+        {
+            answers.Add("q", "Answer rows", "", "", ["RAW-SECRET"]);
+            void Feed(string json) { using var doc = JsonDocument.Parse(json); answers.Observe("q", doc.RootElement); }
+            string Log() => answers.LogText("q");
+            // The badge itself is drawn, not stored in the entry text, so a CODEX row is asserted on
+            // the rendered frame; the answer body is asserted on the log text.
+            string Screen() => string.Join("\n", answers.Frame(120, 30));
+            const string asked = "{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,"
+                + "\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu-ask\",\"name\":\"mcp__codex_supervisor__ask_supervisor\"}}}";
+            const string answered = "{\"messageId\":\"m-1\",\"clientMessageId\":\"q-1\",\"status\":\"answered\",\"answer\":\"Choose B and keep the README wording.\"}";
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task Answer rows\\nDo the work.\"}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"a1\"}}}");
+            Feed(asked);
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0}}");
+            Require(Log().Contains("ask_supervisor"));
+            // A normal successful tool result stays silent: the CODEX row is not a general echo.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-other\",\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}]}}");
+            Require(!Screen().Contains("CODEX") && !Log().Contains("ok"));
+            // A tool that is NOT the supervisor question cannot fake the envelope on its own id.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-other\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + answered.Replace("\"", "\\\"") + "\"}]}]}}");
+            Require(!Screen().Contains("CODEX"));
+            // An error result for the asking tool reports the failure, never a confirmation.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-ask\",\"is_error\":true,"
+                + "\"content\":[{\"type\":\"text\",\"text\":\"TIMEOUT\"}]}]}}");
+            Require(Log().Contains("TIMEOUT") && !Screen().Contains("CODEX"));
+            // The identity is one-shot; a later successful duplicate cannot claim the same id twice.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-ask\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + answered.Replace("\"", "\\\"") + "\"}]}]}}");
+            Require(!Screen().Contains("CODEX"));
+            // A genuine answered envelope on the asking id becomes exactly one CODEX row.
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"message_start\",\"message\":{\"id\":\"a2\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_start\",\"index\":0,"
+                + "\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu-ask2\",\"name\":\"mcp__codex_supervisor__ask_supervisor\"}}}");
+            Feed("{\"type\":\"stream_event\",\"event\":{\"type\":\"content_block_stop\",\"index\":0}}");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-ask2\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + answered.Replace("\"", "\\\"") + "\"}]}]}}");
+            var confirmed = Log();
+            Require(Screen().Contains("CODEX") && confirmed.Contains("Choose B and keep the README wording."));
+            Require(Regex.Matches(confirmed, "Choose B and keep the README wording.").Count == 1);
+            // A re-delivered result for the same id is not a second row.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-ask2\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + answered.Replace("\"", "\\\"") + "\"}]}]}}");
+            Require(Regex.Matches(Log(), "Choose B and keep the README wording.").Count == 1);
+            // The answer is sanitised and redacted like every other row: the envelope carries a real
+            // ESC byte, so it must be stripped instead of leaking terminal control.
+            Feed("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu-ask3\","
+                + "\"name\":\"mcp__codex_supervisor__ask_supervisor\",\"input\":{\"question\":\"secret?\"}}]}}");
+            using (var escaped = JsonDocument.Parse(JsonSerializer.Serialize(new
+            {
+                type = "user",
+                message = new
+                {
+                    content = new object[]
+                    {
+                        new
+                        {
+                            type = "tool_result",
+                            tool_use_id = "toolu-ask3",
+                            content = new object[]
+                            {
+                                new
+                                {
+                                    type = "text",
+                                    text = JsonSerializer.Serialize(new
+                                    {
+                                        messageId = "m-2",
+                                        status = "answered",
+                                        answer = "Use RAW-SECRET now.\u001b[31m",
+                                    }),
+                                },
+                            },
+                        },
+                    },
+                },
+            }))) answers.Observe("q", escaped.RootElement);
+            Require(Log().Contains("Use [redacted] now.") && !Log().Contains("RAW-SECRET") && !Log().Contains('\u001b'));
+            // A malformed or non-answered payload is never presented as an answer.
+            Feed("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu-ask4\","
+                + "\"name\":\"mcp__codex_supervisor__ask_supervisor\",\"input\":{\"question\":\"q\"}}]}}");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-ask4\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + "{\\\"status\\\":\\\"unanswered\\\",\\\"error\\\":\\\"SUPERVISOR_QUESTION_TIMEOUT\\\"}\"}]}]}}");
+            Require(!Log().Contains("SUPERVISOR_QUESTION_TIMEOUT"));
+            // A non-string answer is a malformed envelope, not a decision: without the type check a
+            // boolean or number would be coerced to its JSON spelling and shown as a confirmation.
+            foreach (var (id, payload) in new[] { ("toolu-bool", "{\\\"status\\\":\\\"answered\\\",\\\"answer\\\":true}"),
+                ("toolu-number", "{\\\"status\\\":\\\"answered\\\",\\\"answer\\\":7}") })
+            {
+                Feed("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"" + id + "\","
+                    + "\"name\":\"mcp__codex_supervisor__ask_supervisor\",\"input\":{\"question\":\"q\"}}]}}");
+                var beforeRejected = Log();
+                Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"" + id + "\",\"content\":[{\"type\":\"text\",\"text\":\""
+                    + payload + "\"}]}]}}");
+                Require(Log() == beforeRejected);
+            }
+            // A native AskUserQuestion answer is rendered from the answers the tool actually returned.
+            Feed("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu-native\",\"name\":\"AskUserQuestion\","
+                + "\"input\":{\"questions\":[{\"question\":\"Which targets?\"}]}}]}}");
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-native\","
+                + "\"content\":\"Your questions have been answered: \\\"Which targets?\\\"=\\\"Native\\\".\"}]},"
+                + "\"toolUseResult\":{\"answers\":{\"Which targets?\":\"Native\"}}}");
+            Require(Log().Contains("Which targets? → Native"));
+            // Neither an answer row nor a native question is a new TASK or a new query turn.
+            Require(Regex.Matches(Log(), "Do the work.").Count == 1);
+            Require(answers.Frame(110, 24).Any(row => row.Contains("Answer rows")));
+            Feed("{\"type\":\"user\",\"message\":{\"content\":\"Task Second stage\\nNext stage.\"}}");
+            // A later task boundary clears the identity set: an old id can never be echoed again.
+            Feed("{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu-ask2\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + answered.Replace("\"", "\\\"") + "\"}]}]}}");
+            Require(Regex.Matches(Log(), "Choose B and keep the README wording.").Count == 1);
+            Require(Log().Contains("Next stage."));
         }
         // ------------------------------------------------------------ output echo, full text, mouse
 

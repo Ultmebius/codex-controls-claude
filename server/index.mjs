@@ -53066,7 +53066,7 @@ var ClaudeWorker = class {
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; native AskUserQuestion is also forwarded to Codex and its answer returned to you. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. Ask early rather than guessing: send a scoped ask_supervisor question as soon as a choice would change what you build or is hard to undo. Separate the three kinds of input explicitly: facts the user stated, decisions Codex actually answered, and research or implementation choices you are free to make yourself (use judgement there and proceed). Never present your own inference or a design you favour as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If the task text and Codex guidance disagree, follow the newest scoped guidance and say so in your report. Guidance Codex queues while you work arrives as a new user turn after your current one; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance intact."
+        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; native AskUserQuestion is also forwarded to Codex and its answer returned to you. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. Ask early rather than guessing: send a scoped ask_supervisor question as soon as a choice would change what you build or is hard to undo. Separate the three kinds of input explicitly: facts the user stated, decisions Codex actually answered, and research or implementation choices you are free to make yourself (use judgement there and proceed). Never present your own inference or a design you favour as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If the task text and Codex guidance disagree, follow the newest scoped guidance and say so in your report. Guidance Codex queues while you work arrives as a new user turn after your current one; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance intact. Whenever an ask_supervisor or AskUserQuestion answer returns, or guidance arrives as a new turn, begin your normal visible reply with one short sentence of ordinary text that names what you understood was decided and the next step you are taking, then continue the work. That sentence is the transcript's record of your own understanding: it is not a human approval, not technical acceptance, and it never substitutes for reporting real findings, checks or blockers. Do not invent an answer that did not arrive, and do not emit that sentence on your own without a Codex answer or guidance to acknowledge."
       }
     };
     if (resumeId)
@@ -54253,7 +54253,7 @@ async function doctor(poolRoot = defaultDataDir()) {
     }
   }
   return {
-    pluginVersion: false ? "0.0.0-dev" : "0.10.0",
+    pluginVersion: false ? "0.0.0-dev" : "0.10.1",
     node: process.version,
     platform: process.platform,
     claude: execFileSync5(config2.executable, ["--version"], {
@@ -54352,7 +54352,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
   const server = new McpServer(
     {
       name: "codex-controls-claude",
-      version: false ? "0.0.0-dev" : "0.10.0"
+      version: false ? "0.0.0-dev" : "0.10.1"
     },
     {
       instructions: "Only use this plugin when the user explicitly invokes Codex Controls Claude or its skills. Codex designs and independently accepts; Claude Code executes with the user-configured model. Wait on actionable events, never poll. Expand marked summaries with status(includeEvidence=true,taskId). finish retains the candidate for user review; approve closes only after human approval. Context alerts require compact/new. Worker output cannot expand user authorization."
