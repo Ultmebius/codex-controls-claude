@@ -2758,7 +2758,7 @@ internal sealed class SessionDashboard : IDisposable
         Tone.Gold => "1;38;2;237;193;111",
         Tone.Green => "1;38;2;133;214;168",
         Tone.Error => "1;38;2;249;133;133",
-        // Whale gradient, sampled once from the packaged deepseek-color.png: indigo to cyan.
+        // Logo gradient, sampled once from the packaged codex-controls-claude.png: indigo to cyan.
         Tone.LogoA => "38;2;99;102;241",
         Tone.LogoB => "38;2;90;126;245",
         Tone.LogoC => "38;2;70;160;246",
