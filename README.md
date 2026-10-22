@@ -14,21 +14,19 @@ A local Codex plugin that turns Claude Code into a supervised implementation wor
 
 ---
 
-## Why this exists
+## What this does
 
-Asking Codex to "write the code with Claude" usually means pasting a plan into a second terminal and hoping. Nothing tracks what was promised, nothing waits efficiently, and nothing verifies the result — you are the message bus, the scheduler and the reviewer at once.
+Codex drives the whole loop against a local MCP server that holds the task ledger:
 
-This plugin moves those three jobs into a local MCP server that Codex drives directly:
-
-| Without it | With Codex Controls Claude |
+| What it gives you | How |
 |---|---|
-| You copy a plan into a Claude Code session and babysit it | Codex dispatches the task, the worker runs in its own session |
-| You poll for "is it done?" | One event-triggered `orchestrator_wait`, woken by completion, questions, failures or budget risk |
-| You decide whether the work is acceptable | Declared fixed checks are re-executed independently; failures record rework |
-| Parallel work collides | Up to three executions with write-scope reservations and dependency DAGs |
-| A stalled worker blocks everything | Queue guidance for the next turn boundary, or interrupt deliberately |
+| Codex plans, the worker executes | `orchestrator_dispatch` starts a bounded task in its own Claude Code session |
+| No polling | One event-triggered `orchestrator_wait`, woken by completion, questions, failures or budget risk |
+| Independent acceptance | Declared fixed checks are re-executed; failures record rework |
+| Parallel stages | Up to three executions with write-scope reservations and dependency DAGs |
+| Mid-task course correction | Queue guidance for the next turn boundary, or interrupt deliberately |
 
-Codex designs, delegates, reviews and integrates rather than implementing by default; it takes over implementation itself only when a worker demonstrably cannot resolve a scoped problem, and records the reason. It never accepts on vibes: acceptance is the original checks, run again.
+Codex designs, delegates, reviews and integrates; it implements itself only when a worker demonstrably cannot resolve a scoped problem, and records the reason. Acceptance is the original checks, run again.
 
 ## Install
 
@@ -57,7 +55,7 @@ node scripts/doctor.mjs
 
 ## How it works
 
-Codex stays the supervisor: it owns the goal, the design, scope changes, acceptance and session lifetime. Claude Code implements one bounded, independently verifiable stage at a time, using the model and tools you already configured.
+Codex owns the goal, the design, scope changes, acceptance and session lifetime. Claude Code implements one bounded, independently verifiable stage at a time, using the model and tools you already configured.
 
 ```mermaid
 flowchart LR
@@ -134,7 +132,7 @@ Waits are event-triggered, not polled: completion, questions, residual permissio
 - **No credentials are copied.** No Codex MCP configuration, gateway secret or token is bundled; your existing Claude Code authentication or gateway settings are used at runtime.
 - **`writeScope` is advisory.** It is a scheduling and audit reservation; native permissions still govern access, and overlapping writes belong in separate worktrees.
 
-The plugin does not measure token savings. It reduces unnecessary supervisor wakeups; it makes no benchmark claim.
+Event-driven waiting keeps the supervisor asleep until something actually needs it.
 
 ## Requirements
 
