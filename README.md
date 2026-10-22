@@ -28,7 +28,7 @@ This plugin moves those three jobs into a local MCP server that Codex drives dir
 | Parallel work collides | Up to three executions with write-scope reservations and dependency DAGs |
 | A stalled worker blocks everything | Queue guidance for the next turn boundary, or interrupt deliberately |
 
-The plugin never implements, and it never accepts on vibes: acceptance is the original checks, run again.
+Codex designs, delegates, reviews and integrates rather than implementing by default; it takes over implementation itself only when a worker demonstrably cannot resolve a scoped problem, and records the reason. It never accepts on vibes: acceptance is the original checks, run again.
 
 ## Install
 
@@ -36,16 +36,12 @@ Add the marketplace, then install the plugin:
 
 ```bash
 codex plugin marketplace add Ultmebius/codex-controls-claude
-codex plugin install codex-controls-claude@codex-controls-claude
+codex plugin add codex-controls-claude@codex-controls-claude
 ```
 
-Or browse plugins from the CLI plugin browser:
+The marketplace takes its name from `.agents/plugins/marketplace.json`, which is `codex-controls-claude` here, so the entry installs as `codex-controls-claude@codex-controls-claude`. Alternatively open the plugin browser with `codex` → `/plugins`, pick the **codex-controls-claude** marketplace tab and install from there. Restart the chat afterwards so the bundled MCP server loads.
 
-```bash
-codex
-```
-
-Then run `/plugins`, open the **codex-controls-claude** marketplace tab and install the entry from there. Enable it, then restart the chat so the bundled MCP server loads. From a local checkout, point the marketplace at the folder instead:
+From a local checkout, point the marketplace at the folder instead:
 
 ```bash
 codex plugin marketplace add ./codex-controls-claude
@@ -117,11 +113,11 @@ The bundled `claude-orchestrator` MCP server exposes ten tools:
 
 | Tool | Purpose |
 |---|---|
-| `orchestrator_plan` | Create, continue, reconcile or attach to a run; owns the contract and its tasks |
+| `orchestrator_plan` | Create, update, append, supersede, approve, reopen, finish, reconcile, interrupt, attach to or manage the session of a run |
 | `orchestrator_dispatch` | Start dependency-ready work with a stable `requestId` |
 | `orchestrator_wait` | One pending event promise, default and maximum 20 minutes |
 | `orchestrator_review` | Re-run the original fixed checks and return the acceptance evidence |
-| `orchestrator_status` | Targeted evidence sections: result, checks, artifacts, changes, executions, decisions, guidance, capabilities |
+| `orchestrator_status` | Targeted evidence sections: result, error, checks, artifacts, changes, executions, decisions, guidance, budget, contract, usage, checkpoint, capabilities |
 | `orchestrator_message` | Queue guidance, interrupt a turn, or reply to a `worker_question` |
 | `orchestrator_respond_permission` | Answer a residual native permission request |
 | `orchestrator_cancel` | Stop a run or a team task without disturbing peers |
@@ -153,10 +149,10 @@ Model selection reads `env.ANTHROPIC_MODEL` from `~/.claude/settings.json` first
 
 ### Configuration
 
-| Variable | Default | Range |
+| Variable | Default | Meaning |
 |---|---|---|
 | `CCC_CLAUDE_PATH` | resolved `claude` | Explicit Claude Code executable |
-| `CCC_WAIT_MS` | 1200000 (20 min) | Lowers the default wait; the cap stays 20 min |
+| `CCC_WAIT_MS` | 1200000 (20 min) | Default wait length; a call can still ask for less, never more |
 | `CCC_DECISION_TIMEOUT_MS` | 300000 (5 min) | 1s – 30 min |
 | `CCC_INIT_TIMEOUT_MS` | 120000 | 1s – 10 min |
 | `CCC_CHECK_TIMEOUT_MS` | 300000 | 1s – 10 min |
@@ -168,9 +164,10 @@ Model selection reads `env.ANTHROPIC_MODEL` from `~/.claude/settings.json` first
 ```
 codex-controls-claude/
 ├── plugin.json                 Portable Agent Plugins manifest
-├── .codex-plugin/plugin.json   Codex compatibility projection
+├── .codex-plugin/plugin.json   Codex compatibility overlay
 ├── mcp.json                    Portable MCP config
-├── .mcp.json                   Codex projection with host timeouts
+├── .mcp.json                   Codex overlay with host timeouts
+├── .agents/plugins/            Codex marketplace catalog
 ├── skills/
 │   ├── setup/                  Onboarding and diagnostics
 │   └── orchestrate/            Supervisor workflow + reference policy

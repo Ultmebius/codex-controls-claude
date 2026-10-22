@@ -6,7 +6,7 @@ bin/
 coverage/
 *.tgz
 
-# Local logs and edit leftovers
+# Logs and edit leftovers
 *.log
 *.tmp
 *.bak
@@ -20,11 +20,3 @@ Thumbs.db
 .env.*
 !.env.example
 .npmrc
-
-# Editor and OS metadata
-.vs/
-.vscode/
-.idea/
-
-# Local plugin state
-.plugin-data/
