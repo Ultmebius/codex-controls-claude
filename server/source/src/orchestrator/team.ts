@@ -13,6 +13,7 @@ import { defaultWaitMs, inside } from "./runtime.js";
 import { budgetSummary } from "./execution.js";
 import { claimFile, processAlive as alive } from "./ownership.js";
 import { MAX_WAIT_MS } from "./worker-slots.js";
+import { selectWaitEvents } from "./messaging.js";
 import {
   DEFAULT_EXECUTION_WINDOW_MS,
   MIN_EXECUTION_WINDOW_MS,
@@ -25,6 +26,7 @@ import {
   DEFAULT_SEGMENT_TURNS,
   DEFAULT_RUN_TURN_LIMIT,
   availableGrant,
+  extendFollowOnBudget,
   normalizedBudget,
   reserveGrant,
   settleReservation,
@@ -330,6 +332,7 @@ export class TeamCoordinator {
       task.reservation.held = 0;
       task.reservation.usedBefore = used;
       this.syncBudget(team);
+      extendFollowOnBudget(team.budget);
       const grant = availableGrant(team.budget, requested);
       if (grant < 1) {
         this.save(team);
@@ -664,16 +667,22 @@ export class TeamCoordinator {
       fail("WRITE_SCOPE_CONFLICT");
     if (team.tasks.filter((candidate) => this.active(candidate)).length >= team.maxWorkers)
       fail("TEAM_WORKER_LIMIT");
-    const requested = options.maxTurns ?? team.maxTurns;
-    if (!Number.isSafeInteger(requested) || requested < 1 || requested > 1000)
+    const configured = options.maxTurns ?? team.maxTurns;
+    if (!Number.isSafeInteger(configured) || configured < 1 || configured > 1000)
       fail("INVALID_NATIVE_TURN_LIMIT");
-    const grant = availableGrant(team.budget, requested);
-    if (!grant) fail("RUN_TURN_BUDGET_EXHAUSTED");
     const run = this.run(task),
       controller = this.controllers.get(task.childRunId)!;
+    const followOn = !!run.sessionId;
+    const requested = followOn ? Math.max(DEFAULT_SEGMENT_TURNS, configured) : configured;
+    const nextBudget = { ...team.budget };
+    const extension = followOn ? extendFollowOnBudget(nextBudget) : 0;
+    const grant = availableGrant(nextBudget, requested);
+    if (!grant) fail("RUN_TURN_BUDGET_EXHAUSTED");
     const attemptsBefore = run.tasks[0].attempts;
+    const childLimitBefore = run.turnBudget.limit;
     // Hold budget before the first await; the shared slot is acquired by the child dispatch.
     task.starting = true;
+    team.budget.limit = nextBudget.limit;
     task.reservation = {
       held: reserveGrant(team.budget, grant),
       usedBefore: run.turnBudget.used,
@@ -732,6 +741,11 @@ export class TeamCoordinator {
           task.reservation = undefined;
           this.syncBudget(team);
         }
+        // A rejected dispatch did not add work to the conversation.
+        if (run.tasks[0].attempts === attemptsBefore) {
+          team.budget.limit -= extension;
+          run.turnBudget.limit = childLimitBefore;
+        }
         this.pending.delete(key);
         this.save(team);
       }
@@ -772,13 +786,15 @@ export class TeamCoordinator {
       teamId,
       status: team.status,
       timedOut,
-      events: team.events
-        .filter((event) => event.seq > afterSeq && event.actionable)
-        .sort(
-          (a, b) =>
-            Number(["permission_required", "worker_question"].includes(b.type)) -
-            Number(["permission_required", "worker_question"].includes(a.type))
-        ),
+      events: selectWaitEvents(
+        team.events,
+        afterSeq,
+        (event) =>
+          !!event.childRunId &&
+          !!this.controllers
+            .get(event.childRunId)
+            ?.isQuestionPending(event.childRunId, (event.data as { messageId: string }).messageId)
+      ),
       nextCursor: team.events.at(-1)?.seq ?? 0,
     });
     if (

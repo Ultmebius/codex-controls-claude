@@ -126,7 +126,40 @@ describe("orchestration budget defaults", () => {
     expect(run.tasks[0].state).toBe("budget_exhausted");
     await f.controller.dispatch(run.id, "a", "second", undefined, { mode: "continue" });
     expect(f.worker.grants).toEqual([500, 500]);
-    expect(run.turnBudget).toMatchObject({ used: 3, reserved: 501 });
+    expect(run.turnBudget).toMatchObject({ limit: 1500, used: 3, reserved: 501 });
+  });
+
+  it("funds each explicit same-session follow-on once, including after reload", async () => {
+    const f = fixture();
+    const run = f.controller.plan({
+      action: "create",
+      cwd: f.cwd,
+      goal: "goal",
+      design: "design",
+      tasks: [spec()],
+      maxTurns: 5,
+      maxTotalTurns: 6,
+    });
+    await f.controller.dispatch(run.id, "a", "first");
+    f.worker.finish("error_max_turns", 6);
+    const options = { mode: "continue" as const, maxTurns: 6 };
+    const receipt = await f.controller.dispatch(run.id, "a", "second", undefined, options);
+    expect(receipt).toMatchObject({ sessionId: "session", nativeLimit: 500 });
+    expect(run.turnBudget).toMatchObject({ limit: 507, used: 6, reserved: 501 });
+    await f.controller.dispatch(run.id, "a", "second", undefined, options);
+    expect(run.turnBudget.limit).toBe(507);
+    expect(f.worker.grants).toEqual([5, 500]);
+    f.worker.finish("error_max_turns", 501);
+    f.controller.close();
+    const worker = new FixtureWorker();
+    const restored = new Orchestrator(f.data, worker);
+    cleanups.push(() => restored.close());
+    restored.attach(run.id);
+    await restored.dispatch(run.id, "a", "third", undefined, options);
+    const reloaded = restored.status(run.id) as Run;
+    expect(reloaded.sessionId).toBe("session");
+    expect(reloaded.turnBudget).toMatchObject({ limit: 1008, used: 507, reserved: 501 });
+    expect(worker.grants).toEqual([500]);
   });
 
   it("preserves explicit create budgets across a reload instead of redefaulting", () => {

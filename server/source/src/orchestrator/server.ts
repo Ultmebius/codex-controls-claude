@@ -1,6 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { Orchestrator } from "./controller.js";
@@ -8,6 +7,7 @@ import { ClaudeWorker, type Worker } from "./worker.js";
 import { TeamCoordinator } from "./team.js";
 import { localConfig, ownedProcessCount } from "./runtime.js";
 import { terminalInfo } from "./terminal.js";
+import { defaultDataDir } from "./data-dir.js";
 import { compactCapabilities, type WorkerCapabilities } from "./capabilities.js";
 import { EVIDENCE_SECTIONS, selectTaskEvidence } from "./evidence.js";
 import { existsSync } from "node:fs";
@@ -135,18 +135,10 @@ const task = z.object({
   checks: z.array(check).min(1).max(20),
 });
 
-function defaultDataDir() {
-  return (
-    process.env.PLUGIN_DATA ??
-    process.env.CCC_DATA_DIR ??
-    path.join(os.homedir(), ".local", "share", "codex-controls-claude")
-  );
-}
-
 function taskSummary(run: import("./controller.js").Run, task: import("./controller.js").Task) {
   const executable =
     Date.now() < run.deadline &&
-    run.turnBudget.limit - run.turnBudget.used - run.turnBudget.reserved > 1;
+    (!!run.sessionId || run.turnBudget.limit - run.turnBudget.used - run.turnBudget.reserved > 1);
   const actions =
     task.state === "awaiting_review"
       ? ["review"]
@@ -306,7 +298,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(10000)
           .describe(
-            "Persistent run allowance in SDK-reported turns, 1..10000; Default: 1000. Create only. Survives all continuation/reopen/supersede/resume operations."
+            "Initial persistent run allowance in SDK-reported turns, 1..10000; Default: 1000, create only. Each explicit same-conversation follow-on adds 500 rounds, funding the SDK boundary reserve when needed. Usage is preserved."
           )
           .optional(),
         taskRevision: z.number().int().positive().optional(),
@@ -451,7 +443,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(1000)
           .describe(
-            "Optional native cap for this segment (default run.maxTurns=500), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
+            "Native cap for the initial segment (default 500). Each new same-conversation dispatch adds 500 cumulative turns and grants at least 500 native rounds, including rework/continue; smaller follow-on values are raised to 500. Duplicate requestIds do not add credit. A changed cap resumes the same SDK conversation."
           )
           .optional(),
         feedback: z
@@ -566,7 +558,7 @@ export function createOrchestratorServer(
           .array(z.enum(EVIDENCE_SECTIONS))
           .min(1)
           .describe(
-            "Evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions,guidance. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. guidance shows queued/interruption_requested/delivering/delivered/failed/cancelled scoped messages and their transport reason. Contract and usage are opt-in. Requires runId."
+            "Evidence parts: progress,result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions,guidance. Before discretionary intervention, inspect progress (latest public output/tool names with timestamps, no hidden thinking) and guidance delivery once; counts and absent final artifacts alone do not prove a stall. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. guidance shows queued/interruption_requested/delivering/delivered/failed/cancelled scoped messages and their transport reason. Contract and usage are opt-in. Requires runId."
           )
           .optional(),
       },
@@ -589,16 +581,32 @@ export function createOrchestratorServer(
             ? ledger.tasks.filter((task) => task.id === input.taskId)
             : ledger.tasks;
           if (input.taskId && !selected.length) throw new Error("TASK_NOT_FOUND");
+          const progress =
+            input.sections.includes("progress") && ledger.sessionId
+              ? controller.worker.progress?.(ledger.sessionId)
+              : undefined;
           return input.taskId
             ? {
                 runId: ledger.id,
-                task: selectTaskEvidence(ledger, selected[0], input.sections, capabilities),
+                task: selectTaskEvidence(
+                  ledger,
+                  selected[0],
+                  input.sections,
+                  capabilities,
+                  ledger.activeTaskId === selected[0].id ? progress : undefined
+                ),
                 nextCursor: controller.cursor(ledger.id),
               }
             : {
                 runId: ledger.id,
                 tasks: selected.map((task) =>
-                  selectTaskEvidence(ledger, task, input.sections!, undefined)
+                  selectTaskEvidence(
+                    ledger,
+                    task,
+                    input.sections!,
+                    undefined,
+                    ledger.activeTaskId === task.id ? progress : undefined
+                  )
                 ),
                 ...(input.sections.includes("capabilities")
                   ? { workerCapabilities: capabilities }
@@ -668,7 +676,7 @@ export function createOrchestratorServer(
     "orchestrator_message",
     {
       description:
-        "Talk to the active Claude turn. action=reply answers a worker_question (runId,messageId,answer): supervisor guidance within the task, not human permission; use the event's messageId and its childRunId for teams; stale, wrong-task or expired IDs are rejected; updates already have transport receipts, so there is no inbox to poll. action=queue delivers scoped guidance (runId,requestId,text) without interrupting: it is accepted now and sent as exactly one input after the current native turn reaches its result boundary, FIFO with other queued guidance. action=interrupt additionally asks the native runtime to end the current turn promptly and, once that segment's result drains, sends the guidance into the same saved native conversation; it outranks unsent queued messages, which stay pending. Both require an active running task and reject foreign/stale run/task/revision/session scope. Returned states are truthful and distinct: queued, interruption_requested, delivering (native startup pending), delivered (input accepted, never a claim the model read it), failed, cancelled. Queue re-reserves the persistent turn budget before the follow-on input; exhaustion, cancellation, disconnect, an expired deadline or a failed interrupt report failure instead of delivering late.",
+        "Talk to the active Claude turn. action=reply answers a worker_question (runId,messageId,answer): supervisor guidance within the task, not human permission; use the event's messageId and its childRunId for teams; stale, wrong-task or expired IDs are rejected; updates already have transport receipts, so there is no inbox to poll. action=queue delivers scoped guidance (runId,requestId,text) without interrupting: it is accepted now and sent as exactly one input after the current native turn reaches its result boundary, FIFO with other queued guidance. action=interrupt additionally asks the native runtime to end the current turn promptly and, once that segment's result drains, sends the guidance into the same saved native conversation; it outranks unsent queued messages, which stay pending. Both require an active running task and reject foreign/stale run/task/revision/session scope. Returned states are truthful and distinct: queued, interruption_requested, delivering (native startup pending), delivered (input accepted, never a claim the model read it), failed, cancelled. Each delivered queue/interrupt input adds 500 cumulative rounds and grants at least 500 native rounds, funding the SDK boundary reserve when needed; duplicate requests add no credit. Cancellation, disconnect, an expired deadline or a failed interrupt report failure instead of delivering late.",
       inputSchema: {
         action: z
           .enum(["reply", "queue", "interrupt"])
@@ -782,7 +790,7 @@ export function createOrchestratorServer(
           .min(1)
           .max(1000)
           .describe(
-            "Native agentic-turn cap per team segment, 1..1000; Default: 500. Bounded by the shared persistent run allowance."
+            "Initial team segment cap, 1..1000; default 500. Each same-conversation follow-on adds 500 to the shared allowance and grants at least 500 native rounds; smaller follow-on values are raised to 500. Duplicate requestIds add no credit."
           )
           .optional(),
         maxTotalTurns: z.number().int().min(1).max(10000).optional(),

@@ -18,6 +18,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Orchestrator, type Run, type TaskSpec } from "../src/orchestrator/controller.js";
 import { TeamCoordinator, type TeamTaskSpec } from "../src/orchestrator/team.js";
 import { createOrchestratorServer } from "../src/orchestrator/server.js";
+import * as runtime from "../src/orchestrator/runtime.js";
 import {
   WORKER_SLOT_LIMIT,
   acquireWorkerSlot,
@@ -654,10 +655,17 @@ process.send({ready:true});`
   }, 30000);
 
   it("reports capacity from the pool root injected into the server", async () => {
+    vi.spyOn(runtime, "localConfig").mockReturnValue({
+      env: {},
+      executable: process.execPath,
+      endpoint: undefined,
+      model: "fixture-model",
+    });
     const f = fixture();
     const connection = await connect(f.data, f.cwd, f.task);
     await connection.dispatch("one");
     const doctor = await connection.call("orchestrator_doctor", {});
+    expect(doctor.isError, JSON.stringify(doctor.value)).toBe(false);
     expect(doctor.value.workerSlots).toMatchObject({ limit: 3, active: 1 });
     expect(doctor.value.workerSlots.slots[0]).toMatchObject({
       pid: process.pid,

@@ -1,10 +1,20 @@
 # Usage, configuration and recovery
 
-Start with the [README](../README.md#first-task). Invoke Codex Controls Claude or its `orchestrate` skill explicitly. Codex owns the goal, design, scope, acceptance and session lifecycle; Claude Code implements bounded stages using its own configured model and tools.
+Start with the [README](../README.md). Invoke Codex Controls Claude or its `orchestrate` skill explicitly. Codex owns the goal, design, scope, acceptance and session lifecycle; Claude Code implements bounded stages using its own configured model and tools.
 
 ## Task contracts and independent acceptance
 
 Each task declares artifacts, dependencies and executable acceptance checks. Dispatch starts only dependency-ready work. Completion is a candidate: Codex inspects the actual files and diff, then `orchestrator_review` checks the current artifact hash and reruns the original checks. A failed check rejects the candidate and records rework.
+
+Choose one research owner for each stage before deep investigation. If Codex already has the findings, it passes conclusions, evidence and coverage for Claude to implement. If discovery remains, Claude investigates the bounded questions and returns evidence plus a recommendation; Codex waits, resolves material choices and continues that same conversation. Owning the final decision does not require repeating the investigation. Parallel work needs distinct questions and outputs. Necessary editing reads, checks of stale evidence and targeted review of a contradiction remain valid.
+
+Complex briefs include the goal, user constraints, stage/owner, settled evidence, open questions, allowed decisions, workspace/write boundaries, dirty work to preserve, dependencies, next steps, deliverables, validation and escalation conditions. The service appends the actual registered fixed checks as command/args JSON in the workspace directory. Keep evidence useful and specific; continuation feedback carries new facts and next steps. See the [complete brief and examples](../skills/orchestrate/references/research-handoff.md).
+
+Every dispatch also explicitly asks the worker to proactively invoke relevant permitted skills and plugin/MCP tools available in its own Claude Code session and apply their guidance. The native system prompt carries the complete policy across startup and cold resume. User-named capabilities take priority after checking availability; if no exact inventory is known, the generic instruction still applies. The worker reports actual use and important unavailability in its normal output. Selection is task-relevant and respects native invocation restrictions; already loaded instructions and settled evidence are reused.
+
+The supervisor currently observes native tools and MCP status, not a complete catalog of Claude skills/plugins. Codex's own capabilities and Claude's installed plugins do not prove what a worker session has loaded or invoked. A plugin provides specific skills, tools or agents. This policy uses the worker's actual session metadata and does not add plugin scanning, installation, activation or SDK loading options. See the [official-source research and recommended wording](research/2026-10-29-proactive-worker-capabilities.md).
+
+Acceptance starts from the actual changes, requirement coverage and risks. Let `orchestrator_review` run the fixed acceptance suite; extra identical full runs immediately around review need a concrete reason such as changed code or a failure. Worker development checks and the independent acceptance rerun remain separate, useful steps.
 
 Checks remain immutable for a dispatched task. `append` adds work; `supersede` records the replacement and rewires dependents to the replacement's own contract. The old task and its history remain recorded. `reconcile` captures supervisor-completed files for review without spending model work; it does not accept them automatically.
 
@@ -22,7 +32,7 @@ Three managed executions is the shared ceiling across connected chats, ordinary 
 
 Keep one event wait pending. Completion, a question, a residual permission, failure, cancellation and budget risk wake it. `notify_supervisor` records an ordinary milestone in the audit; it does not wake the pending wait. `ask_supervisor` creates a question that does wake it, and Codex's answer returns inside that original tool call.
 
-Native `AskUserQuestion` uses the same question bridge. The original questions and options arrive as `worker_question`. Answers use `{"answers":{"<exact question text>":"<label or free text>"}}`; a single question also accepts plain text, and a multi-select answer may use an array of labels. A timeout, cancellation, stale ID or incomplete/unparseable reply rejects the pending question explicitly. Decisions expire after five minutes by default.
+Native `AskUserQuestion` uses the same question bridge. The original questions and options arrive as `worker_question`. Answers use `{"answers":{"<exact question text>":"<label or free text>"}}`; a single question also accepts plain text, and a multi-select answer may use an array of labels. An interruption, cancellation, stale ID or incomplete/unparseable reply rejects the pending question explicitly. Residual permissions expire after five minutes by default; pending questions remind after five minutes and stay open while the turn is active.
 
 `orchestrator_message` supports:
 
@@ -38,12 +48,12 @@ The defaults describe different limits:
 
 | Limit | Default | Continuation behavior |
 |---|---|---|
-| Native segment cap | 500 agentic rounds | Continue the same task within the remaining persistent allowance |
-| Persistent run/team allowance | 1,000 SDK-reported turns | Preserved across follow-ups, rework and recovery; time renewal does not replenish it |
+| Native segment cap | 500 agentic rounds | Each explicit same-conversation follow-on gets at least 500 rounds |
+| Persistent run/team allowance | Initially 1,000 SDK-reported turns | Each explicit same-conversation dispatch or delivered queue/interrupt adds 500; usage and peer holds remain recorded |
 | Execution window | Two hours | Explicit evidence-backed `resume` may renew time while preserving the contracts and turn budget |
 | Acceptance repairs | Two | Separate from budget continuation and interruption recovery |
 
-A segment reaching its native cap can continue on the same conversation if the persistent budget and execution window allow it. An exhausted total allowance remains exhausted. An expired time window may be renewed through `sessionAction="resume"` with evidence of authorized continuation; plain resume, reopen, append and context changes do not silently renew it.
+A segment reaching its native cap can continue on the same conversation through explicit continuation while its execution window allows it. That follow-on adds the documented allowance, including the SDK boundary reserve when needed; duplicate request IDs add no credit. Time renewal alone does not replenish turns. An expired time window may be renewed through `sessionAction="resume"` with evidence of authorized continuation; plain resume, reopen, append and context changes do not silently renew it.
 
 Failure records a checkpoint, failure classification, accounting and next actions. Inspect that evidence before continuing. The defaults and parameter ranges are also described in the live tool schemas.
 
@@ -61,7 +71,7 @@ After a connection loss, `plan(action="attach", runId)` or the team's attach ope
 |---|---|---|
 | `CCC_CLAUDE_PATH` | Resolved `claude` | Explicit installed Claude executable |
 | `CCC_WAIT_MS` | 1,200,000 ms | Default wait, up to 20 minutes |
-| `CCC_DECISION_TIMEOUT_MS` | 300,000 ms | Decision expiry, configurable from one second to 30 minutes |
+| `CCC_DECISION_TIMEOUT_MS` | 300,000 ms | Permission expiry and question reminder interval, configurable from one second to 30 minutes |
 | `CCC_INIT_TIMEOUT_MS` | 120,000 ms | Startup bound, one second to ten minutes |
 | `CCC_CHECK_TIMEOUT_MS` | 300,000 ms | Check bound, one second to ten minutes |
 | `CCC_DATA_DIR` | `~/.local/share/codex-controls-claude` | State directory; host `PLUGIN_DATA` takes precedence |

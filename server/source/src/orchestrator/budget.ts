@@ -60,6 +60,18 @@ export function budgetRemaining(budget: TurnBudget): number {
   return Math.max(0, budget.limit - budget.used - budget.reserved);
 }
 
+/** Fund one explicit follow-on input, preserving all prior charges and peer holds. */
+export function extendFollowOnBudget(budget: TurnBudget): number {
+  const previous = budget.limit;
+  const limit = Math.max(
+    previous + DEFAULT_SEGMENT_TURNS,
+    budget.used + budget.reserved + DEFAULT_SEGMENT_TURNS + BOUNDARY_ALLOWANCE
+  );
+  if (!Number.isSafeInteger(limit)) throw new Error("INVALID_RUN_TURN_LIMIT");
+  budget.limit = limit;
+  return limit - previous;
+}
+
 /**
  * Largest segment grant that still fits, leaving room for the boundary allowance.
  * A grant below one turn means the run cannot afford another model segment.

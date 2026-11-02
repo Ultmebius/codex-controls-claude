@@ -234,7 +234,8 @@ export function executeCheck(command: string, args: string[], cwd: string, signa
 
 export function processSpawner(
   stoppers?: Set<() => void>,
-  workerName?: string
+  workerName?: string,
+  continuity?: { segment: number; resumed: boolean }
 ): Options["spawnClaudeCodeProcess"] {
   if (!enabled) return undefined;
   return (opts: SpawnOptions) => {
@@ -242,6 +243,7 @@ export function processSpawner(
       const terminal = new TerminalProcess(opts, {
         ...displayEffort(opts.cwd, opts.env, opts.args),
         workerName,
+        continuity,
       });
       const stop = () => terminal.kill("SIGTERM");
       stoppers?.add(stop);

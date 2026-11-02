@@ -9,8 +9,8 @@ afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
 
-async function fixture(timeoutMs = 60000) {
-  const mailbox = new SupervisorMailbox(timeoutMs);
+async function fixture(reminderMs = 60000) {
+  const mailbox = new SupervisorMailbox(reminderMs);
   const server = mailbox.createServer();
   const client = new Client({ name: "mailbox-test", version: "1" });
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
@@ -100,22 +100,64 @@ describe("attempt-scoped supervisor messaging", () => {
     ).toBe(true);
   });
 
-  it("returns an explicit timeout and retains the idempotent unanswered outcome", async () => {
+  it("reminds after the reminder interval while keeping the original question pending and answerable", async () => {
     const f = await fixture(20);
     vi.useFakeTimers();
     const emitted = f.nextMessage();
-    const args = { messageId: "timeout", question: "Need guidance" };
+    const args = { messageId: "delayed", question: "Need guidance" };
+    const pending = f.call("ask_supervisor", args);
+    const event = await emitted;
+    expect(event).toMatchObject({
+      kind: "question",
+      text: args.question,
+      reminderAt: expect.any(String),
+    });
+    expect(event.expiresAt).toBeUndefined();
+    const reminderEmitted = f.nextMessage();
+    await vi.advanceTimersByTimeAsync(20);
+    const reminder = await reminderEmitted;
+    expect(reminder).toEqual({ ...event, reminder: true });
+    expect(f.mailbox.isPending(event.id)).toBe(true);
+    const duplicate = f.call("ask_supervisor", args);
+    expect(f.mailbox.respond(event.id, "Delayed answer")).toBe(true);
+    const outcome = await pending;
+    expect(outcome).toEqual({
+      error: false,
+      value: {
+        messageId: event.id,
+        clientMessageId: "delayed",
+        status: "answered",
+        answer: "Delayed answer",
+      },
+    });
+    expect(await duplicate).toEqual(outcome);
+    expect(await f.call("ask_supervisor", args)).toEqual(outcome);
+    expect(f.mailbox.isPending(event.id)).toBe(false);
+    expect(f.events).toHaveLength(2);
+  });
+
+  it("settles an interrupted pending question explicitly and retains the idempotent unanswered outcome", async () => {
+    const f = await fixture(20);
+    vi.useFakeTimers();
+    const emitted = f.nextMessage();
+    const args = { messageId: "interrupted", question: "Need guidance" };
     const pending = f.call("ask_supervisor", args);
     const event = await emitted;
     await vi.advanceTimersByTimeAsync(20);
+    f.mailbox.interruptPending("Turn interrupted");
     const outcome = await pending;
     expect(outcome).toMatchObject({
       error: true,
-      value: { messageId: event.id, status: "unanswered", error: "SUPERVISOR_QUESTION_TIMEOUT" },
+      value: {
+        messageId: event.id,
+        status: "unanswered",
+        error: "SUPERVISOR_INTERRUPTED",
+        reason: "Turn interrupted",
+      },
     });
     expect(f.mailbox.respond(event.id, "late")).toBe(false);
     expect(await f.call("ask_supervisor", args)).toEqual(outcome);
-    expect(f.events).toHaveLength(1);
+    expect(f.events).toHaveLength(2);
   });
 
   it("close releases pending questions and prevents further messages or replies", async () => {

@@ -97,7 +97,8 @@ beforeEach(() => {
             };
             yield {
               type: "result",
-              subtype: "success",
+              subtype:
+                message.message.content === "native turn limit" ? "error_max_turns" : "success",
               session_id: sessionId,
               result: "done",
               duration_ms: 1,
@@ -106,6 +107,7 @@ beforeEach(() => {
               modelUsage: { [mocks.model]: { contextWindow: 1000000 } },
             };
             yield { type: "prompt_suggestion", session_id: sessionId, suggestion: "next?" };
+            if (message.message.content === "native turn limit") return;
           }
         })(),
         { close() {}, interrupt() {}, mcpServerStatus: mocks.mcpServerStatus }
@@ -128,6 +130,26 @@ function nextResult() {
   });
 }
 describe("persistent SDK streaming", () => {
+  it("reads current public progress from the SDK stream and drops it at the next task boundary", async () => {
+    const done = nextResult();
+    const id = await worker.start(cwd, "Evidence complete; writing report now.", 500);
+    await done;
+    expect(worker.progress(id)?.latestOutput?.text).toBe("Evidence complete; writing report now.");
+    await worker.reply(id, "hold stream then ask NEXT_TASK", 500);
+    await vi.waitFor(() => expect(releaseHold).toBeTypeOf("function"));
+    expect(worker.progress(id)?.latestOutput).toBeUndefined();
+    expect(worker.progress("another-session")).toBeUndefined();
+    releaseHold!();
+  });
+  it("resumes exhausted guidance with the same native ID and a fresh 500-round cap", async () => {
+    const id = await worker.start(cwd, "native turn limit", 500);
+    await vi.waitFor(() => expect(worker.isLive(id)).toBe(false));
+    expect(worker.result(id)?.errorSubtype).toBe("error_max_turns");
+    expect(await worker.guidance(id, "follow-on task", 500)).toBe(true);
+    await vi.waitFor(() => expect(worker.result(id)?.isError).toBe(false));
+    expect(mocks.query).toHaveBeenCalledTimes(2);
+    expect(mocks.query.mock.calls[1][0].options).toMatchObject({ resume: id, maxTurns: 500 });
+  });
   it("classifies native API errors despite a success-shaped final envelope and clears them on reply", async () => {
     const failed = nextResult();
     const id = await worker.start(cwd, "native rate error", 40);
@@ -287,6 +309,54 @@ describe("persistent SDK streaming", () => {
     await done;
     expect(mocks.query).toHaveBeenCalledTimes(2);
     expect(mocks.query.mock.calls[1][0].options).toMatchObject({ resume: id, maxTurns: 40 });
+  });
+  it("carries the research reuse and design-decision policy on native startup and cold resume", async () => {
+    const policy = (call: number) =>
+      (mocks.query.mock.calls[call][0].options.systemPrompt as { append?: string }).append ?? "";
+    let done = nextResult();
+    const id = await worker.start(cwd, "first", 2);
+    await done;
+    done = nextResult();
+    await worker.reply(id, "second", 40);
+    await done;
+    const first = mocks.query.mock.calls[0][0].options;
+    const cold = mocks.query.mock.calls[1][0].options;
+    // A changed cap cold-resumes the same conversation; the reuse policy must not be dropped.
+    expect(cold.resume).toBe(id);
+    expect(policy(0)).toMatch(/Research handoff:/);
+    expect(policy(0)).toBe(policy(1));
+    // Decision responsibility and evidence collection are separate. Both research paths survive
+    // cold resume, including contradiction reads, local autonomy and same-session continuation.
+    expect(policy(0)).toMatch(/decisions stay with Codex/);
+    expect(policy(0)).toMatch(/report the finding with its source and ask before implementing/);
+    expect(policy(0)).toMatch(/remain your judgement/);
+    expect(policy(0)).toMatch(/reuse those facts and decisions by default/);
+    expect(policy(0)).toMatch(/assigned research owner/);
+    expect(policy(0)).toMatch(/When you own research, investigate the assigned questions/);
+    expect(policy(0)).toMatch(/Codex waits for that evidence rather than duplicating/);
+    expect(policy(0)).toMatch(/native subagent distinct questions and outputs/);
+    expect(policy(0)).toMatch(/tests or a run contradicting the handoff/);
+    expect(policy(0)).toMatch(/Routine findings and authorized local choices need no round trip/);
+    expect(policy(0)).toMatch(/continue in this same session/);
+    expect(policy(0)).toMatch(/If ownership is missing/);
+    expect(policy(0)).toMatch(/ask_supervisor/);
+    expect(policy(0)).toContain("Proactive capability use:");
+    expect(policy(0)).toContain("native Skill tool or supported skill mechanism");
+    expect(policy(0)).toContain("apply their guidance");
+    expect(policy(0)).toContain("Do not wait for Codex to remind you");
+    expect(policy(0)).toContain("skills reserved for user invocation");
+    expect(policy(0)).toContain("without scanning every plugin, forcing unrelated calls");
+    expect(policy(0)).toContain("availability or intent alone is not actual use");
+    for (const options of [first, cold]) {
+      // The policy is an append over the native preset, never a replacement for it, and it changes
+      // no permission, hook or settings-source inheritance.
+      expect(options.systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" });
+      expect(options.settingSources).toEqual(["user", "project", "local"]);
+      expect(options.hooks).toBeUndefined();
+      expect(options.settings).toBeUndefined();
+      expect(options.tools).toEqual({ type: "preset", preset: "claude_code" });
+      expect(options.permissionMode).toBe("default");
+    }
   });
   it("reloads changed native MCP settings only at the next task boundary", async () => {
     let done = nextResult();
@@ -701,7 +771,7 @@ describe("active guidance over the real streaming input", () => {
         design: "design",
         tasks: [task()],
       });
-      await controller.dispatch(run.id, "a", "first", undefined, { maxTurns: 12 });
+      await controller.dispatch(run.id, "a", "first", undefined, { maxTurns: 500 });
       const sessionId = (controller.status(run.id) as Run).sessionId!;
       const receipt = controller.sendGuidance(run.id, {
         requestId: "guidance-1",
@@ -738,7 +808,7 @@ describe("active guidance over the real streaming input", () => {
         design: "design",
         tasks: [task()],
       });
-      await controller.dispatch(run.id, "a", "first", undefined, { maxTurns: 12 });
+      await controller.dispatch(run.id, "a", "first", undefined, { maxTurns: 500 });
       const sessionId = (controller.status(run.id) as Run).sessionId!;
       let interrupted = false;
       const original = worker.interruptTurn.bind(worker);
@@ -929,7 +999,7 @@ describe("independent queued-turn acceptance regressions", () => {
     }
   });
 
-  it("uses the reduced remaining allowance as the actual native follow-on cap", async () => {
+  it("passes the funded 500-round follow-on cap to the actual SDK query", async () => {
     writeFileSync(path.join(cwd, "answer.txt"), "42");
     const controller = new Orchestrator(path.join(cwd, "ledger"), worker);
     try {
@@ -954,9 +1024,11 @@ describe("independent queued-turn acceptance regressions", () => {
       first!();
       await vi.waitFor(() => expect(releaseHold).toBeTypeOf("function"));
       const expectedCap = run.executions!.at(-1)!.effectiveLimit;
-      expect(expectedCap).toBe(1);
+      expect(expectedCap).toBe(500);
+      expect(run.turnBudget.limit).toBe(503);
       const actualCap = mocks.query.mock.calls.at(-1)![0].options.maxTurns;
-      expect(actualCap).toBeLessThanOrEqual(expectedCap);
+      expect(actualCap).toBe(expectedCap);
+      expect(mocks.query.mock.calls.at(-1)![0].options.resume).toBe(run.sessionId);
     } finally {
       releaseHold?.();
       controller.close();

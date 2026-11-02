@@ -21,6 +21,8 @@ class WorkerFixture implements Worker {
   stopped = 0;
   scope?: string[];
   interrupt?: Worker["interrupt"];
+  respondMessage?: Worker["respondMessage"];
+  isQuestionPending?: Worker["isQuestionPending"];
   messageListener?: (event: {
     sessionId: string;
     message: import("../src/orchestrator/messaging.js").SupervisorMessage;
@@ -360,7 +362,7 @@ describe("field feedback recovery and overhead", () => {
     await f.controller.dispatch(f.run.id, "a", "next", undefined, { mode: "continue" });
     f.worker.finish(2, oldEpoch);
     f.worker.finish(2, oldEpoch);
-    expect(f.run.turnBudget).toMatchObject({ used: 2, estimated: 0, reserved: 499 });
+    expect(f.run.turnBudget).toMatchObject({ limit: 1500, used: 2, estimated: 0, reserved: 501 });
     expect(f.run.tasks[0].state).toBe("running");
     f.worker.finish(4);
     expect(f.run.turnBudget).toMatchObject({ used: 6, reserved: 0 });
@@ -513,6 +515,83 @@ describe("field feedback recovery and overhead", () => {
     await vi.advanceTimersByTimeAsync(180001);
     expect(selectTaskEvidence(f.run, f.run.tasks[0], ["decisions"]).decisions).toMatchObject([
       { id: "question", state: "expired", automaticReplay: false },
+    ]);
+  });
+  it("keeps reminder-backed worker questions pending across wait cursors until answered", async () => {
+    const f = fixture();
+    const answered = new Set<string>();
+    f.worker.respondMessage = (id) => {
+      answered.add(id);
+      return true;
+    };
+    f.worker.isQuestionPending = (id) => !answered.has(id);
+    await f.controller.dispatch(f.run.id, "a", "first");
+    const reminderAt = new Date(Date.now() + 300000).toISOString();
+    f.worker.messageListener?.({
+      sessionId: "session",
+      message: {
+        id: "q-remind",
+        kind: "question",
+        text: "Which error code should pool.py attribute?",
+        reminderAt,
+      },
+    });
+    const initial = await f.controller.wait(f.run.id, 0, 1000);
+    expect(initial.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "worker_question",
+          data: expect.objectContaining({ messageId: "q-remind", requiresResponse: true }),
+        }),
+      ])
+    );
+    // Subsequent wait with the consumed cursor blocks until the reminder event is emitted
+    // rather than spinning in 0ms on the already-consumed seq.
+    const nextWait = f.controller.wait(f.run.id, initial.nextCursor, 1000);
+    let settledEarly = false;
+    void nextWait.then(() => {
+      settledEarly = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settledEarly).toBe(false);
+    f.worker.messageListener?.({
+      sessionId: "session",
+      message: {
+        id: "q-remind",
+        kind: "question",
+        text: "Which error code should pool.py attribute?",
+        reminderAt,
+        reminder: true,
+      },
+    });
+    const reminded = await nextWait;
+    expect(reminded.events).toHaveLength(1);
+    expect(reminded.events[0]).toMatchObject({
+      type: "worker_question",
+      data: {
+        messageId: "q-remind",
+        reminder: true,
+        waiting: true,
+        nextActions: ["respond_message"],
+      },
+    });
+    // When both initial and reminder events are after afterSeq, selectWaitEvents deduplicates by messageId.
+    const deduplicated = await f.controller.wait(f.run.id, 0, 1000);
+    expect(deduplicated.events.filter((e) => e.type === "worker_question")).toHaveLength(1);
+    expect(deduplicated.events.find((e) => e.type === "worker_question")).toMatchObject({
+      data: { messageId: "q-remind", reminder: true, waiting: true },
+    });
+    expect(selectTaskEvidence(f.run, f.run.tasks[0], ["decisions"]).decisions).toMatchObject([
+      { id: "q-remind", state: "pending", reminderAt, nextActions: ["respond_message"] },
+    ]);
+    expect(
+      f.controller.respondMessage(f.run.id, "q-remind", "Use embedded error code")
+    ).toMatchObject({
+      messageId: "q-remind",
+      delivery: "answered_in_worker_tool",
+    });
+    expect(selectTaskEvidence(f.run, f.run.tasks[0], ["decisions"]).decisions).toMatchObject([
+      { id: "q-remind", state: "answered" },
     ]);
   });
 });

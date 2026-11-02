@@ -3222,8 +3222,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path12) {
-      let input = path12;
+    function removeDotSegments(path13) {
+      let input = path13;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -3422,8 +3422,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path12, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path12 && path12 !== "/" ? path12 : void 0;
+        const [path13, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path13 && path13 !== "/" ? path13 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -7568,10 +7568,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path12) {
-  if (!path12)
+function getElementAtPath(obj, path13) {
+  if (!path13)
     return obj;
-  return path12.reduce((acc, key) => acc?.[key], obj);
+  return path13.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -7954,11 +7954,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path12, issues) {
+function prefixIssues(path13, issues) {
   return issues.map((iss) => {
     var _a2;
     (_a2 = iss).path ?? (_a2.path = []);
-    iss.path.unshift(path12);
+    iss.path.unshift(path13);
     return iss;
   });
 }
@@ -8141,7 +8141,7 @@ function formatError(error48, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error48, mapper = (issue2) => issue2.message) {
   const result2 = { errors: [] };
-  const processError = (error49, path12 = []) => {
+  const processError = (error49, path13 = []) => {
     var _a2, _b2;
     for (const issue2 of error49.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -8151,7 +8151,7 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path12, ...issue2.path];
+        const fullpath = [...path13, ...issue2.path];
         if (fullpath.length === 0) {
           result2.errors.push(mapper(issue2));
           continue;
@@ -8183,8 +8183,8 @@ function treeifyError(error48, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path12 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path12) {
+  const path13 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path13) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -20161,13 +20161,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path12 = ref.slice(1).split("/").filter(Boolean);
-  if (path12.length === 0) {
+  const path13 = ref.slice(1).split("/").filter(Boolean);
+  if (path13.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path12[0] === defsKey) {
-    const key = path12[1];
+  if (path13[0] === defsKey) {
+    const key = path13[1];
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -22535,8 +22535,8 @@ function getErrorMap2() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path12, errorMaps, issueData } = params;
-  const fullPath = [...path12, ...issueData.path || []];
+  const { data, path: path13, errorMaps, issueData } = params;
+  const fullPath = [...path13, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -22651,11 +22651,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path12, key) {
+  constructor(parent, value, path13, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path12;
+    this._path = path13;
     this._key = key;
   }
   get path() {
@@ -30089,19 +30089,18 @@ var EMPTY_COMPLETION_RESULT = {
 };
 
 // src/orchestrator/server.ts
-import os5 from "node:os";
-import path11 from "node:path";
+import path12 from "node:path";
 import { execFileSync as execFileSync5 } from "node:child_process";
 
 // src/orchestrator/controller.ts
-import { createHash as createHash3, randomUUID as randomUUID4 } from "node:crypto";
+import { createHash as createHash3, randomUUID as randomUUID5 } from "node:crypto";
 import {
-  existsSync as existsSync7,
-  mkdirSync as mkdirSync2,
-  readFileSync as readFileSync7,
-  readdirSync as readdirSync3,
-  realpathSync as realpathSync3,
-  renameSync,
+  existsSync as existsSync8,
+  mkdirSync as mkdirSync3,
+  readFileSync as readFileSync8,
+  readdirSync as readdirSync4,
+  realpathSync as realpathSync4,
+  renameSync as renameSync2,
   writeFileSync as writeFileSync2
 } from "node:fs";
 import path7 from "node:path";
@@ -30462,6 +30461,7 @@ var TerminalProcess = class extends EventEmitter {
       env,
       effort: this.options.effort ?? "unknown",
       effortSource: this.options.effortSource ?? "not reported",
+      continuity: this.options.continuity,
       windowHandle: this.info.windowHandle,
       // Observed before the worker existed: the host compares it against the system input tick when
       // the first frame is painted, so Windows Terminal's own startup activation is not mistaken for
@@ -30743,13 +30743,14 @@ function executeCheck(command, args, cwd, signal) {
     }
   );
 }
-function processSpawner(stoppers, workerName2) {
+function processSpawner(stoppers, workerName2, continuity) {
   if (!enabled) return void 0;
   return (opts) => {
     if (process.platform === "win32") {
       const terminal = new TerminalProcess(opts, {
         ...displayEffort(opts.cwd, opts.env, opts.args),
-        workerName: workerName2
+        workerName: workerName2,
+        continuity
       });
       const stop2 = () => terminal.kill("SIGTERM");
       stoppers?.add(stop2);
@@ -30866,6 +30867,16 @@ function normalizedBudget(input, limit = input?.limit ?? DEFAULT_RUN_TURN_LIMIT)
 }
 function budgetRemaining(budget) {
   return Math.max(0, budget.limit - budget.used - budget.reserved);
+}
+function extendFollowOnBudget(budget) {
+  const previous = budget.limit;
+  const limit = Math.max(
+    previous + DEFAULT_SEGMENT_TURNS,
+    budget.used + budget.reserved + DEFAULT_SEGMENT_TURNS + BOUNDARY_ALLOWANCE
+  );
+  if (!Number.isSafeInteger(limit)) throw new Error("INVALID_RUN_TURN_LIMIT");
+  budget.limit = limit;
+  return limit - previous;
 }
 function availableGrant(budget, segmentTurns) {
   const headroom = budget.limit - budget.used - budget.reserved - BOUNDARY_ALLOWANCE;
@@ -31157,3059 +31168,8 @@ function nativeMcpSignature(cwd, home = os3.homedir()) {
   return createHash2("sha256").update(JSON.stringify(stable(sources))).digest("hex");
 }
 
-// src/orchestrator/controller.ts
-var DEFAULT_EXECUTION_WINDOW_MS = 72e5;
-var MIN_EXECUTION_WINDOW_MS = 1e3;
-var MAX_GUIDANCE_TEXT = 4e3;
-var MAX_GUIDANCE_RECORDS = 32;
-var MAX_GUIDANCE_QUEUE = 8;
-function taskContract(task2) {
-  const { id: id2, title, instructions, dependsOn, acceptance, artifacts, checks } = task2;
-  return { id: id2, title, instructions, dependsOn, acceptance, artifacts, checks };
-}
-function fail(message) {
-  throw new Error(message);
-}
-var Orchestrator = class {
-  constructor(dataDir, worker, poolRoot = dataDir) {
-    this.dataDir = dataDir;
-    this.worker = worker;
-    this.poolRoot = poolRoot;
-    mkdirSync2(dataDir, { recursive: true });
-    for (const file2 of readdirSync3(dataDir).filter((f6) => /^run-[\w-]+\.json$/.test(f6))) {
-      const run = JSON.parse(readFileSync7(path7.join(dataDir, file2), "utf8"));
-      this.migrate(run);
-      this.runs.set(run.id, run);
-    }
-    this.unsubscribe = worker.subscribe((event) => this.consume(event));
-    this.unsubscribeMessages = worker.subscribeMessages?.(({ sessionId, message }) => {
-      const run = [...this.runs.values()].find(
-        (r3) => r3.sessionId === sessionId && r3.activeTaskId && r3.status === "open"
-      ) ?? [...this.runs.values()].find(
-        (r3) => r3.activeTaskId && r3.status === "open" && this.startups.get(r3.id)?.valid
-      );
-      if (!run || this.closed || !this.owns(run)) return;
-      run.sessionId = sessionId;
-      if (message.kind === "question") {
-        this.pendingMessages.set(message.id, {
-          runId: run.id,
-          taskId: run.activeTaskId,
-          sessionId
-        });
-        this.task(run, run.activeTaskId).decisions ??= [];
-        this.task(run, run.activeTaskId).decisions.push({
-          id: message.id,
-          kind: "question",
-          state: "pending",
-          text: message.text,
-          expiresAt: message.expiresAt
-        });
-      }
-      this.emit(
-        run,
-        message.kind === "question" ? "worker_question" : "worker_message",
-        {
-          messageId: message.id,
-          kind: message.kind,
-          text: message.text,
-          trust: "worker_observation",
-          requiresResponse: message.kind === "question",
-          nextActions: message.kind === "question" ? ["respond_message"] : ["continue_wait"]
-        },
-        run.activeTaskId,
-        message.kind === "question"
-      );
-    });
-  }
-  runs = /* @__PURE__ */ new Map();
-  /** Execution-capacity records are memory-only so ledger reads never expose tokens. */
-  slots = /* @__PURE__ */ new Map();
-  listeners = /* @__PURE__ */ new Set();
-  seen = /* @__PURE__ */ new Map();
-  startups = /* @__PURE__ */ new Map();
-  timers = /* @__PURE__ */ new Map();
-  unsubscribe;
-  unsubscribeMessages;
-  pendingMessages = /* @__PURE__ */ new Map();
-  closed = false;
-  ownerId = randomUUID4();
-  interruptions = /* @__PURE__ */ new Map();
-  /** Per-message interrupt watchdogs; process-local and never persisted. */
-  guidanceTimers = /* @__PURE__ */ new Map();
-  reviewing = /* @__PURE__ */ new Set();
-  idleTimers = /* @__PURE__ */ new Map();
-  eventSubscribers = /* @__PURE__ */ new Set();
-  subscribeEvents(listener) {
-    this.eventSubscribers.add(listener);
-    return () => {
-      this.eventSubscribers.delete(listener);
-    };
-  }
-  metrics = {
-    waits: 0,
-    wakeups: 0,
-    waitTimeouts: 0,
-    statusReads: 0,
-    ledgerReads: 0,
-    logPolls: 0,
-    outputBytes: 0
-  };
-  respondMessage(runId, messageId2, answer) {
-    const run = this.get(runId);
-    const pending = this.pendingMessages.get(messageId2);
-    if (!pending || pending.runId !== runId || pending.taskId !== run.activeTaskId || run.sessionId !== pending.sessionId || !this.worker.respondMessage?.(messageId2, answer))
-      fail("MESSAGE_NOT_PENDING_OR_STALE");
-    this.pendingMessages.delete(messageId2);
-    const decision = this.task(run, pending.taskId).decisions?.find((d) => d.id === messageId2);
-    if (decision) decision.state = "answered";
-    this.emit(
-      run,
-      "supervisor_answered",
-      {
-        messageId: messageId2,
-        answer,
-        delivery: "answered_in_worker_tool",
-        trust: "supervisor_scope_guidance"
-      },
-      pending.taskId,
-      false
-    );
-    return {
-      runId,
-      messageId: messageId2,
-      delivery: "answered_in_worker_tool",
-      nextCursor: this.cursor(runId)
-    };
-  }
-  /**
-   * Scoped guidance for an active, still-running task. `queue` records the text and returns
-   * without touching the native turn: delivery happens exactly once at the next native result
-   * boundary. `interrupt` additionally asks the worker to end the current turn, then delivers
-   * the guidance as the follow-on input in the same native conversation. Nothing is claimed as
-   * read by the model, and nothing survives a restart or a cancelled task.
-   */
-  sendGuidance(runId, input) {
-    const run = this.get(runId);
-    this.open(run, true);
-    if (["__proto__", "constructor", "prototype"].includes(input.requestId))
-      fail("INVALID_REQUEST_ID");
-    const text2 = typeof input.text === "string" ? input.text.trim() : "";
-    if (!text2) fail("GUIDANCE_TEXT_REQUIRED");
-    if (text2.length > MAX_GUIDANCE_TEXT) fail("GUIDANCE_TEXT_TOO_LONG");
-    const prior = run.guidance?.find((record4) => record4.requestId === input.requestId);
-    if (prior) {
-      if (prior.text !== text2 || prior.mode !== input.mode || input.taskId !== void 0 && input.taskId !== prior.taskId || input.taskRevision !== void 0 && input.taskRevision !== prior.taskRevision || input.sessionId !== void 0 && prior.sessionId !== void 0 && input.sessionId !== prior.sessionId)
-        fail("REQUEST_ID_CONFLICT");
-      return this.guidanceReceipt(run, prior, true);
-    }
-    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
-    if (this.interruptions.has(run.id)) fail("EXECUTOR_STARTUP_DRAINING");
-    const task2 = run.activeTaskId ? this.task(run, run.activeTaskId) : void 0;
-    if (!task2 || task2.state !== "running" || !run.sessionId) fail("NO_ACTIVE_EXECUTION");
-    if (input.taskId !== void 0 && input.taskId !== task2.id) fail("GUIDANCE_TASK_NOT_ACTIVE");
-    if (input.taskRevision !== void 0 && input.taskRevision !== task2.revision)
-      fail("STALE_CONTRACT");
-    if (input.sessionId !== void 0 && input.sessionId !== run.sessionId)
-      fail("GUIDANCE_SESSION_MISMATCH");
-    const active2 = run.executions?.find((e3) => e3.id === run.activeExecutionId);
-    if (!active2 || active2.status !== "reserved") fail("NO_ACTIVE_EXECUTION");
-    if (this.pendingGuidance(run).length >= MAX_GUIDANCE_QUEUE) fail("GUIDANCE_QUEUE_FULL");
-    if ((run.guidance?.length ?? 0) >= MAX_GUIDANCE_RECORDS) fail("GUIDANCE_MESSAGE_LIMIT");
-    if (Date.now() >= run.deadline) fail("RUN_DEADLINE");
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const record3 = {
-      id: randomUUID4(),
-      requestId: input.requestId,
-      runId,
-      taskId: task2.id,
-      taskRevision: task2.revision,
-      sessionId: run.sessionId,
-      mode: input.mode,
-      text: text2,
-      state: input.mode === "interrupt" ? "interruption_requested" : "queued",
-      createdAt: now,
-      updatedAt: now
-    };
-    run.guidance ??= [];
-    run.guidance.push(record3);
-    this.save(run);
-    this.emit(
-      run,
-      input.mode === "interrupt" ? "guidance_interruption_requested" : "guidance_queued",
-      this.guidanceSummary(run, record3),
-      task2.id,
-      false
-    );
-    if (input.mode === "interrupt") this.requestGuidanceInterrupt(run, record3);
-    return this.guidanceReceipt(run, record3, false);
-  }
-  /** Pending guidance: interrupting messages outrank ordinary queued ones, then FIFO. */
-  pendingGuidance(run) {
-    const order = (record3) => record3.state === "interruption_requested" ? 0 : 1;
-    return (run.guidance ?? []).filter((record3) => record3.state === "queued" || record3.state === "interruption_requested").sort((a3, b) => order(a3) - order(b) || a3.createdAt.localeCompare(b.createdAt));
-  }
-  guidanceSummary(run, record3) {
-    return {
-      guidanceId: record3.id,
-      requestId: record3.requestId,
-      taskId: record3.taskId,
-      taskRevision: record3.taskRevision,
-      mode: record3.mode,
-      state: record3.state,
-      reason: record3.reason,
-      /** Truthful delivery only: input accepted, never a claim that the model read it. */
-      delivered: record3.state === "delivered",
-      pendingGuidance: this.pendingGuidance(run).length,
-      textPreview: record3.text.slice(0, 500),
-      truncated: record3.text.length > 500
-    };
-  }
-  guidanceReceipt(run, record3, deduplicated) {
-    return {
-      runId: run.id,
-      ...this.guidanceSummary(run, record3),
-      deduplicated,
-      states: {
-        queued: "Accepted; waits for the current native turn to reach its result boundary",
-        interruption_requested: "Native interruption requested; not yet input",
-        delivering: "Starting the follow-on native turn; transport acceptance is pending",
-        delivered: "Input accepted by the same native conversation for the follow-on turn",
-        failed: "Not delivered; interrupt, transport or allowance prevented it",
-        cancelled: "Dropped because the task, run, budget or conversation ended"
-      },
-      trust: "supervisor_scope_guidance",
-      nextCursor: this.cursor(run.id)
-    };
-  }
-  /**
-   * Ask the native runtime to abandon the current turn. Delivery stays with the native result
-   * boundary; if that boundary never arrives, the message fails instead of being sent late into
-   * an unknown turn.
-   */
-  async requestGuidanceInterrupt(run, record3) {
-    record3.state = "interruption_requested";
-    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const executionId = run.activeExecutionId;
-    this.save(run);
-    const watchdog = setTimeout(
-      () => {
-        if (record3.state !== "interruption_requested") return;
-        if (run.activeExecutionId !== executionId || run.activeTaskId !== record3.taskId) return;
-        this.settleGuidance(run, record3, "failed", "interrupt_boundary_timeout");
-        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), record3.taskId);
-      },
-      Math.min(3e4, Math.max(1e3, run.deadline - Date.now()))
-    );
-    watchdog.unref();
-    this.guidanceTimers.set(record3.id, watchdog);
-    let issued = false;
-    try {
-      issued = await this.worker.interruptTurn?.(run.sessionId ?? "") ?? false;
-    } catch {
-      issued = false;
-    }
-    if (record3.state !== "interruption_requested") return;
-    if (!issued) {
-      this.settleGuidance(run, record3, "failed", "interrupt_failed");
-      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), record3.taskId);
-      return;
-    }
-    this.save(run);
-  }
-  settleGuidance(run, record3, state, reason) {
-    record3.state = state;
-    record3.reason = reason;
-    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    const timer = this.guidanceTimers.get(record3.id);
-    if (timer) {
-      clearTimeout(timer);
-      this.guidanceTimers.delete(record3.id);
-    }
-    this.save(run);
-  }
-  /**
-   * Deliver exactly one guidance message for the boundary that just settled. Exactly one user
-   * input crosses the native queue per boundary so two messages can never coalesce, and the
-   * follow-on segment is reserved before any input is sent.
-   */
-  deliverGuidance(run, record3) {
-    if (this.closed || !this.owns(run) || run.status !== "open" || !run.activeTaskId) {
-      this.settleGuidance(run, record3, "cancelled", "run_no_longer_active");
-      return false;
-    }
-    const task2 = this.task(run, run.activeTaskId);
-    if (Date.now() >= run.deadline) {
-      this.settleGuidance(run, record3, "failed", "execution_deadline");
-      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
-      return false;
-    }
-    const requested = run.executions?.at(-1)?.requestedLimit ?? run.maxTurns;
-    let nativeLimit = availableGrant(run.turnBudget, requested);
-    if (this.teamManaged) {
-      const granted = this.parentGrant?.(run.id, requested) ?? 0;
-      if (granted < 1) {
-        this.settleGuidance(run, record3, "failed", "turn_budget_exhausted");
-        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
-        return false;
-      }
-      run.turnBudget.limit = run.turnBudget.used + granted + 1;
-      run.turnBudget.reserved += granted + 1;
-      nativeLimit = granted;
-    } else {
-      if (nativeLimit < 1) {
-        this.settleGuidance(run, record3, "failed", "turn_budget_exhausted");
-        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
-        return false;
-      }
-      reserveGrant(run.turnBudget, nativeLimit);
-    }
-    const execution = {
-      id: randomUUID4(),
-      taskId: task2.id,
-      attempt: task2.attempts,
-      startedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      requestedLimit: requested,
-      effectiveLimit: nativeLimit,
-      defaultLimit: run.maxTurns,
-      reservedTurns: nativeLimit + 1,
-      observedAssistantMessages: 0,
-      provisionalCharge: 0,
-      status: "reserved",
-      reason: "guidance_continuation"
-    };
-    execution.sessionId = run.sessionId;
-    run.executions.push(execution);
-    run.activeExecutionId = execution.id;
-    const timer = setTimeout(
-      () => this.stopExecution(run, "Execution deadline exceeded", "time_budget"),
-      Math.min(run.taskTimeoutMs, Math.max(1, run.deadline - Date.now()))
-    );
-    timer.unref();
-    const previousTimer = this.timers.get(run.id);
-    if (previousTimer) clearTimeout(previousTimer);
-    this.timers.set(run.id, timer);
-    this.save(run);
-    let sent = false;
-    record3.state = "delivering";
-    record3.executionId = execution.id;
-    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    try {
-      sent = this.worker.guidance?.(run.sessionId ?? "", record3.text, nativeLimit) ?? false;
-    } catch {
-      sent = false;
-    }
-    if (typeof sent !== "boolean") {
-      const startup = { valid: true };
-      this.startups.set(run.id, startup);
-      let deliveryTimer;
-      const bounded = Promise.race([
-        sent,
-        new Promise((resolve) => {
-          deliveryTimer = setTimeout(
-            () => resolve(false),
-            Math.min(3e4, Math.max(1, run.deadline - Date.now()))
-          );
-          deliveryTimer.unref();
-        })
-      ]);
-      void bounded.then((accepted) => {
-        if (record3.state === "delivered") return;
-        if (!startup.valid || this.closed || !this.owns(run) || run.status !== "open" || run.activeExecutionId !== execution.id || record3.state !== "delivering") {
-          this.worker.stop(run.sessionId);
-          return;
-        }
-        if (!accepted) {
-          this.settleGuidance(run, record3, "failed", "transport_failed");
-          this.worker.stop(run.sessionId);
-          this.stoppedTask(
-            run,
-            task2,
-            "Guidance transport failed",
-            "guidance_transport",
-            "failed",
-            "worker_finished"
-          );
-          return;
-        }
-        execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
-        this.settleGuidance(run, record3, "delivered");
-        this.emit(run, "guidance_delivered", this.guidanceSummary(run, record3), task2.id, false);
-      }).catch(() => {
-        if (startup.valid && this.owns(run) && run.activeExecutionId === execution.id) {
-          this.settleGuidance(run, record3, "failed", "transport_failed");
-          this.worker.stop(run.sessionId);
-          this.stoppedTask(
-            run,
-            task2,
-            "Guidance transport failed",
-            "guidance_transport",
-            "failed",
-            "worker_finished"
-          );
-        }
-      }).finally(() => {
-        if (deliveryTimer) clearTimeout(deliveryTimer);
-        if (this.startups.get(run.id) === startup) {
-          this.startups.delete(run.id);
-          if (!run.activeTaskId && !run.sessionOperation) this.release(run);
-        }
-      });
-      this.save(run);
-      return true;
-    }
-    execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
-    if (!sent) {
-      settleReservation(run.turnBudget, execution.reservedTurns, void 0);
-      execution.reservedTurns = 0;
-      execution.status = "confirmed";
-      execution.reason = "guidance_transport_failed";
-      execution.settledAt = (/* @__PURE__ */ new Date()).toISOString();
-      if (run.activeExecutionId === execution.id) run.activeExecutionId = void 0;
-      this.settleGuidance(run, record3, "failed", "transport_failed");
-      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
-      return false;
-    }
-    this.settleGuidance(run, record3, "delivered");
-    this.emit(run, "guidance_delivered", this.guidanceSummary(run, record3), task2.id, false);
-    return true;
-  }
-  /** Drop every unsent message; the caller reports why. */
-  clearGuidance(run, reason) {
-    for (const record3 of (run.guidance ?? []).filter(
-      (entry) => ["queued", "interruption_requested", "delivering"].includes(entry.state)
-    )) {
-      const timer = this.guidanceTimers.get(record3.id);
-      if (timer) {
-        clearTimeout(timer);
-        this.guidanceTimers.delete(record3.id);
-      }
-      record3.state = "cancelled";
-      record3.reason = reason;
-      record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    }
-  }
-  migrate(run) {
-    run.executions ??= [];
-    for (const record3 of run.guidance ?? [])
-      if (["queued", "interruption_requested", "delivering"].includes(record3.state)) {
-        record3.state = "cancelled";
-        record3.reason = record3.reason ?? "not_replayed_after_restart";
-        record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      }
-    run.workerName ??= run.tasks[0]?.title;
-    if (run.renewals && !Array.isArray(run.renewals)) run.renewals = void 0;
-    if (!run.turnBudget) {
-      let used = 0, observed = 0;
-      for (const event of run.events)
-        if (event.type === "worker_finished") {
-          const count = event.data.result?.numTurns;
-          if (typeof count === "number" && Number.isFinite(count) && count >= 0) {
-            used += count;
-            observed++;
-          }
-        }
-      const missing = Math.max(0, run.tasks.reduce((n3, task2) => n3 + task2.attempts, 0) - observed);
-      run.turnBudget = normalizedBudget(
-        {
-          used: used + missing * (run.maxTurns + 1),
-          estimated: missing * (run.maxTurns + 1)
-        },
-        // Ledgers without a budget predate the raised default; keep the cap they ran under.
-        LEGACY_RUN_TURN_LIMIT
-      );
-    } else run.turnBudget = normalizedBudget(run.turnBudget);
-    for (const task2 of run.tasks) {
-      if (task2.repairs === void 0) {
-        let pendingRepair = false, repairs = 0;
-        for (const event of run.events.filter((event2) => event2.taskId === task2.id)) {
-          if (event.type === "task_rejected") pendingRepair = true;
-          if (event.type === "dispatch_intent") {
-            if (pendingRepair) repairs++;
-            pendingRepair = false;
-          }
-        }
-        task2.repairs = repairs;
-      }
-      task2.continuations ??= Math.max(0, task2.attempts - 1 - task2.repairs);
-      if (task2.state === "failed" && task2.result?.errorSubtype === "error_max_turns")
-        task2.state = "budget_exhausted";
-    }
-  }
-  artifactSnapshot(run, task2) {
-    return Object.fromEntries(
-      this.artifactPaths(task2).map((file2) => {
-        if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
-        const absolute = path7.resolve(run.cwd, file2);
-        return [
-          file2,
-          existsSync7(absolute) ? createHash3("sha256").update(readFileSync7(absolute)).digest("hex") : null
-        ];
-      })
-    );
-  }
-  captureCheckpoint(run, task2, reason, accountingKnown) {
-    this.inventory(run, task2);
-    const artifacts = this.artifactSnapshot(run, task2);
-    task2.checkpoint = {
-      at: (/* @__PURE__ */ new Date()).toISOString(),
-      taskRevision: task2.revision,
-      sessionId: run.sessionId,
-      reason,
-      artifacts,
-      artifactComparison: task2.baselineArtifacts ? "known" : "unavailable",
-      changedDeclaredArtifacts: task2.baselineArtifacts ? task2.artifacts.filter((file2) => artifacts[file2] !== task2.baselineArtifacts?.[file2]) : [],
-      accountingKnown
-    };
-    return task2.checkpoint;
-  }
-  artifactPaths(task2) {
-    return [.../* @__PURE__ */ new Set([...task2.artifacts, ...task2.additionalArtifacts ?? []])];
-  }
-  inventory(run, task2) {
-    const changes = changedSince(
-      task2.workspaceBaseline,
-      workspaceSnapshot(run.cwd, task2.artifacts, task2.workspaceBaseline?.heads)
-    );
-    const owned = changes.changedFiles.filter(
-      (file2) => this.worker.permitsArtifact?.(run.cwd, file2) !== false
-    );
-    const included = new Set(
-      this.artifactPaths(task2).map((file2) => path7.resolve(run.cwd, file2).toLowerCase())
-    );
-    for (const peer of run.tasks.filter((peer2) => peer2.id !== task2.id && peer2.state === "accepted"))
-      for (const file2 of this.artifactPaths(peer))
-        included.add(path7.resolve(run.cwd, file2).toLowerCase());
-    for (const file2 of run.peerArtifacts ?? [])
-      included.add(path7.resolve(run.cwd, file2).toLowerCase());
-    task2.changeInventory = {
-      ...changes,
-      changedFiles: changes.changedFiles,
-      outsideScopeObservations: changes.changedFiles.filter((file2) => !owned.includes(file2)),
-      undeclaredChanges: changes.changedFiles.filter(
-        (file2) => !included.has(path7.resolve(run.cwd, file2).toLowerCase())
-      )
-    };
-    return task2.changeInventory;
-  }
-  /** Coordinator-only coverage links. Every linked peer must pass review before team finish. */
-  setPeerArtifacts(runId, files) {
-    const run = this.get(runId);
-    const paths = [...new Set(files)].sort();
-    for (const file2 of paths) if (!inside(run.cwd, file2)) fail("PEER_ARTIFACT_OUTSIDE_WORKSPACE");
-    if (JSON.stringify(paths) !== JSON.stringify(run.peerArtifacts ?? [])) {
-      run.peerArtifacts = paths;
-      this.save(run);
-    }
-  }
-  includeArtifacts(runId, taskId, files, evidence) {
-    const run = this.get(runId), task2 = this.task(run, taskId);
-    this.open(run);
-    if (run.activeTaskId || run.sessionOperation || this.reviewing.has(run.id))
-      fail("EXECUTOR_BUSY");
-    if (!evidence.trim() || !files.length) fail("ARTIFACT_INCLUSION_EVIDENCE_REQUIRED");
-    if (task2.state === "accepted" || task2.state === "superseded") fail("TASK_NOT_RECONCILABLE");
-    for (const file2 of files) if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
-    task2.additionalArtifacts = [.../* @__PURE__ */ new Set([...task2.additionalArtifacts ?? [], ...files])];
-    this.inventory(run, task2);
-    if (task2.state === "awaiting_review") task2.artifactHash = this.hash(run, task2);
-    this.emit(
-      run,
-      "artifacts_included",
-      { files, evidence, artifactHash: task2.artifactHash },
-      taskId,
-      false
-    );
-    return {
-      runId,
-      taskId,
-      artifactHash: task2.artifactHash,
-      changeInventory: task2.changeInventory,
-      nextActions: ["reconcile", "review"]
-    };
-  }
-  settle(run, reported, reason) {
-    const execution = run.executions?.find((e3) => e3.id === run.activeExecutionId);
-    if (execution) settleExecution(run.turnBudget, execution, reported, reason);
-    else if (run.turnBudget.reserved)
-      settleReservation(run.turnBudget, run.turnBudget.reserved, reported);
-    run.activeExecutionId = void 0;
-  }
-  warnBudget(run, task2) {
-    const committed = run.turnBudget.used + run.turnBudget.reserved;
-    const pendingTasks = run.tasks.filter((t) => t.id !== task2.id && t.state === "pending").map((t) => t.id);
-    if (run.budgetWarningAt || committed < run.turnBudget.limit * 0.7 || !pendingTasks.length)
-      return;
-    run.budgetWarningAt = committed;
-    this.emit(
-      run,
-      "budget_risk",
-      {
-        budget: budgetSummary(run.turnBudget),
-        pendingTasks,
-        nextActions: ["review_checkpoint", "plan_remaining_stages"],
-        warning: "Charged or reserved allowance leaves limited room for pending stages; reservations are not observed use and no allowance is added"
-      },
-      task2.id
-    );
-  }
-  dependenciesAccepted(run, task2) {
-    return task2.dependsOn.every((id2) => {
-      let dependency = this.task(run, id2);
-      const seen = /* @__PURE__ */ new Set();
-      while (dependency.state === "superseded" && dependency.supersededBy && !seen.has(dependency.id)) {
-        seen.add(dependency.id);
-        dependency = this.task(run, dependency.supersededBy);
-      }
-      return dependency.state === "accepted";
-    });
-  }
-  stoppedTask(run, task2, reason, kind, state, eventType) {
-    const startup = this.startups.get(run.id);
-    if (startup) startup.valid = false;
-    this.clearGuidance(run, kind);
-    this.settle(run, void 0, kind);
-    run.activeTaskId = void 0;
-    run.sessionOperation = void 0;
-    run.sessionState = "closed";
-    this.release(run);
-    task2.state = state;
-    task2.failure = { kind };
-    task2.result = {
-      sessionId: run.sessionId ?? "",
-      result: reason,
-      isError: true,
-      errorSubtype: "orchestrator_" + kind,
-      numTurns: 0,
-      durationMs: Date.now() - (task2.startedAt ?? Date.now()),
-      totalCostUsd: 0
-    };
-    task2.checkpoint = void 0;
-    for (const decision of task2.decisions ?? [])
-      if (decision.state === "pending") decision.state = "interrupted";
-    let checkpoint;
-    try {
-      checkpoint = this.captureCheckpoint(run, task2, reason, false);
-    } catch (error48) {
-      task2.feedback = `Checkpoint capture failed: ${String(error48)}`;
-    }
-    this.emit(
-      run,
-      eventType,
-      {
-        state: task2.state,
-        result: task2.result,
-        reason,
-        failureClass: kind,
-        checkpointAvailable: !!checkpoint,
-        changedDeclaredArtifacts: checkpoint?.changedDeclaredArtifacts,
-        changeSummary: task2.changeInventory ? {
-          undeclaredChanges: task2.changeInventory.undeclaredChanges,
-          outsideScopeObservations: task2.changeInventory.outsideScopeObservations
-        } : void 0,
-        nextActions: Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0 ? ["continue", "reconcile", "cancel"] : ["reconcile", "cancel"],
-        turnBudget: run.turnBudget
-      },
-      task2.id
-    );
-    this.warnBudget(run, task2);
-  }
-  stopExecution(run, reason, kind) {
-    const startup = this.startups.get(run.id);
-    if (startup) startup.valid = false;
-    const task2 = run.activeTaskId ? this.task(run, run.activeTaskId) : void 0;
-    this.worker.stop(run.sessionId);
-    if (task2)
-      this.stoppedTask(
-        run,
-        task2,
-        reason,
-        kind,
-        kind === "time_budget" ? "budget_exhausted" : "interrupted",
-        "worker_finished"
-      );
-    else {
-      this.settle(run, void 0, kind);
-      run.sessionOperation = void 0;
-      run.sessionState = "closed";
-      this.release(run);
-      this.emit(run, "execution_interrupted", { reason, turnBudget: run.turnBudget });
-    }
-  }
-  save(run) {
-    const dest = path7.join(this.dataDir, `run-${run.id}.json`);
-    if (existsSync7(dest)) {
-      const disk = JSON.parse(readFileSync7(dest, "utf8"));
-      if (disk.ownerId && disk.ownerId !== run.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
-        fail("STALE_SUPERVISOR_OWNER");
-      if ((disk.ownerGeneration ?? 0) > (run.ownerGeneration ?? 0)) fail("STALE_SUPERVISOR_OWNER");
-    }
-    const tmp = `${dest}.${process.pid}.tmp`;
-    writeFileSync2(tmp, JSON.stringify(run, null, 2), { mode: 384 });
-    renameSync(tmp, dest);
-  }
-  emit(run, type, data, taskId, actionable = true) {
-    if (["worker_finished", "worker_failed", "task_blocked", "run_cancelled"].includes(type)) {
-      for (const [id2, pending] of this.pendingMessages)
-        if (pending.runId === run.id) this.pendingMessages.delete(id2);
-    }
-    if ([
-      "plan_created",
-      "plan_updated",
-      "task_accepted",
-      "task_rejected",
-      "candidate_delivered",
-      "task_superseded"
-    ].includes(type))
-      actionable = false;
-    const event = {
-      seq: (run.events.at(-1)?.seq ?? 0) + 1,
-      type,
-      data,
-      taskId,
-      at: (/* @__PURE__ */ new Date()).toISOString(),
-      actionable
-    };
-    run.events.push(event);
-    this.save(run);
-    for (const subscriber of [...this.eventSubscribers]) subscriber(run, event);
-    if (actionable) for (const listener of [...this.listeners]) listener(run.id);
-    return event;
-  }
-  get(id2, writable = true) {
-    const run = this.runs.get(id2) ?? fail("RUN_NOT_FOUND");
-    if (writable && (this.closed || !this.owns(run)))
-      fail("RUN_OWNED_BY_ANOTHER_CONNECTION: use plan attach after the owner disconnects");
-    return run;
-  }
-  owns(run) {
-    if (run.ownerPid !== process.pid || run.ownerReleased || run.ownerId && run.ownerId !== this.ownerId)
-      return false;
-    const file2 = path7.join(this.dataDir, `run-${run.id}.json`);
-    if (!existsSync7(file2)) return true;
-    const disk = JSON.parse(readFileSync7(file2, "utf8"));
-    return !disk.ownerReleased && disk.ownerPid === process.pid && disk.ownerId === run.ownerId && disk.ownerGeneration === run.ownerGeneration;
-  }
-  attach(runId) {
-    if (this.closed) fail("CONNECTION_CLOSED");
-    const file2 = path7.join(this.dataDir, `run-${runId}.json`);
-    if (!existsSync7(file2)) fail("RUN_NOT_FOUND");
-    const claim = `${file2}.claim`;
-    const releaseClaim = claimFile(claim);
-    try {
-      const run = JSON.parse(readFileSync7(file2, "utf8"));
-      if (!run.ownerReleased && processAlive(run.ownerPid) && (run.ownerPid !== process.pid || run.ownerId && run.ownerId !== this.ownerId))
-        fail("OWNER_STILL_ACTIVE: no takeover of a live supervisor");
-      if (this.startups.size || [...this.runs.values()].some((r3) => this.owns(r3) && (r3.activeTaskId || r3.sessionOperation)))
-        fail("EXECUTOR_BUSY");
-      if (run.ownerId === this.ownerId && !run.ownerReleased)
-        return {
-          runId,
-          attached: true,
-          generation: run.ownerGeneration,
-          nextCursor: this.cursor(runId)
-        };
-      this.migrate(run);
-      run.ownerPid = process.pid;
-      run.ownerId = this.ownerId;
-      run.ownerReleased = false;
-      run.ownerGeneration = (run.ownerGeneration ?? 0) + 1;
-      if (run.turnBudget.reserved) {
-        const orphaned = run.turnBudget.reserved;
-        this.settle(run, void 0, "owner_lost");
-        run.turnBudget.recovered = (run.turnBudget.recovered ?? 0) + orphaned;
-      }
-      run.activeTaskId = void 0;
-      run.sessionOperation = void 0;
-      run.sessionState = "closed";
-      for (const record3 of run.guidance ?? [])
-        if (["queued", "interruption_requested", "delivering"].includes(record3.state)) {
-          record3.state = "cancelled";
-          record3.reason = "owner_lost";
-          record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-        }
-      for (const task2 of run.tasks) {
-        if (task2.state === "running") {
-          task2.state = "interrupted";
-          task2.failure = { kind: "interrupted" };
-          try {
-            this.captureCheckpoint(run, task2, "Owner was lost", false);
-          } catch {
-          }
-        }
-        for (const decision of task2.decisions ?? [])
-          if (decision.state === "pending") decision.state = "interrupted";
-      }
-      this.runs.set(runId, run);
-      this.emit(
-        run,
-        "supervisor_attached",
-        { generation: run.ownerGeneration, automaticReplay: false },
-        void 0,
-        false
-      );
-      return {
-        runId,
-        attached: true,
-        generation: run.ownerGeneration,
-        budget: budgetSummary(run.turnBudget),
-        nextCursor: this.cursor(runId),
-        nextActions: ["reconcile", "continue", "review"]
-      };
-    } finally {
-      releaseClaim();
-    }
-  }
-  cursor(runId) {
-    return this.get(runId, false).events.at(-1)?.seq ?? 0;
-  }
-  eventSummary(runId, event) {
-    return this.brief(event, runId);
-  }
-  brief(event, runId) {
-    if (event.type !== "worker_finished") return event;
-    const data = event.data;
-    return {
-      ...event,
-      data: {
-        state: data.state,
-        artifactHash: data.artifactHash,
-        elapsedMs: data.elapsedMs,
-        context: data.context,
-        artifacts: data.artifacts,
-        failureClass: data.failureClass,
-        checkpointAvailable: data.checkpointAvailable,
-        changedDeclaredArtifacts: data.changedDeclaredArtifacts,
-        nextActions: data.nextActions,
-        turnBudget: data.turnBudget,
-        changeSummary: data.changeSummary,
-        checkpointRef: data.checkpointAvailable ? { tool: "orchestrator_status", runId, taskId: event.taskId, sections: ["checkpoint"] } : void 0,
-        result: data.result ? {
-          sessionId: data.result.sessionId,
-          summary: data.state === "blocked" ? data.result.result : data.result.result.slice(0, 1e3),
-          truncated: data.state !== "blocked" && data.result.result.length > 1e3,
-          detailRef: {
-            runId,
-            taskId: event.taskId,
-            tool: "orchestrator_status",
-            sections: ["result"]
-          },
-          isError: data.result.isError,
-          numTurns: data.result.numTurns,
-          errorSubtype: data.result.errorSubtype,
-          structuredOutput: data.result.structuredOutput,
-          stopReason: data.result.stopReason,
-          permissionDenials: data.result.permissionDenials
-        } : void 0,
-        feedback: data.feedback ? {
-          summary: data.feedback.slice(0, 500),
-          truncated: data.feedback.length > 500,
-          evidenceRef: { runId, taskId: event.taskId, sections: ["error"] }
-        } : void 0
-      }
-    };
-  }
-  task(run, id2) {
-    return run.tasks.find((t) => t.id === id2) ?? fail("TASK_NOT_FOUND");
-  }
-  open(run, execution = false) {
-    if (this.closed || !this.owns(run)) fail("CONNECTION_CLOSED_OR_OWNER_CHANGED");
-    if (run.status !== "open") fail("RUN_CLOSED");
-    if (execution && Date.now() >= run.deadline) fail("RUN_DEADLINE");
-  }
-  validateTasks(cwd, specs) {
-    if (!specs.length || specs.length > 100) fail("Provide 1 to 100 tasks");
-    const ids = new Set(specs.map((t) => t.id));
-    if (ids.size !== specs.length) fail("DUPLICATE_TASK_ID");
-    for (const task2 of specs) {
-      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(task2.id)) fail("INVALID_TASK_ID");
-      if (!task2.artifacts.length || !task2.checks.length)
-        fail("Each task needs artifacts and executable acceptance checks");
-      for (const file2 of task2.artifacts) if (!inside(cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
-      for (const id2 of task2.dependsOn) if (!ids.has(id2)) fail("UNKNOWN_DEPENDENCY");
-    }
-    const visiting = /* @__PURE__ */ new Set(), done = /* @__PURE__ */ new Set();
-    const visit = (id2) => {
-      if (visiting.has(id2)) fail("DEPENDENCY_CYCLE");
-      if (done.has(id2)) return;
-      visiting.add(id2);
-      for (const dep of specs.find((t) => t.id === id2).dependsOn) visit(dep);
-      visiting.delete(id2);
-      done.add(id2);
-    };
-    for (const id2 of ids) visit(id2);
-  }
-  validateReplacements(tasks, requireAccepted = false) {
-    for (const task2 of tasks.filter((t) => t.state === "superseded")) {
-      const seen = /* @__PURE__ */ new Set([task2.id]);
-      let current = task2;
-      while (current.state === "superseded") {
-        const next = tasks.find((t) => t.id === current.supersededBy);
-        if (!next) fail("MISSING_REPLACEMENT");
-        if (seen.has(next.id)) fail("REPLACEMENT_CYCLE");
-        seen.add(next.id);
-        current = next;
-      }
-      if (requireAccepted && current.state !== "accepted") fail("UNACCEPTED_REPLACEMENT");
-    }
-  }
-  plan(input) {
-    if (this.closed) fail("CONNECTION_CLOSED");
-    if (input.action === "create") {
-      if (!input.cwd || !input.goal || !input.design || !input.tasks)
-        fail("create requires cwd, goal, design, tasks");
-      const cwd = realpathSync3.native(input.cwd);
-      this.validateTasks(cwd, input.tasks);
-      if ([...this.runs.values()].some((r3) => this.owns(r3) && r3.status === "open"))
-        fail("OPEN_RUN_EXISTS: finish or cancel the current run before creating another");
-      for (const previous of this.runs.values())
-        if (this.owns(previous) && previous.status === "awaiting_user_review")
-          this.closeSession(previous);
-      const run2 = {
-        id: randomUUID4(),
-        goal: input.goal,
-        design: input.design,
-        cwd,
-        workerName: input.workerName ?? input.tasks[0].title,
-        revision: 1,
-        status: "open",
-        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-        deadline: Date.now() + (input.runTimeoutMs ?? 72e5),
-        taskTimeoutMs: input.taskTimeoutMs ?? 72e5,
-        maxTurns: input.maxTurns ?? DEFAULT_SEGMENT_TURNS,
-        turnBudget: normalizedBudget(void 0, input.maxTotalTurns ?? DEFAULT_RUN_TURN_LIMIT),
-        maxRepairs: input.maxRepairs ?? 2,
-        tasks: input.tasks.map((t) => ({
-          ...t,
-          revision: 1,
-          state: "pending",
-          attempts: 0,
-          repairs: 0,
-          continuations: 0,
-          reviews: []
-        })),
-        events: [],
-        receipts: {},
-        ownerPid: process.pid,
-        ownerId: this.ownerId,
-        ownerGeneration: 1,
-        executions: []
-      };
-      this.runs.set(run2.id, run2);
-      this.emit(run2, "plan_created", { revision: 1 });
-      return run2;
-    }
-    const run = this.get(input.runId ?? "");
-    if (input.action === "approve") {
-      if (run.status !== "awaiting_user_review") fail("USER_REVIEW_NOT_PENDING");
-      this.closeSession(run);
-      run.status = "completed";
-      this.emit(
-        run,
-        "user_approved",
-        { sessionId: run.sessionId, transcriptRetained: true },
-        void 0,
-        false
-      );
-      return run;
-    }
-    if (input.action === "reopen" || input.action === "append") {
-      if ([...this.runs.values()].some((r3) => r3.id !== run.id && this.owns(r3) && r3.status === "open"))
-        fail("OPEN_RUN_EXISTS");
-      if (input.action === "append") {
-        const additions2 = input.tasks ?? fail("append requires new tasks");
-        if (additions2.some((t) => run.tasks.some((old) => old.id === t.id)))
-          fail("DUPLICATE_TASK_ID");
-        this.validateTasks(run.cwd, [...run.tasks, ...additions2]);
-      }
-      for (const previous of this.runs.values())
-        if (previous.id !== run.id && this.owns(previous) && previous.status === "awaiting_user_review")
-          this.closeSession(previous);
-      if (run.status === "awaiting_user_review" || run.status === "completed") {
-        run.status = "open";
-        const idle = this.idleTimers.get(run.id);
-        if (idle) clearTimeout(idle);
-        this.idleTimers.delete(run.id);
-      }
-      if (input.action === "reopen") {
-        this.open(run);
-        this.emit(run, "run_reopened", { sessionId: run.sessionId }, void 0, false);
-        return run;
-      }
-      const additions = input.tasks ?? fail("append requires new tasks");
-      if (additions.some((t) => run.tasks.some((old) => old.id === t.id)))
-        fail("DUPLICATE_TASK_ID");
-      const existing = run.tasks.map(
-        ({ id: id2, title, instructions, dependsOn, acceptance, artifacts, checks }) => ({
-          id: id2,
-          title,
-          instructions,
-          dependsOn,
-          acceptance,
-          artifacts,
-          checks
-        })
-      );
-      return this.plan({ ...input, action: "update", tasks: [...existing, ...additions] });
-    }
-    this.open(run);
-    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
-    if (input.action === "supersede") {
-      const old = this.task(run, input.taskId ?? "");
-      const replacement = this.task(run, input.replacementId ?? "");
-      if (old.id === replacement.id || old.state === "running" || replacement.attempts !== 0 || replacement.state !== "pending")
-        fail("INVALID_REPLACEMENT");
-      const rewired = run.tasks.map(
-        (task2) => task2.attempts === 0 ? {
-          ...task2,
-          dependsOn: task2.dependsOn.map((id2) => id2 === old.id ? replacement.id : id2)
-        } : { ...task2 }
-      );
-      this.validateTasks(run.cwd, rewired);
-      const oldInPlan = rewired.find((t) => t.id === old.id);
-      oldInPlan.state = "superseded";
-      oldInPlan.supersededBy = replacement.id;
-      this.validateReplacements(rewired);
-      run.tasks = rewired;
-      run.revision++;
-      this.emit(
-        run,
-        "task_superseded",
-        { replacementId: replacement.id, revision: run.revision },
-        old.id
-      );
-      return run;
-    }
-    if (input.action === "finish") {
-      this.validateReplacements(run.tasks, true);
-      if (run.activeTaskId || run.tasks.some((t) => t.state !== "accepted" && t.state !== "superseded"))
-        fail("UNACCEPTED_TASKS");
-      for (const task2 of run.tasks.filter((t) => t.state === "accepted")) {
-        if (this.inventory(run, task2).undeclaredChanges.length) {
-          task2.state = "awaiting_review";
-          this.emit(
-            run,
-            "acceptance_invalidated",
-            {
-              reason: "Undeclared workspace changes after acceptance",
-              nextActions: ["include_artifacts", "review"]
-            },
-            task2.id
-          );
-          return run;
-        }
-        const hash2 = this.hash(run, task2);
-        if (hash2 !== task2.artifactHash) {
-          task2.state = "awaiting_review";
-          task2.artifactHash = hash2;
-          this.emit(
-            run,
-            "acceptance_invalidated",
-            { artifactHash: hash2, reason: "Artifact changed after acceptance; review again" },
-            task2.id
-          );
-          return run;
-        }
-      }
-      run.status = "awaiting_user_review";
-      run.sessionState = run.sessionId && this.worker.model(run.sessionId) ? "retained" : "closed";
-      this.emit(run, "candidate_delivered", {
-        acceptedTasks: run.tasks.filter((t) => t.state === "accepted").length,
-        supersededTasks: run.tasks.filter((t) => t.state === "superseded").length
-      });
-      this.release(run);
-      const idle = setTimeout(() => {
-        this.closeSession(run);
-        this.emit(run, "idle_session_suspended", { transcriptRetained: true }, void 0, false);
-      }, 18e5);
-      idle.unref();
-      this.idleTimers.set(run.id, idle);
-      return run;
-    }
-    if (!input.tasks) fail("update requires complete tasks list");
-    this.validateTasks(run.cwd, input.tasks);
-    for (const old of run.tasks.filter((t) => t.state === "superseded")) {
-      if (!input.tasks.some((t) => t.id === old.supersededBy)) fail("MISSING_REPLACEMENT");
-    }
-    for (const old of run.tasks.filter((t) => t.attempts > 0 || t.state === "superseded")) {
-      const next = input.tasks.find((t) => t.id === old.id) ?? fail("DISPATCHED_CONTRACT_IMMUTABLE");
-      const contract = {
-        id: old.id,
-        title: old.title,
-        instructions: old.instructions,
-        dependsOn: old.dependsOn,
-        acceptance: old.acceptance,
-        artifacts: old.artifacts,
-        checks: old.checks
-      };
-      if (JSON.stringify(contract) !== JSON.stringify(taskContract(next)))
-        fail("DISPATCHED_CONTRACT_IMMUTABLE");
-    }
-    run.revision++;
-    run.tasks = input.tasks.map((t) => {
-      const old = run.tasks.find((x) => x.id === t.id);
-      return old && (old.attempts > 0 || old.state === "superseded") ? old : {
-        ...t,
-        revision: run.revision,
-        state: "pending",
-        attempts: 0,
-        repairs: 0,
-        continuations: 0,
-        reviews: []
-      };
-    });
-    if (input.design) run.design = input.design;
-    this.emit(run, "plan_updated", { revision: run.revision });
-    return run;
-  }
-  closeSession(run) {
-    const startup = this.startups.get(run.id);
-    if (startup) startup.valid = false;
-    this.clearGuidance(run, "Session closed");
-    const timer = this.idleTimers.get(run.id);
-    if (timer) clearTimeout(timer);
-    this.idleTimers.delete(run.id);
-    if (run.sessionId && this.worker.model(run.sessionId)) this.worker.stop(run.sessionId);
-    run.sessionState = "closed";
-    if (run.sessionOperation) settleReservation(run.turnBudget, run.turnBudget.reserved, void 0);
-    run.sessionOperation = void 0;
-    this.release(run);
-    this.save(run);
-  }
-  makeCheckpoint(run) {
-    return JSON.stringify({
-      goal: run.goal,
-      designAndDecisions: run.design,
-      accepted: run.tasks.filter((t) => t.state === "accepted").map((t) => ({
-        id: t.id,
-        contract: t.acceptance,
-        artifacts: t.artifacts,
-        implementation: t.result?.result,
-        structuredOutput: t.result?.structuredOutput,
-        supervisorReview: t.reviews.at(-1)
-      })),
-      remaining: run.tasks.filter((t) => !["accepted", "superseded"].includes(t.state)).map((t) => ({ id: t.id, title: t.title, dependsOn: t.dependsOn, feedback: t.feedback }))
-    });
-  }
-  /**
-   * Explicit, evidence-backed renewal of the model-execution window. Callers must have proved the
-   * run is idle and owned. Nothing else (task contracts, revisions, native conversation, turn
-   * budget, usage, repairs, checks or receipts) is touched, and an implicit path never calls this.
-   */
-  renewDeadline(run, source, evidence, requestedRunTimeoutMs, deadline) {
-    const text2 = evidence.trim();
-    if (!text2) fail("RENEWAL_EVIDENCE_REQUIRED");
-    const window2 = requestedRunTimeoutMs ?? DEFAULT_EXECUTION_WINDOW_MS;
-    if (!Number.isSafeInteger(window2) || window2 < MIN_EXECUTION_WINDOW_MS || window2 > DEFAULT_EXECUTION_WINDOW_MS)
-      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
-    if (deadline !== void 0 && (!Number.isSafeInteger(deadline) || deadline <= 0))
-      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
-    const previousDeadline = run.deadline;
-    const next = Math.max(previousDeadline, deadline ?? Date.now() + window2);
-    const renewal = {
-      at: (/* @__PURE__ */ new Date()).toISOString(),
-      source,
-      previousDeadline,
-      deadline: next,
-      evidence: text2
-    };
-    if (requestedRunTimeoutMs !== void 0) renewal.requestedRunTimeoutMs = requestedRunTimeoutMs;
-    run.renewals ??= [];
-    run.renewals.push(renewal);
-    run.deadline = next;
-    this.save(run);
-    return renewal;
-  }
-  /**
-   * Renewal guard shared by ordinary and team paths. Busy, draining, reviewed, foreign-owned or
-   * closed runs cannot be renewed; a failed worker never reaches this method.
-   */
-  assertRenewable(run) {
-    this.open(run);
-    if (this.closed || !this.owns(run)) fail("RUN_OWNED_BY_ANOTHER_CONNECTION");
-    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
-    if (run.activeTaskId || run.sessionOperation) fail("SESSION_BUSY");
-    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
-  }
-  /**
-   * A managed child's model-execution window is owned by its team: only the coordinator may move
-   * it, so an ordinary resume can never outlive an expired parent.
-   */
-  teamManaged = false;
-  /**
-   * Team children spend the shared team allowance, which the parent must reserve before any
-   * follow-on input. The handler returns the granted turns (0 when the team cannot afford it).
-   */
-  parentGrant;
-  setParentGrant(handler) {
-    this.parentGrant = handler;
-  }
-  setTeamManaged(managed) {
-    this.teamManaged = managed;
-  }
-  /**
-   * Team-coordinated renewal of one child's window. The team coordinator supplies the single
-   * evidence record and the parent deadline, so the team and its children never diverge.
-   */
-  renewExecutionWindow(runId, input) {
-    const run = this.get(runId);
-    this.assertRenewable(run);
-    return this.renewDeadline(
-      run,
-      input.source,
-      input.evidence,
-      input.runTimeoutMs,
-      input.deadline
-    );
-  }
-  /** True only for a run this connection currently owns and may mutate. */
-  isOwned(runId) {
-    const run = this.runs.get(runId);
-    return !!run && !this.closed && this.owns(run);
-  }
-  /** Non-throwing form used to pre-check a coordinated team renewal atomically. */
-  renewalEligibility(runId) {
-    try {
-      this.assertRenewable(this.get(runId));
-      return void 0;
-    } catch (error48) {
-      return error48 instanceof Error ? error48.message : String(error48);
-    }
-  }
-  async session(runId, action, options = {}) {
-    const run = this.get(runId), beforeCursor = this.cursor(runId);
-    if ((run.status === "completed" || run.status === "cancelled") && action !== "close")
-      fail("REOPEN_RUN_FIRST");
-    if (action !== "close" && [...this.runs.values()].some((r3) => r3.id !== run.id && this.owns(r3) && r3.status === "open"))
-      fail("OPEN_RUN_EXISTS");
-    if (run.activeTaskId || this.reviewing.has(run.id) || run.sessionOperation)
-      fail("SESSION_BUSY");
-    const renewalRequested = action === "resume" && (options.runTimeoutMs !== void 0 || options.evidence !== void 0);
-    if (options.runTimeoutMs !== void 0 && action !== "resume")
-      fail("BUDGET_CONFIG_CREATE_ONLY: runTimeoutMs is accepted only on create or explicit resume");
-    let renewal;
-    if (action === "close") this.closeSession(run);
-    else if (action === "new") {
-      run.checkpoint = this.makeCheckpoint(run);
-      this.closeSession(run);
-      run.previousSessions ??= [];
-      if (run.sessionId) run.previousSessions.push(run.sessionId);
-      run.sessionId = void 0;
-      run.lastContext = void 0;
-    } else if (action === "retain")
-      run.sessionState = run.sessionId && this.worker.model(run.sessionId) ? "retained" : "resume_pending";
-    else if (action === "resume") {
-      if (!run.sessionId) fail("NO_TRANSCRIPT_TO_RESUME");
-      if (renewalRequested) {
-        if (this.teamManaged)
-          fail(
-            "TEAM_RESUME_REQUIRED: renew a team child window through orchestrator_team action=resume"
-          );
-        this.assertRenewable(run);
-        renewal = this.renewDeadline(
-          run,
-          "explicit_session_resume",
-          options.evidence ?? "",
-          options.runTimeoutMs
-        );
-      }
-      run.sessionState = this.worker.model(run.sessionId) ? "retained" : "resume_pending";
-    } else {
-      if (!run.sessionId) fail("NO_SESSION_TO_COMPACT");
-      if (Date.now() >= run.deadline) fail("RUN_DEADLINE");
-      const nativeLimit = availableGrant(run.turnBudget, run.maxTurns);
-      if (nativeLimit < 1) fail("RUN_TURN_BUDGET_EXHAUSTED");
-      this.acquire(run);
-      reserveGrant(run.turnBudget, nativeLimit);
-      this.save(run);
-      run.sessionOperation = "compact";
-      run.compactBoundarySeen = false;
-      run.checkpoint = this.makeCheckpoint(run);
-      const timeout = setTimeout(
-        () => {
-          this.closeSession(run);
-          this.emit(run, "context_maintenance_failed", {
-            reason: "Compaction timed out; transcript retained. Resume or start a new context."
-          });
-        },
-        Math.min(18e4, Math.max(1, run.deadline - Date.now()))
-      );
-      timeout.unref();
-      this.timers.set(run.id, timeout);
-      const startup = { valid: true };
-      this.startups.set(run.id, startup);
-      try {
-        this.worker.setName?.(run.workerName);
-        const prompt = "/compact Preserve these supervisor-confirmed facts and user feedback; omit raw logs. " + run.checkpoint;
-        if (this.worker.model(run.sessionId) && this.worker.isLive?.(run.sessionId) !== false)
-          await this.worker.reply(run.sessionId, prompt, nativeLimit);
-        else {
-          this.seen.delete(run.sessionId);
-          run.sessionId = await this.worker.start(
-            run.cwd,
-            prompt,
-            nativeLimit,
-            void 0,
-            run.sessionId
-          );
-        }
-        if (startup.valid) run.sessionState = "retained";
-        else this.worker.stop(run.sessionId);
-      } catch (error48) {
-        if (startup.valid) {
-          settleReservation(run.turnBudget, run.turnBudget.reserved, void 0);
-          run.sessionOperation = void 0;
-          this.release(run);
-        }
-        throw error48;
-      } finally {
-        if (this.startups.get(run.id) === startup) {
-          this.startups.delete(run.id);
-          if (!run.activeTaskId && !run.sessionOperation) this.release(run);
-        }
-      }
-    }
-    this.emit(
-      run,
-      "session_policy",
-      {
-        action,
-        state: run.sessionState,
-        sessionId: run.sessionId,
-        renewal: renewal ? this.renewalSummary(run, renewal) : void 0
-      },
-      void 0,
-      false
-    );
-    return {
-      runId,
-      action,
-      state: run.sessionState,
-      sessionId: run.sessionId,
-      deadline: run.deadline,
-      renewal: renewal ? this.renewalSummary(run, renewal) : void 0,
-      nextCursor: beforeCursor
-    };
-  }
-  /** Effective window returned to the caller after an explicit renewal. */
-  renewalSummary(run, renewal) {
-    return {
-      source: renewal.source,
-      at: renewal.at,
-      previousDeadline: renewal.previousDeadline,
-      deadline: renewal.deadline,
-      effectiveDeadline: run.deadline,
-      requestedRunTimeoutMs: renewal.requestedRunTimeoutMs,
-      evidence: renewal.evidence,
-      renewalCount: run.renewals?.length ?? 0,
-      turnBudget: { ...run.turnBudget }
-    };
-  }
-  acquire(run) {
-    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
-    if (this.slots.has(run.id)) return;
-    withAdmissionGuard(this.poolRoot, () => {
-      if (workspaceReviewActive(this.poolRoot, run.cwd)) fail("WORKSPACE_REVIEW_IN_PROGRESS");
-      this.slots.set(run.id, acquireWorkerSlot(this.poolRoot, run.cwd, run.id));
-    });
-  }
-  dropSlot(runId) {
-    const slot = this.slots.get(runId);
-    if (!slot) return;
-    this.slots.delete(runId);
-    releaseWorkerSlot(this.poolRoot, slot);
-  }
-  release(run) {
-    const timer = this.timers.get(run.id);
-    if (timer) clearTimeout(timer);
-    this.timers.delete(run.id);
-    if (this.startups.has(run.id)) return;
-    this.dropSlot(run.id);
-  }
-  async dispatch(runId, taskId, requestId, signal, options = {}) {
-    const run = this.get(runId);
-    if (["__proto__", "constructor", "prototype"].includes(requestId)) fail("INVALID_REQUEST_ID");
-    const prior = Object.hasOwn(run.receipts, requestId) ? run.receipts[requestId] : void 0;
-    if (prior) {
-      if (prior.taskId !== taskId) fail("REQUEST_ID_CONFLICT");
-      return prior;
-    }
-    this.open(run, true);
-    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
-    if (run.activeTaskId || run.sessionOperation) fail("EXECUTOR_BUSY");
-    this.clearGuidance(run, "New dispatch");
-    if (run.sessionId && run.lastContext && run.lastContext.inputTokens !== null && run.lastContext.inputTokens >= run.lastContext.hardLimit)
-      fail("CONTEXT_MAINTENANCE_REQUIRED: compact or new before dispatch");
-    const task2 = this.task(run, taskId);
-    if (![
-      "pending",
-      "needs_revision",
-      "blocked",
-      "failed",
-      "interrupted",
-      "budget_exhausted"
-    ].includes(task2.state))
-      fail("TASK_NOT_DISPATCHABLE");
-    if (options.mode === "continue" && !["budget_exhausted", "blocked", "failed", "interrupted"].includes(task2.state))
-      fail("TASK_NOT_CONTINUABLE");
-    if (task2.state === "budget_exhausted" && options.mode !== "continue")
-      fail("EXPLICIT_CONTINUATION_REQUIRED");
-    if (task2.state === "needs_revision" && task2.repairs >= run.maxRepairs) fail("REPAIR_LIMIT");
-    if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
-    const zeroProgress = task2.attempts > 0 && task2.result?.isError && task2.result.numTurns === 0 && task2.checkpoint?.accountingKnown && task2.checkpoint.changedDeclaredArtifacts.length === 0;
-    if (zeroProgress && (task2.zeroProgressRetries ?? 0) >= 2) fail("ZERO_PROGRESS_RETRY_LIMIT");
-    const requested = options.maxTurns ?? run.maxTurns;
-    if (!Number.isSafeInteger(requested) || requested < 1 || requested > 1e3)
-      fail("INVALID_NATIVE_TURN_LIMIT");
-    const nativeLimit = availableGrant(run.turnBudget, requested);
-    if (nativeLimit < 1) fail("RUN_TURN_BUDGET_EXHAUSTED");
-    const baseline = this.artifactSnapshot(run, task2);
-    this.acquire(run);
-    reserveGrant(run.turnBudget, nativeLimit);
-    const execution = {
-      id: randomUUID4(),
-      taskId,
-      attempt: task2.attempts + 1,
-      startedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      requestedLimit: requested,
-      effectiveLimit: nativeLimit,
-      defaultLimit: run.maxTurns,
-      reservedTurns: nativeLimit + 1,
-      observedAssistantMessages: 0,
-      provisionalCharge: 0,
-      status: "reserved"
-    };
-    run.executions.push(execution);
-    run.activeExecutionId = execution.id;
-    if (task2.state === "needs_revision") task2.repairs++;
-    else if (task2.attempts > 0) task2.continuations++;
-    if (options.feedback) task2.feedback = options.feedback;
-    if (zeroProgress) task2.zeroProgressRetries = (task2.zeroProgressRetries ?? 0) + 1;
-    else task2.zeroProgressRetries = 0;
-    task2.baselineArtifacts = baseline;
-    task2.workspaceBaseline ??= workspaceSnapshot(run.cwd, task2.artifacts);
-    task2.attempts++;
-    task2.startedAt = Date.now();
-    task2.state = "running";
-    task2.result = void 0;
-    task2.checkpoint = void 0;
-    task2.artifactHash = void 0;
-    run.activeTaskId = task2.id;
-    const receipt = {
-      taskId,
-      attempt: task2.attempts,
-      sessionId: run.sessionId,
-      status: "starting",
-      nextCursor: this.cursor(runId),
-      nativeLimit,
-      turnBudget: { ...run.turnBudget }
-    };
-    run.receipts[requestId] = receipt;
-    this.emit(
-      run,
-      "dispatch_intent",
-      { requestId, attempt: task2.attempts, taskRevision: task2.revision },
-      taskId,
-      false
-    );
-    this.warnBudget(run, task2);
-    const prompt = `Overall goal: ${run.goal}
-Design: ${run.design}
-Workspace: ${run.cwd}
-Task ${task2.id} (contract revision ${task2.revision}): ${task2.title}
-${task2.instructions}
-Acceptance: ${task2.acceptance}
-Expected artifacts: ${task2.artifacts.join(", ")}
-Supervisor feedback: ${task2.feedback ?? "none"}
-Execute only this task. Do not run downstream tasks. If blocked return BLOCKED: and a concrete question. Report changed paths and checks; supervisor independently decides acceptance.`;
-    const timer = setTimeout(
-      () => {
-        this.stopExecution(run, "Execution deadline exceeded", "time_budget");
-      },
-      Math.min(run.taskTimeoutMs, run.deadline - Date.now())
-    );
-    timer.unref();
-    this.timers.set(run.id, timer);
-    const startup = { valid: true };
-    this.startups.set(run.id, startup);
-    try {
-      this.worker.setName?.(run.workerName);
-      if (run.sessionId && this.worker.model(run.sessionId) && this.worker.isLive?.(run.sessionId) !== false)
-        receipt.sessionId = await this.worker.reply(run.sessionId, prompt, nativeLimit, signal);
-      else {
-        if (run.sessionId) this.seen.delete(run.sessionId);
-        receipt.sessionId = await this.worker.start(
-          run.cwd,
-          (!run.sessionId && run.checkpoint ? "Supervisor checkpoint: " + this.makeCheckpoint(run) + "\n" : "") + prompt,
-          nativeLimit,
-          signal,
-          run.sessionId
-        );
-      }
-      if (!startup.valid || this.closed || run.status !== "open") {
-        receipt.status = "interrupted";
-        this.worker.stop(receipt.sessionId);
-        this.save(run);
-        return receipt;
-      }
-      run.sessionId = receipt.sessionId;
-      execution.sessionId = run.sessionId;
-      execution.epoch = this.worker.eventEpoch?.(run.sessionId) ?? 0;
-      run.sessionState = "retained";
-      receipt.startupMs = Date.now() - task2.startedAt;
-      receipt.status = "started";
-      run.workerCapabilities = await this.worker.refreshCapabilities?.(run.sessionId) ?? this.worker.capabilities?.(run.sessionId) ?? run.workerCapabilities;
-      receipt.workerCapabilities = compactCapabilities(run.workerCapabilities);
-      if (!startup.valid || this.closed || run.status !== "open") {
-        this.worker.stop(run.sessionId);
-        return receipt;
-      }
-      this.emit(
-        run,
-        "worker_started",
-        { requestId, sessionId: run.sessionId, model: this.worker.model(run.sessionId) },
-        taskId,
-        false
-      );
-      const events = await this.worker.replay(run.sessionId);
-      if (startup.valid && !this.closed && run.status === "open")
-        for (const event of events)
-          this.consume({
-            sessionId: run.sessionId,
-            event,
-            epoch: this.worker.eventEpoch?.(run.sessionId)
-          });
-      return receipt;
-    } catch (error48) {
-      if (startup.valid && !this.closed && run.status === "open") {
-        this.worker.stop(receipt.sessionId ?? run.sessionId);
-        this.stoppedTask(run, task2, String(error48), "startup", "failed", "worker_failed");
-        receipt.status = "failed";
-      } else receipt.status = "interrupted";
-      this.save(run);
-      return receipt;
-    } finally {
-      if (this.startups.get(run.id) === startup) {
-        this.startups.delete(run.id);
-        if (!run.activeTaskId && !run.sessionOperation) this.release(run);
-      }
-    }
-  }
-  hash(run, task2) {
-    const hash2 = createHash3("sha256");
-    for (const file2 of this.artifactPaths(task2).sort()) {
-      if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
-      hash2.update(file2);
-      hash2.update("\0");
-      const absolute = path7.resolve(run.cwd, file2);
-      if (task2.additionalArtifacts?.includes(file2) && !existsSync7(absolute))
-        hash2.update("<deleted>");
-      else hash2.update(readFileSync7(absolute));
-    }
-    return hash2.digest("hex");
-  }
-  consume({ sessionId, event, epoch = 0 }) {
-    if (this.closed || !event) return;
-    const run = [...this.runs.values()].find(
-      (r3) => r3.sessionId === sessionId && (r3.activeTaskId || r3.sessionOperation) && (r3.status === "open" || r3.status === "awaiting_user_review")
-    );
-    const prior = this.seen.get(sessionId);
-    const activeAccount = run?.executions?.find((e3) => e3.id === run.activeExecutionId);
-    if (!run || activeAccount?.epoch !== void 0 && activeAccount.epoch !== epoch) {
-      if (!["result", "error"].includes(event.type)) return;
-      for (const candidate of this.runs.values()) {
-        if (!this.owns(candidate)) continue;
-        const execution = candidate.executions?.find(
-          (e3) => e3.sessionId === sessionId && e3.epoch === epoch && e3.status === "provisional"
-        );
-        const result2 = event.data;
-        if (execution && result2?.sessionId === sessionId && (!result2.isError || result2.errorSubtype) && settleExecution(candidate.turnBudget, execution, result2.numTurns, "late_native_result")) {
-          this.emit(
-            candidate,
-            "accounting_corrected",
-            { executionId: execution.id, budget: budgetSummary(candidate.turnBudget) },
-            execution.taskId,
-            false
-          );
-          break;
-        }
-      }
-      return;
-    }
-    if (!this.owns(run) || prior?.epoch === epoch && event.id <= prior.id) return;
-    this.seen.set(sessionId, { epoch, id: event.id });
-    if (run.sessionOperation === "compact") {
-      if (event.type === "progress" && event.data.type === "compact_boundary") {
-        run.compactBoundarySeen = true;
-        this.save(run);
-        return;
-      }
-      if (event.type === "result" || event.type === "error") {
-        const result2 = this.worker.result(sessionId);
-        settleReservation(
-          run.turnBudget,
-          run.turnBudget.reserved,
-          result2 && (!result2.isError || result2.errorSubtype) ? result2.numTurns : void 0
-        );
-        run.sessionOperation = void 0;
-        run.lastContext = this.worker.context?.(sessionId);
-        this.release(run);
-        this.emit(
-          run,
-          event.type === "error" || this.worker.result(sessionId)?.isError || !run.compactBoundarySeen ? "context_maintenance_failed" : "context_compacted",
-          { context: run.lastContext, boundaryObserved: run.compactBoundarySeen }
-        );
-      }
-      return;
-    }
-    const task2 = this.task(run, run.activeTaskId);
-    const account = run.executions?.find((e3) => e3.id === run.activeExecutionId);
-    if (account) {
-      account.sessionId = sessionId;
-      account.epoch = epoch;
-      const delivery = run.guidance?.find(
-        (record3) => record3.executionId === account.id && record3.state === "delivering"
-      );
-      if (delivery && ["output", "permission_request", "result", "error"].includes(event.type)) {
-        if (event.type === "error") {
-          this.settleGuidance(run, delivery, "failed", "native_transport_error");
-          this.emit(run, "guidance_failed", this.guidanceSummary(run, delivery), task2.id);
-        } else {
-          this.settleGuidance(run, delivery, "delivered");
-          this.emit(run, "guidance_delivered", this.guidanceSummary(run, delivery), task2.id, false);
-        }
-      }
-    }
-    if (account && event.type === "output" && event.data.message?.role === "assistant")
-      account.observedAssistantMessages++;
-    if (event.type === "permission_request") {
-      const pending = event.data;
-      task2.decisions ??= [];
-      task2.decisions.push({
-        id: pending.requestId,
-        kind: "permission",
-        state: "pending",
-        expiresAt: pending.expiresAt,
-        text: pending.summary,
-        inputHash: createHash3("sha256").update(JSON.stringify(pending.input ?? {})).digest("hex"),
-        toolName: pending.toolName,
-        input: pending.input,
-        reason: pending.decisionReason
-      });
-      this.emit(run, "permission_required", event.data, task2.id);
-      return;
-    }
-    if (event.type === "permission_result") {
-      const data2 = event.data;
-      const pending = task2.decisions?.find((d) => d.id === data2.requestId);
-      if (pending) pending.state = data2.source === "timeout" ? "expired" : "answered";
-      this.emit(run, "permission_resolved", event.data, task2.id, data2.behavior === "deny");
-      if (data2.behavior === "deny" && data2.source === "timeout") {
-        void this.interruptGracefully(
-          run.id,
-          "Permission expired; continue explicitly to re-evaluate current tool input",
-          "permission"
-        );
-      }
-      return;
-    }
-    if (event.type === "result" || event.type === "error") {
-      const nativeResult = this.worker.result(sessionId) ?? event.data;
-      const accountingKnown = !nativeResult.isError || !!nativeResult.errorSubtype;
-      const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
-        nativeResult.errorSubtype ?? ""
-      );
-      const blocked = !nativeResult.isError && /^BLOCKED:/m.test(nativeResult.result);
-      const nextState = budgetStop ? "budget_exhausted" : nativeResult.isError ? "failed" : blocked ? "blocked" : "awaiting_review";
-      this.settle(
-        run,
-        accountingKnown ? nativeResult.numTurns : void 0,
-        nativeResult.errorSubtype ?? event.type
-      );
-      task2.result = nativeResult;
-      task2.failure = budgetStop ? {
-        kind: nativeResult.errorSubtype === "error_max_turns" ? "turn_budget" : "provider_budget",
-        subtype: nativeResult.errorSubtype
-      } : nativeResult.isError ? { kind: "execution", subtype: nativeResult.errorSubtype } : void 0;
-      if (budgetStop)
-        run.turnBudget.stopReason = nativeResult.errorSubtype === "error_max_turns" ? "native_max_turns" : "provider_budget_cap";
-      task2.state = nextState;
-      const interruption = this.interruptions.get(run.id);
-      if (interruption) {
-        task2.state = interruption.kind === "permission" ? "blocked" : "interrupted";
-        task2.failure = { kind: interruption.kind };
-      }
-      for (const decision of task2.decisions ?? [])
-        if (decision.state === "pending") decision.state = "expired";
-      const pending = this.pendingGuidance(run);
-      if (pending.length && !interruption && !this.closed && run.status === "open") {
-        this.emit(
-          run,
-          "native_boundary",
-          {
-            executionId: account?.id,
-            numTurns: nativeResult.numTurns,
-            accountingKnown,
-            boundaryState: task2.state,
-            pendingGuidance: pending.length,
-            turnBudget: run.turnBudget
-          },
-          task2.id,
-          false
-        );
-        const interruptRequested = pending.some((record3) => record3.mode === "interrupt");
-        const deliverable = interruptRequested || !nativeResult.isError && !blocked;
-        if (deliverable && this.deliverGuidance(run, pending[0])) {
-          task2.state = "running";
-          task2.result = void 0;
-          task2.failure = void 0;
-          run.lastContext = this.worker.context?.(sessionId);
-          this.save(run);
-          this.warnBudget(run, task2);
-          return;
-        }
-        if (!deliverable || pending[0].state !== "delivered")
-          this.clearGuidance(run, `Boundary ${task2.state}`);
-      } else if (pending.length) this.clearGuidance(run, `Boundary ${task2.state}`);
-      if (task2.state === "awaiting_review") {
-        try {
-          task2.artifactHash = this.hash(run, task2);
-        } catch (error48) {
-          task2.state = "failed";
-          task2.feedback = `Artifact capture failed: ${String(error48)}`;
-        }
-      }
-      task2.provenance = { producer: "worker", at: (/* @__PURE__ */ new Date()).toISOString() };
-      try {
-        this.captureCheckpoint(run, task2, task2.failure?.kind ?? task2.state, accountingKnown);
-      } catch (error48) {
-        task2.feedback = `Checkpoint capture failed: ${String(error48)}`;
-      }
-      run.activeTaskId = void 0;
-      run.lastContext = this.worker.context?.(sessionId);
-      this.release(run);
-      this.emit(
-        run,
-        "worker_finished",
-        {
-          state: task2.state,
-          artifactHash: task2.artifactHash,
-          result: task2.result,
-          feedback: task2.feedback,
-          elapsedMs: Date.now() - (task2.startedAt ?? Date.now()),
-          context: run.lastContext,
-          artifacts: task2.artifacts,
-          failureClass: task2.failure?.kind,
-          checkpointAvailable: !!task2.checkpoint,
-          changedDeclaredArtifacts: task2.checkpoint?.changedDeclaredArtifacts,
-          changeSummary: task2.changeInventory ? {
-            undeclaredChanges: task2.changeInventory.undeclaredChanges,
-            outsideScopeObservations: task2.changeInventory.outsideScopeObservations
-          } : void 0,
-          nextActions: task2.state === "awaiting_review" ? task2.changeInventory?.undeclaredChanges.length ? ["inspect_changes", "include_artifacts", "review"] : ["review"] : Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0 ? ["continue", "reconcile", "cancel"] : ["reconcile", "cancel"],
-          turnBudget: run.turnBudget
-        },
-        task2.id
-      );
-      this.warnBudget(run, task2);
-      if (run.lastContext && run.lastContext.inputTokens !== null && run.lastContext.inputTokens >= run.lastContext.softLimit)
-        this.emit(run, "context_maintenance_recommended", run.lastContext, task2.id);
-      return;
-    }
-    const data = event.data;
-    const tools = data.message?.content?.filter((c3) => c3.type === "tool_use").map((c3) => c3.name);
-    if (tools?.length || data.tool_name)
-      this.emit(run, "tool_activity", { tools: tools ?? [data.tool_name] }, task2.id, false);
-  }
-  async wait(runId, afterSeq, timeoutMs = defaultWaitMs(), signal) {
-    const run = this.get(runId);
-    this.metrics.waits++;
-    const snapshot = () => ({
-      runId,
-      events: run.events.filter((e3) => e3.seq > afterSeq && e3.actionable).map((e3) => this.brief(e3, runId)).sort(
-        (a3, b) => Number(["permission_required", "worker_question"].includes(b.type)) - Number(["permission_required", "worker_question"].includes(a3.type))
-      ),
-      nextCursor: run.events.at(-1)?.seq ?? 0,
-      status: run.status,
-      timedOut: false
-    });
-    if (afterSeq > (run.events.at(-1)?.seq ?? 0)) fail("CURSOR_AHEAD");
-    if (signal?.aborted) {
-      if (run.activeTaskId || run.sessionOperation)
-        this.stopExecution(run, "Host cancelled wait", "interrupted");
-      else {
-        this.closeSession(run);
-        this.emit(run, "host_wait_interrupted", { automaticReplay: false });
-      }
-      return snapshot();
-    }
-    if (snapshot().events.length || run.status !== "open" && !run.sessionOperation)
-      return snapshot();
-    return await new Promise((resolve) => {
-      let settled = false;
-      const finish = (timedOut = false) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        this.listeners.delete(listener);
-        signal?.removeEventListener("abort", abort);
-        if (timedOut) this.metrics.waitTimeouts++;
-        else this.metrics.wakeups++;
-        resolve({ ...snapshot(), timedOut });
-      };
-      const listener = (id2) => {
-        if (id2 === runId) finish();
-      };
-      const abort = () => {
-        if (run.activeTaskId || run.sessionOperation)
-          this.stopExecution(run, "Host cancelled wait", "interrupted");
-        else {
-          this.closeSession(run);
-          this.emit(run, "host_wait_interrupted", { automaticReplay: false });
-        }
-        finish();
-      };
-      const timer = setTimeout(() => finish(true), Math.min(MAX_WAIT_MS, Math.max(1, timeoutMs)));
-      this.listeners.add(listener);
-      signal?.addEventListener("abort", abort, { once: true });
-      if (signal?.aborted) abort();
-    });
-  }
-  interrupt(runId, reason) {
-    const run = this.get(runId);
-    this.open(run);
-    if (!reason.trim()) fail("INTERRUPTION_REASON_REQUIRED");
-    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
-    if (!run.activeTaskId && !run.sessionOperation) fail("NO_ACTIVE_EXECUTION");
-    this.clearGuidance(run, reason.slice(0, 200));
-    this.stopExecution(run, reason, "interrupted");
-    return {
-      runId,
-      status: run.status,
-      sessionId: run.sessionId,
-      turnBudget: run.turnBudget,
-      nextCursor: this.cursor(runId)
-    };
-  }
-  async interruptGracefully(runId, reason, kind = "interrupted") {
-    const run = this.get(runId);
-    this.open(run);
-    if (this.interruptions.has(runId)) fail("EXECUTOR_STARTUP_DRAINING");
-    if (!run.activeTaskId || !run.sessionId || !this.worker.interrupt) {
-      if (kind === "permission" && run.activeTaskId) {
-        this.worker.stop(run.sessionId);
-        this.stoppedTask(
-          run,
-          this.task(run, run.activeTaskId),
-          reason,
-          kind,
-          "blocked",
-          "task_blocked"
-        );
-        return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
-      }
-      return this.interrupt(runId, reason);
-    }
-    this.interruptions.set(runId, { reason, kind });
-    const sessionId = run.sessionId;
-    try {
-      await this.worker.interrupt(sessionId, 3e3);
-      if (this.closed || !this.owns(run)) return { runId, nextCursor: this.cursor(runId) };
-      for (const event of await this.worker.replay(sessionId))
-        this.consume({ sessionId, event, epoch: this.worker.eventEpoch?.(sessionId) });
-      if (run.activeTaskId) {
-        this.worker.stop(sessionId);
-        this.stoppedTask(
-          run,
-          this.task(run, run.activeTaskId),
-          reason,
-          kind,
-          kind === "permission" ? "blocked" : "interrupted",
-          "worker_finished"
-        );
-      } else {
-        this.worker.stop(sessionId);
-        run.sessionState = "closed";
-        this.save(run);
-      }
-      return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
-    } finally {
-      this.interruptions.delete(runId);
-      if (!this.closed && this.owns(run))
-        this.emit(run, "execution_drained", { automaticReplay: false }, void 0, false);
-    }
-  }
-  reconcile(input) {
-    const run = this.get(input.runId);
-    this.open(run);
-    if (run.activeTaskId || run.sessionOperation || this.reviewing.has(run.id))
-      fail("EXECUTOR_BUSY");
-    const task2 = this.task(run, input.taskId);
-    if (input.taskRevision !== task2.revision) fail("STALE_CONTRACT");
-    if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
-    if (![
-      "pending",
-      "blocked",
-      "failed",
-      "interrupted",
-      "budget_exhausted",
-      "needs_revision",
-      "awaiting_review"
-    ].includes(task2.state))
-      fail("TASK_NOT_RECONCILABLE");
-    if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
-    try {
-      if (run.sessionId && this.worker.model(run.sessionId)) this.worker.stop(run.sessionId);
-      run.sessionState = "closed";
-      const hash2 = this.hash(run, task2);
-      task2.artifactHash = hash2;
-      task2.state = "awaiting_review";
-      task2.provenance = {
-        producer: "supervisor_reconcile",
-        at: (/* @__PURE__ */ new Date()).toISOString(),
-        note: input.evidence
-      };
-      task2.failure = void 0;
-      this.captureCheckpoint(run, task2, "supervisor_reconcile", true);
-      this.emit(
-        run,
-        "candidate_reconciled",
-        { artifactHash: hash2, provenance: task2.provenance, nextActions: ["review"] },
-        task2.id,
-        false
-      );
-      return task2;
-    } finally {
-      this.release(run);
-    }
-  }
-  async review(input, signal) {
-    const run = this.get(input.runId);
-    this.open(run);
-    const task2 = this.task(run, input.taskId);
-    if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
-    if (task2.state !== "awaiting_review") fail("TASK_NOT_AWAITING_REVIEW");
-    if (this.inventory(run, task2).undeclaredChanges.length) {
-      this.save(run);
-      fail(
-        "UNDECLARED_CHANGES: inspect inventory and explicitly include_artifacts before acceptance"
-      );
-    }
-    if (input.taskRevision !== task2.revision || input.artifactHash !== task2.artifactHash || this.hash(run, task2) !== input.artifactHash)
-      fail("STALE_ARTIFACT_OR_CONTRACT");
-    if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
-    if (this.reviewing.has(run.id) || this.interruptions.has(run.id) || run.activeTaskId)
-      fail("EXECUTOR_BUSY");
-    if (this.startups.size) fail("EXECUTOR_STARTUP_DRAINING");
-    const admission = acquireWorkspaceReview(this.poolRoot, run.cwd, () => {
-      if (activeExecutionInWorkspace(this.poolRoot, run.cwd))
-        fail("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
-    });
-    this.reviewing.add(run.id);
-    const abort = new AbortController();
-    const hostCancel = () => {
-      abort.abort();
-      this.closeSession(run);
-    };
-    signal?.addEventListener("abort", hostCancel, { once: true });
-    const deadline = setTimeout(() => abort.abort(), checkTimeoutMs());
-    const checks = [];
-    try {
-      if (signal?.aborted) hostCancel();
-      for (const check3 of task2.checks) {
-        if (abort.signal.aborted) {
-          checks.push({
-            ...check3,
-            exitCode: null,
-            stdout: "",
-            stderr: "",
-            error: "Acceptance cancelled or deadline exceeded"
-          });
-          break;
-        }
-        checks.push({
-          ...check3,
-          ...await executeCheck(check3.command, check3.args, run.cwd, abort.signal)
-        });
-      }
-      if (abort.signal.aborted) {
-        task2.reviews.push({
-          at: (/* @__PURE__ */ new Date()).toISOString(),
-          decision: "interrupted",
-          artifactHash: input.artifactHash,
-          taskRevision: input.taskRevision,
-          evidence: input.evidence,
-          checks
-        });
-        this.emit(
-          run,
-          "review_interrupted",
-          {
-            reason: signal?.aborted ? "Host cancelled acceptance" : "Acceptance deadline exceeded",
-            artifactHash: input.artifactHash
-          },
-          task2.id
-        );
-        fail("REVIEW_INTERRUPTED");
-      }
-      this.open(run);
-      if (this.hash(run, task2) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
-      if (this.inventory(run, task2).undeclaredChanges.length) {
-        this.save(run);
-        fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
-      }
-      const accepted = input.decision === "accept" && checks.every((c3) => c3.exitCode === 0 && !c3.error);
-      task2.reviews.push({
-        at: (/* @__PURE__ */ new Date()).toISOString(),
-        decision: accepted ? "accepted" : "rejected",
-        artifactHash: input.artifactHash,
-        taskRevision: task2.revision,
-        evidence: input.evidence,
-        checks
-      });
-      task2.state = accepted ? "accepted" : "needs_revision";
-      task2.feedback = accepted ? void 0 : `${input.evidence}
-Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3.stderr?.slice(0, 800) })))}`;
-      this.emit(
-        run,
-        accepted ? "task_accepted" : "task_rejected",
-        { checks, evidence: input.evidence, artifactHash: input.artifactHash },
-        task2.id
-      );
-      return {
-        taskId: task2.id,
-        state: task2.state,
-        checks,
-        remainingRepairs: Math.max(0, run.maxRepairs - task2.repairs)
-      };
-    } finally {
-      clearTimeout(deadline);
-      signal?.removeEventListener("abort", hostCancel);
-      this.reviewing.delete(run.id);
-      releaseWorkspaceReview(admission);
-    }
-  }
-  respond(runId, requestId, decision) {
-    const run = this.get(runId);
-    this.open(run);
-    if (!run.sessionId || !run.activeTaskId) fail("NO_ACTIVE_EXECUTION");
-    const request = this.worker.permissions(run.sessionId).find((p3) => p3.requestId === requestId) ?? fail("PERMISSION_EXPIRED_OR_UNKNOWN");
-    if (decision === "allow") {
-      if (!request.toolName.trim()) fail("INVALID_PENDING_TOOL");
-    }
-    if (!this.worker.respond(run.sessionId, requestId, decision === "allow"))
-      fail("PERMISSION_EXPIRED_OR_UNKNOWN");
-    return { requestId, decision };
-  }
-  status(runId) {
-    this.metrics.ledgerReads++;
-    return runId ? this.get(runId, false) : [...this.runs.values()];
-  }
-  hasActiveExecutions() {
-    return this.startups.size > 0 || this.interruptions.size > 0 || [...this.runs.values()].some(
-      (run) => this.owns(run) && (run.activeTaskId || run.sessionOperation)
-    );
-  }
-  reviewActive() {
-    return this.reviewing.size > 0;
-  }
-  cancel(runId, reason = "Supervisor cancelled") {
-    const run = this.get(runId);
-    if (run.status !== "open" && run.status !== "awaiting_user_review")
-      return { runId, status: run.status };
-    this.clearGuidance(run, "cancelled");
-    this.settle(run, void 0, "cancelled");
-    if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
-    const startup = this.startups.get(run.id);
-    if (startup) startup.valid = false;
-    run.status = "cancelled";
-    run.activeTaskId = void 0;
-    this.worker.stop(run.sessionId);
-    const idle = this.idleTimers.get(run.id);
-    if (idle) clearTimeout(idle);
-    this.idleTimers.delete(run.id);
-    this.release(run);
-    this.emit(run, "run_cancelled", { reason });
-    return { runId, status: run.status };
-  }
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    let errors = 0;
-    for (const startup of this.startups.values()) startup.valid = false;
-    for (const run of this.runs.values()) {
-      if (!this.owns(run)) continue;
-      this.clearGuidance(run, "MCP connection closed");
-      try {
-        if (run.status === "open" || run.status === "awaiting_user_review") {
-          if (run.activeTaskId || run.sessionOperation)
-            this.stopExecution(run, "MCP connection closed", "interrupted");
-          else {
-            this.closeSession(run);
-            this.emit(run, "connection_closed", { automaticReplay: false }, void 0, false);
-          }
-        }
-      } catch {
-        errors++;
-      } finally {
-        if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
-        this.settle(run, void 0, "connection_closed");
-        run.activeTaskId = void 0;
-        run.sessionOperation = void 0;
-        run.sessionState = "closed";
-        run.ownerReleased = true;
-        this.dropSlot(run.id);
-        try {
-          this.save(run);
-        } catch {
-          errors++;
-        }
-      }
-    }
-    for (const timer of this.guidanceTimers.values()) clearTimeout(timer);
-    this.guidanceTimers.clear();
-    for (const timer of this.idleTimers.values()) clearTimeout(timer);
-    this.idleTimers.clear();
-    for (const timer of this.timers.values()) clearTimeout(timer);
-    this.timers.clear();
-    this.unsubscribe();
-    this.unsubscribeMessages?.();
-    this.pendingMessages.clear();
-    try {
-      this.worker.destroy();
-    } catch {
-      errors++;
-    }
-    this.listeners.clear();
-    this.eventSubscribers.clear();
-    if (errors) console.error(`Orchestrator cleanup completed with ${errors} resource errors`);
-  }
-};
-
-// src/utils/normalize-windows-path.ts
-import path8 from "node:path";
-import os4 from "node:os";
-var TOOL_INPUT_PATH_FIELDS = [
-  "file_path",
-  "path",
-  "directory",
-  "folder",
-  "cwd",
-  "dest",
-  "destination",
-  "source",
-  "target"
-];
-function maybeAddWindowsLongPathPrefix(value) {
-  if (value.startsWith("\\\\?\\") || value.startsWith("\\\\.\\") || value.length < 240)
-    return value;
-  return path8.win32.toNamespacedPath(value);
-}
-function expandTilde(value, platform) {
-  if (value === "~") return os4.homedir();
-  if (!value.startsWith("~")) return value;
-  const next = value[1];
-  if (next !== "/" && next !== "\\") return value;
-  const rest = value.slice(2);
-  const join2 = platform === "win32" ? path8.win32.join : path8.posix.join;
-  return join2(os4.homedir(), rest);
-}
-function convertMsysToWindowsPath(rawPath) {
-  if (/^[a-zA-Z]:[\\/]/.test(rawPath) || rawPath.startsWith("\\\\")) return void 0;
-  if (rawPath.startsWith("//")) {
-    const m9 = rawPath.match(/^\/\/([^/]{2,})\/(.*)$/);
-    if (m9) {
-      const host = m9[1];
-      const rest2 = m9[2] ?? "";
-      return `\\\\${host}\\${rest2.replace(/\//g, "\\")}`;
-    }
-  }
-  const cyg = rawPath.match(/^\/cygdrive\/([a-zA-Z])\/(.*)$/);
-  if (cyg) {
-    const drive2 = cyg[1].toUpperCase();
-    const rest2 = cyg[2] ?? "";
-    return `${drive2}:\\${rest2.replace(/\//g, "\\")}`;
-  }
-  const m3 = rawPath.match(/^\/(?:mnt\/)?([a-zA-Z])\/(.*)$/);
-  if (!m3) return void 0;
-  const drive = m3[1].toUpperCase();
-  const rest = m3[2] ?? "";
-  return `${drive}:\\${rest.replace(/\//g, "\\")}`;
-}
-function normalizeMsysToWindowsPath(rawPath) {
-  const converted = convertMsysToWindowsPath(rawPath);
-  if (!converted) return void 0;
-  return path8.win32.normalize(converted);
-}
-function isUnsupportedPosixAbsolutePath(value, platform = process.platform) {
-  if (platform !== "win32") return false;
-  if (!value.startsWith("/")) return false;
-  return convertMsysToWindowsPath(value) === void 0;
-}
-function extractPosixHomePathFromCommand(command) {
-  const match = command.match(/\/home\/[^/\s"'`]+(?:\/[^\s"'`]*)?/);
-  return match?.[0];
-}
-function findUnsupportedPosixPathInToolInput(input, platform = process.platform) {
-  if (platform !== "win32") return void 0;
-  for (const key of TOOL_INPUT_PATH_FIELDS) {
-    const value = input[key];
-    if (typeof value !== "string") continue;
-    if (isUnsupportedPosixAbsolutePath(value, platform)) return value;
-  }
-  const command = input.command;
-  if (typeof command !== "string") return void 0;
-  const embeddedHomePath = extractPosixHomePathFromCommand(command);
-  if (!embeddedHomePath) return void 0;
-  return isUnsupportedPosixAbsolutePath(embeddedHomePath, platform) ? embeddedHomePath : void 0;
-}
-function normalizeWindowsPathLike(value, platform = process.platform) {
-  const expanded = expandTilde(value, platform);
-  if (platform !== "win32") return expanded;
-  const converted = normalizeMsysToWindowsPath(expanded);
-  if (!converted && expanded.startsWith("/")) return expanded;
-  const normalized = path8.win32.normalize(converted ?? expanded);
-  return maybeAddWindowsLongPathPrefix(normalized);
-}
-function normalizeWindowsPathArray(values, platform = process.platform) {
-  return values.map((v2) => normalizeWindowsPathLike(v2, platform));
-}
-
-// src/utils/normalize-tool-input.ts
-function normalizeToolInput(_toolName, input, platform = process.platform) {
-  if (platform !== "win32") return input;
-  const filePath = input.file_path;
-  if (typeof filePath !== "string") return input;
-  const normalized = normalizeWindowsPathLike(filePath, platform);
-  return normalized === filePath ? input : { ...input, file_path: normalized };
-}
-
-// src/session/manager.ts
-var DEFAULT_SESSION_TTL_MS = 30 * 60 * 1e3;
-var DEFAULT_RUNNING_SESSION_MAX_MS = 4 * 60 * 60 * 1e3;
-var DEFAULT_CLEANUP_INTERVAL_MS = 6e4;
-var DEFAULT_EVENT_BUFFER_MAX_SIZE = 1e3;
-var DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE = 2e3;
-var DEFAULT_MAX_SESSIONS = 128;
-var DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION = 64;
-function parsePositiveInt(raw) {
-  if (typeof raw !== "string" || raw.trim() === "") return void 0;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return void 0;
-  return parsed;
-}
-function normalizePositiveNumber(value) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return void 0;
-  return Math.trunc(value);
-}
-function normalizeToolPolicyNames(values) {
-  if (!Array.isArray(values) || values.length === 0) return [];
-  return values.filter((value) => typeof value === "string").map((value) => value.trim()).filter((value) => value !== "");
-}
-var SessionManager = class _SessionManager {
-  observers = /* @__PURE__ */ new Set();
-  /** Event subscribers run after the synchronous state/result commit, never by polling. */
-  subscribe(listener) {
-    this.observers.add(listener);
-    return () => this.observers.delete(listener);
-  }
-  notify(sessionId, event) {
-    const listeners = [...this.observers];
-    queueMicrotask(() => {
-      for (const listener of listeners) {
-        if (this.observers.has(listener)) listener(sessionId, event);
-      }
-    });
-  }
-  sessions = /* @__PURE__ */ new Map();
-  runtime = /* @__PURE__ */ new Map();
-  drainingSessions = /* @__PURE__ */ new Map();
-  cleanupTimer;
-  sessionTtlMs = DEFAULT_SESSION_TTL_MS;
-  runningSessionMaxMs = DEFAULT_RUNNING_SESSION_MAX_MS;
-  platform;
-  nativeToolHandling;
-  maxSessions;
-  maxPendingPermissionsPerSession;
-  eventBufferMaxSize;
-  eventBufferHardMaxSize;
-  destroyed = false;
-  constructor(opts) {
-    this.platform = opts?.platform ?? process.platform;
-    this.nativeToolHandling = opts?.nativeToolHandling ?? false;
-    this.sessionTtlMs = opts?.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
-    const envRaw = process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
-    const envParsed = typeof envRaw === "string" && envRaw.trim() !== "" ? Number.parseInt(envRaw, 10) : NaN;
-    const configured = opts?.maxSessions ?? (Number.isFinite(envParsed) ? envParsed : void 0);
-    this.maxSessions = typeof configured === "number" ? configured <= 0 ? Number.POSITIVE_INFINITY : configured : DEFAULT_MAX_SESSIONS;
-    const maxPendingEnvRaw = process.env.CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS;
-    const maxPendingEnvParsed = typeof maxPendingEnvRaw === "string" && maxPendingEnvRaw.trim() !== "" ? Number.parseInt(maxPendingEnvRaw, 10) : NaN;
-    const maxPendingConfigured = opts?.maxPendingPermissionsPerSession ?? (Number.isFinite(maxPendingEnvParsed) ? maxPendingEnvParsed : void 0);
-    this.maxPendingPermissionsPerSession = typeof maxPendingConfigured === "number" ? maxPendingConfigured <= 0 ? Number.POSITIVE_INFINITY : maxPendingConfigured : DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION;
-    const configuredEventBufferMaxSize = normalizePositiveNumber(opts?.eventBufferMaxSize) ?? parsePositiveInt(process.env.CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE);
-    const configuredEventBufferHardMaxSize = normalizePositiveNumber(opts?.eventBufferHardMaxSize) ?? parsePositiveInt(process.env.CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE);
-    this.eventBufferMaxSize = configuredEventBufferMaxSize ?? DEFAULT_EVENT_BUFFER_MAX_SIZE;
-    const initialHardMaxSize = configuredEventBufferHardMaxSize ?? DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE;
-    this.eventBufferHardMaxSize = Math.max(this.eventBufferMaxSize, initialHardMaxSize);
-    if (initialHardMaxSize < this.eventBufferMaxSize) {
-      console.error(
-        `[config] CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE (${initialHardMaxSize}) is smaller than maxSize (${this.eventBufferMaxSize}); clamped to ${this.eventBufferHardMaxSize}.`
-      );
-    }
-    this.cleanupTimer = setInterval(() => this.cleanup(), DEFAULT_CLEANUP_INTERVAL_MS);
-    if (this.cleanupTimer.unref) {
-      this.cleanupTimer.unref();
-    }
-  }
-  getSessionCount() {
-    if (this.destroyed) return 0;
-    return this.sessions.size;
-  }
-  getMaxSessions() {
-    return this.maxSessions;
-  }
-  getMaxPendingPermissionsPerSession() {
-    return this.maxPendingPermissionsPerSession;
-  }
-  getEventBufferConfig() {
-    return {
-      maxSize: this.eventBufferMaxSize,
-      hardMaxSize: this.eventBufferHardMaxSize
-    };
-  }
-  getSessionTtlMs() {
-    return this.sessionTtlMs;
-  }
-  getRunningSessionMaxMs() {
-    return this.runningSessionMaxMs;
-  }
-  hasCapacityFor(additionalSessions) {
-    if (this.destroyed) return false;
-    if (additionalSessions <= 0) return true;
-    return this.sessions.size + additionalSessions <= this.maxSessions;
-  }
-  create(params) {
-    if (this.destroyed) {
-      throw new Error("SessionManager is destroyed and no longer accepts new sessions.");
-    }
-    const now = (/* @__PURE__ */ new Date()).toISOString();
-    const existing = this.sessions.get(params.sessionId);
-    if (existing) {
-      throw new Error(`Session '${params.sessionId}' already exists (status: ${existing.status})`);
-    }
-    const info = {
-      sessionId: params.sessionId,
-      status: "running",
-      createdAt: now,
-      lastActiveAt: now,
-      totalTurns: 0,
-      totalCostUsd: 0,
-      cwd: params.cwd,
-      model: params.model,
-      permissionMode: params.permissionMode ?? "default",
-      allowedTools: params.allowedTools,
-      disallowedTools: params.disallowedTools,
-      strictAllowedTools: params.strictAllowedTools,
-      tools: params.tools,
-      maxTurns: params.maxTurns,
-      systemPrompt: params.systemPrompt,
-      agents: params.agents,
-      maxBudgetUsd: params.maxBudgetUsd,
-      effort: params.effort,
-      betas: params.betas,
-      additionalDirectories: params.additionalDirectories,
-      outputFormat: params.outputFormat,
-      thinking: params.thinking,
-      persistSession: params.persistSession,
-      pathToClaudeCodeExecutable: params.pathToClaudeCodeExecutable,
-      agent: params.agent,
-      mcpServers: params.mcpServers,
-      sandbox: params.sandbox,
-      fallbackModel: params.fallbackModel,
-      enableFileCheckpointing: params.enableFileCheckpointing,
-      toolConfig: params.toolConfig,
-      includePartialMessages: params.includePartialMessages,
-      promptSuggestions: params.promptSuggestions,
-      agentProgressSummaries: params.agentProgressSummaries,
-      strictMcpConfig: params.strictMcpConfig,
-      settings: params.settings,
-      settingSources: params.settingSources,
-      debug: params.debug,
-      debugFile: params.debugFile,
-      fastModeState: params.fastModeState,
-      env: params.env,
-      abortController: params.abortController,
-      queryInterrupt: params.queryInterrupt
-    };
-    this.sessions.set(params.sessionId, info);
-    this.runtime.set(params.sessionId, {
-      buffer: {
-        events: [],
-        maxSize: this.eventBufferMaxSize,
-        hardMaxSize: this.eventBufferHardMaxSize,
-        nextId: 0
-      },
-      pendingPermissions: /* @__PURE__ */ new Map()
-    });
-    return info;
-  }
-  get(sessionId) {
-    if (this.destroyed) return void 0;
-    return this.sessions.get(sessionId);
-  }
-  updateStatus(sessionId, status) {
-    return this.update(sessionId, { status });
-  }
-  list() {
-    if (this.destroyed) return [];
-    return Array.from(this.sessions.values());
-  }
-  update(sessionId, patch) {
-    if (this.destroyed) return void 0;
-    const info = this.sessions.get(sessionId);
-    if (!info) return void 0;
-    Object.assign(info, patch, { lastActiveAt: (/* @__PURE__ */ new Date()).toISOString() });
-    this.notify(sessionId);
-    return info;
-  }
-  /**
-   * Atomically transition a session's status from expectedStatus to "running".
-   * This only covers synchronous state mutation within SessionManager.
-   * Returns the session if successful, undefined if the session doesn't exist
-   * or its current status doesn't match `expectedStatus`.
-   */
-  tryAcquire(sessionId, expectedStatus, abortController) {
-    if (this.destroyed) return void 0;
-    if (expectedStatus !== "idle" && expectedStatus !== "error") return void 0;
-    const info = this.sessions.get(sessionId);
-    if (!info || info.status !== expectedStatus) return void 0;
-    info.status = "running";
-    info.abortController = abortController;
-    info.queryInterrupt = void 0;
-    info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-    this.clearTerminalEvents(sessionId);
-    return info;
-  }
-  cancel(sessionId, opts) {
-    if (this.destroyed) return false;
-    const info = this.sessions.get(sessionId);
-    if (!info) return false;
-    if (info.status !== "running" && info.status !== "waiting_permission") return false;
-    if (info.status === "waiting_permission") {
-      this.finishAllPending(
-        sessionId,
-        // `cancel()` already aborts the running query below. Avoid sending an additional
-        // interrupt=true control response while the stream is being torn down, which can race
-        // into SDK-level "Operation aborted" write errors on stdio clients.
-        { behavior: "deny", message: "Session cancelled", interrupt: false },
-        "cancel"
-      );
-    }
-    if (info.queryInterrupt) {
-      try {
-        info.queryInterrupt();
-      } catch {
-      }
-    }
-    if (info.abortController) {
-      info.abortController.abort();
-    }
-    info.status = "cancelled";
-    info.cancelledAt = (/* @__PURE__ */ new Date()).toISOString();
-    info.cancelledReason = opts?.reason ?? "Session cancelled";
-    info.cancelledSource = opts?.source ?? "cancel";
-    info.queryInterrupt = void 0;
-    info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-    this.notify(sessionId);
-    return true;
-  }
-  interrupt(sessionId, opts) {
-    if (this.destroyed) return false;
-    const info = this.sessions.get(sessionId);
-    if (!info) return false;
-    if (info.status !== "running" && info.status !== "waiting_permission") return false;
-    if (info.status === "waiting_permission") {
-      this.finishAllPending(
-        sessionId,
-        // Similar to cancel(), avoid emitting interrupt=true while the query stream is
-        // being torn down to reduce SDK-level write/teardown races on stdio clients.
-        { behavior: "deny", message: opts?.reason ?? "Session interrupted", interrupt: false },
-        "interrupt"
-      );
-    }
-    if (info.queryInterrupt) {
-      try {
-        info.queryInterrupt();
-      } catch {
-      }
-    }
-    if (info.abortController) {
-      info.abortController.abort();
-    }
-    this.pushEvent(sessionId, {
-      type: "progress",
-      data: {
-        type: "interrupted",
-        reason: opts?.reason ?? "Session interrupted",
-        source: opts?.source ?? "interrupt"
-      },
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-    return true;
-  }
-  delete(sessionId) {
-    if (this.destroyed) return false;
-    this.finishAllPending(
-      sessionId,
-      { behavior: "deny", message: "Session deleted", interrupt: true },
-      "cleanup",
-      { restoreRunning: false }
-    );
-    this.drainingSessions.delete(sessionId);
-    this.runtime.delete(sessionId);
-    this.notify(sessionId);
-    return this.sessions.delete(sessionId);
-  }
-  setResult(sessionId, result2) {
-    if (this.destroyed) return;
-    const state = this.runtime.get(sessionId);
-    if (!state) return;
-    state.storedResult = result2;
-  }
-  getResult(sessionId) {
-    if (this.destroyed) return void 0;
-    return this.runtime.get(sessionId)?.storedResult;
-  }
-  setInitTools(sessionId, tools) {
-    if (this.destroyed) return;
-    const state = this.runtime.get(sessionId);
-    if (!state) return;
-    state.initTools = tools;
-  }
-  getInitTools(sessionId) {
-    if (this.destroyed) return void 0;
-    return this.runtime.get(sessionId)?.initTools;
-  }
-  pushEvent(sessionId, event) {
-    if (this.destroyed) return void 0;
-    const state = this.runtime.get(sessionId);
-    if (!state) return void 0;
-    const full = _SessionManager.pushEvent(
-      state.buffer,
-      event,
-      (requestId) => state.pendingPermissions.has(requestId)
-    );
-    const info = this.sessions.get(sessionId);
-    if (info) {
-      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-      const data = event.data;
-      const toolUseId = typeof data?.tool_use_id === "string" && data.tool_use_id || typeof data?.toolUseID === "string" && data.toolUseID || typeof data?.parent_tool_use_id === "string" && data.parent_tool_use_id || void 0;
-      if (toolUseId) info.lastToolUseId = toolUseId;
-    }
-    this.notify(sessionId, full);
-    return full;
-  }
-  getLastEventId(sessionId) {
-    if (this.destroyed) return void 0;
-    const state = this.runtime.get(sessionId);
-    if (!state) return void 0;
-    return state.buffer.nextId > 0 ? state.buffer.nextId - 1 : void 0;
-  }
-  readEvents(sessionId, cursor) {
-    if (this.destroyed) return { events: [], nextCursor: cursor ?? 0 };
-    const state = this.runtime.get(sessionId);
-    if (!state) return { events: [], nextCursor: cursor ?? 0 };
-    return _SessionManager.readEvents(state.buffer, cursor);
-  }
-  clearTerminalEvents(sessionId) {
-    if (this.destroyed) return;
-    const state = this.runtime.get(sessionId);
-    if (!state) return;
-    _SessionManager.clearTerminalEvents(state.buffer);
-  }
-  setPendingPermission(sessionId, req, finish, timeoutMs) {
-    if (this.destroyed) return false;
-    const state = this.runtime.get(sessionId);
-    const info = this.sessions.get(sessionId);
-    if (!state || !info) return false;
-    if (info.status !== "running" && info.status !== "waiting_permission") {
-      try {
-        finish({
-          behavior: "deny",
-          message: `Session is not accepting permission requests (status: ${info.status}).`,
-          interrupt: true
-        });
-      } catch {
-      }
-      return false;
-    }
-    if (this.isDraining(sessionId)) {
-      try {
-        finish({
-          behavior: "deny",
-          message: "Session is finishing pending permission requests.",
-          interrupt: true
-        });
-      } catch {
-      }
-      return false;
-    }
-    if (!state.pendingPermissions.has(req.requestId)) {
-      if (state.pendingPermissions.size >= this.maxPendingPermissionsPerSession) {
-        const deny = {
-          behavior: "deny",
-          message: "Too many pending permission requests for this session.",
-          interrupt: false
-        };
-        this.pushEvent(sessionId, {
-          type: "permission_result",
-          data: {
-            requestId: req.requestId,
-            toolName: req.toolName,
-            behavior: "deny",
-            source: "policy",
-            message: deny.message,
-            interrupt: deny.interrupt
-          },
-          timestamp: (/* @__PURE__ */ new Date()).toISOString()
-        });
-        try {
-          finish(deny);
-        } catch {
-        }
-        return false;
-      }
-      const inferredExpiresAt = new Date(Date.now() + timeoutMs).toISOString();
-      const record3 = {
-        ...req,
-        timeoutMs,
-        expiresAt: inferredExpiresAt
-      };
-      const timeoutId = setTimeout(() => {
-        this.finishRequest(
-          sessionId,
-          record3.requestId,
-          {
-            behavior: "deny",
-            message: `Permission request timed out after ${timeoutMs}ms.`,
-            interrupt: false
-          },
-          "timeout"
-        );
-      }, timeoutMs);
-      state.pendingPermissions.set(record3.requestId, { record: record3, finish, timeoutId });
-      info.status = "waiting_permission";
-      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-      this.pushEvent(sessionId, {
-        type: "permission_request",
-        data: record3,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      return true;
-    }
-    return false;
-  }
-  getPendingPermissionCount(sessionId) {
-    if (this.destroyed) return 0;
-    return this.runtime.get(sessionId)?.pendingPermissions.size ?? 0;
-  }
-  getEventCount(sessionId) {
-    if (this.destroyed) return 0;
-    return this.runtime.get(sessionId)?.buffer.events.length ?? 0;
-  }
-  getCurrentCursor(sessionId) {
-    if (this.destroyed) return void 0;
-    const state = this.runtime.get(sessionId);
-    if (!state) return void 0;
-    return state.buffer.nextId;
-  }
-  getRemainingTtlMs(sessionId) {
-    if (this.destroyed) return void 0;
-    const session = this.sessions.get(sessionId);
-    if (!session) return void 0;
-    const lastActiveMs = Date.parse(session.lastActiveAt);
-    if (!Number.isFinite(lastActiveMs)) return void 0;
-    const limitMs = session.status === "running" || session.status === "waiting_permission" ? this.runningSessionMaxMs : this.sessionTtlMs;
-    return Math.max(0, limitMs - (Date.now() - lastActiveMs));
-  }
-  getRuntimeToolStats() {
-    if (this.destroyed) {
-      return { sessionsWithInitTools: 0, runtimeDiscoveredUniqueCount: 0 };
-    }
-    const unique = /* @__PURE__ */ new Set();
-    let sessionsWithInitTools = 0;
-    for (const state of this.runtime.values()) {
-      if (!Array.isArray(state.initTools) || state.initTools.length === 0) continue;
-      sessionsWithInitTools += 1;
-      for (const tool of state.initTools) {
-        if (typeof tool === "string" && tool.trim() !== "") {
-          unique.add(tool);
-        }
-      }
-    }
-    return {
-      sessionsWithInitTools,
-      runtimeDiscoveredUniqueCount: unique.size
-    };
-  }
-  listPendingPermissions(sessionId) {
-    if (this.destroyed) return [];
-    const state = this.runtime.get(sessionId);
-    if (!state) return [];
-    return Array.from(state.pendingPermissions.values()).map((p3) => p3.record).sort((a3, b) => a3.createdAt.localeCompare(b.createdAt));
-  }
-  getPendingPermission(sessionId, requestId) {
-    if (this.destroyed) return void 0;
-    const state = this.runtime.get(sessionId);
-    return state?.pendingPermissions.get(requestId)?.record;
-  }
-  allowToolForSession(sessionId, toolName) {
-    if (this.destroyed) return false;
-    const info = this.sessions.get(sessionId);
-    if (!info) return false;
-    const normalized = toolName.trim();
-    if (normalized === "") return false;
-    const disallowed = normalizeToolPolicyNames(info.disallowedTools);
-    if (disallowed.includes(normalized)) {
-      return false;
-    }
-    const allowed = Array.isArray(info.allowedTools) ? [...info.allowedTools] : [];
-    if (!allowed.includes(normalized)) {
-      allowed.push(normalized);
-      info.allowedTools = allowed;
-      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-      this.notify(info.sessionId);
-    }
-    return true;
-  }
-  finishRequest(sessionId, requestId, result2, source) {
-    if (this.destroyed) return false;
-    const state = this.runtime.get(sessionId);
-    const info = this.sessions.get(sessionId);
-    if (!state || !info) return false;
-    const pending = state.pendingPermissions.get(requestId);
-    if (!pending) return false;
-    let finalResult = result2;
-    if (finalResult.behavior === "allow") {
-      const disallowed = normalizeToolPolicyNames(info.disallowedTools);
-      const pendingToolName = pending.record.toolName.trim();
-      if (pendingToolName !== "" && disallowed.includes(pendingToolName)) {
-        finalResult = {
-          behavior: "deny",
-          message: `Tool '${pendingToolName}' is disallowed by session policy.`,
-          interrupt: false
-        };
-      }
-    }
-    if (finalResult.behavior === "allow") {
-      const updatedInput = finalResult.updatedInput;
-      const validRecord = updatedInput !== null && updatedInput !== void 0 && typeof updatedInput === "object" && !Array.isArray(updatedInput);
-      const original = validRecord ? updatedInput : pending.record.input;
-      const normalizedUpdatedInput = this.nativeToolHandling ? original : validRecord ? normalizeToolInput(
-        pending.record.toolName,
-        updatedInput,
-        this.platform
-      ) : normalizeToolInput(pending.record.toolName, pending.record.input, this.platform);
-      const unsupportedPath = !this.nativeToolHandling && findUnsupportedPosixPathInToolInput(normalizedUpdatedInput, this.platform);
-      if (unsupportedPath) {
-        finalResult = {
-          behavior: "deny",
-          message: `Tool '${pending.record.toolName}' attempted to allow an unsupported POSIX path '${unsupportedPath}' on Windows.`,
-          interrupt: false
-        };
-      } else {
-        finalResult = {
-          ...finalResult,
-          updatedInput: normalizedUpdatedInput
-        };
-      }
-    }
-    if (pending.timeoutId) clearTimeout(pending.timeoutId);
-    state.pendingPermissions.delete(requestId);
-    const eventData = {
-      requestId,
-      toolName: pending.record.toolName,
-      behavior: finalResult.behavior,
-      source
-    };
-    if (finalResult.behavior === "deny") {
-      eventData.message = finalResult.message;
-      eventData.interrupt = finalResult.interrupt;
-    } else {
-      const allow = finalResult;
-      if (allow.updatedInput !== void 0) eventData.updatedInput = allow.updatedInput;
-      if (allow.updatedPermissions !== void 0)
-        eventData.updatedPermissions = allow.updatedPermissions;
-    }
-    this.pushEvent(sessionId, {
-      type: "permission_result",
-      data: eventData,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    try {
-      pending.finish(finalResult);
-    } catch {
-    }
-    if (info.status === "waiting_permission" && state.pendingPermissions.size === 0 && !this.isDraining(sessionId)) {
-      info.status = "running";
-      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-    }
-    return true;
-  }
-  finishAllPending(sessionId, result2, source, opts) {
-    if (this.destroyed) return;
-    const state = this.runtime.get(sessionId);
-    if (!state) return;
-    if (state.pendingPermissions.size === 0) return;
-    this.beginDraining(sessionId);
-    try {
-      while (state.pendingPermissions.size > 0) {
-        const next = state.pendingPermissions.keys().next();
-        if (next.done || typeof next.value !== "string") break;
-        const requestId = next.value;
-        const handled = this.finishRequest(sessionId, requestId, result2, source);
-        if (!handled) {
-          const pending = state.pendingPermissions.get(requestId);
-          if (pending?.timeoutId) clearTimeout(pending.timeoutId);
-          state.pendingPermissions.delete(requestId);
-          try {
-            pending?.finish(result2);
-          } catch {
-          }
-        }
-      }
-    } finally {
-      this.endDraining(sessionId);
-    }
-    const restoreRunning = opts?.restoreRunning ?? true;
-    const info = this.sessions.get(sessionId);
-    if (restoreRunning && info && info.status === "waiting_permission" && state.pendingPermissions.size === 0) {
-      info.status = "running";
-      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-    }
-  }
-  /** Remove sessions that have been idle for too long, or stuck running too long */
-  cleanup() {
-    if (this.destroyed) return;
-    const now = Date.now();
-    for (const [id2, info] of this.sessions) {
-      const lastActive = new Date(info.lastActiveAt).getTime();
-      if (Number.isNaN(lastActive)) {
-        this.finishAllPending(
-          id2,
-          { behavior: "deny", message: "Session expired", interrupt: true },
-          "cleanup",
-          { restoreRunning: false }
-        );
-        this.drainingSessions.delete(id2);
-        this.sessions.delete(id2);
-        this.runtime.delete(id2);
-      } else if (info.status === "running" && now - lastActive > this.runningSessionMaxMs) {
-        if (info.abortController) info.abortController.abort();
-        info.cancelledAt = info.cancelledAt ?? (/* @__PURE__ */ new Date()).toISOString();
-        info.cancelledReason = info.cancelledReason ?? "Session timed out";
-        info.cancelledSource = info.cancelledSource ?? "cleanup";
-        info.queryInterrupt = void 0;
-        info.status = "cancelled";
-        info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-      } else if (info.status === "waiting_permission" && now - lastActive > this.runningSessionMaxMs) {
-        this.finishAllPending(
-          id2,
-          { behavior: "deny", message: "Session timed out", interrupt: true },
-          "cleanup",
-          { restoreRunning: false }
-        );
-        if (info.abortController) info.abortController.abort();
-        info.cancelledAt = info.cancelledAt ?? (/* @__PURE__ */ new Date()).toISOString();
-        info.cancelledReason = info.cancelledReason ?? "Session timed out";
-        info.cancelledSource = info.cancelledSource ?? "cleanup";
-        info.queryInterrupt = void 0;
-        info.status = "cancelled";
-        info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-      } else if (info.status !== "running" && info.status !== "waiting_permission" && now - lastActive > this.sessionTtlMs) {
-        this.finishAllPending(
-          id2,
-          { behavior: "deny", message: "Session expired", interrupt: true },
-          "cleanup",
-          { restoreRunning: false }
-        );
-        this.drainingSessions.delete(id2);
-        this.sessions.delete(id2);
-        this.runtime.delete(id2);
-      }
-    }
-  }
-  /**
-   * Serialize session info for external consumption.
-   * Prefer explicit serializers below. This method is kept for backward compatibility
-   * but returns the redacted public shape.
-   */
-  toJSON(info) {
-    return this.toPublicJSON(info);
-  }
-  /** Serialize session info when includeSensitive=true (still excludes secrets like env) */
-  toSensitiveJSON(info) {
-    const base = this.toPublicJSON(info);
-    return {
-      ...base,
-      cwd: info.cwd,
-      systemPrompt: info.systemPrompt,
-      agents: info.agents,
-      additionalDirectories: info.additionalDirectories,
-      toolConfig: info.toolConfig
-    };
-  }
-  /** Serialize session info for listing/inspection (redacts sensitive fields) */
-  toPublicJSON(info) {
-    const {
-      abortController: _abortController,
-      queryInterrupt: _queryInterrupt,
-      cwd: _cwd,
-      systemPrompt: _systemPrompt,
-      agents: _agents,
-      additionalDirectories: _additionalDirectories,
-      pathToClaudeCodeExecutable: _pathToClaudeCodeExecutable,
-      toolConfig: _toolConfig,
-      mcpServers: _mcpServers,
-      sandbox: _sandbox,
-      settings: _settings,
-      settingSources: _settingSources,
-      debugFile: _debugFile,
-      env: _env,
-      ...rest
-    } = info;
-    return rest;
-  }
-  destroy() {
-    if (this.destroyed) return;
-    clearInterval(this.cleanupTimer);
-    for (const info of this.sessions.values()) {
-      this.finishAllPending(
-        info.sessionId,
-        { behavior: "deny", message: "Server shutting down", interrupt: true },
-        "destroy",
-        { restoreRunning: false }
-      );
-      if ((info.status === "running" || info.status === "waiting_permission") && info.abortController) {
-        info.abortController.abort();
-      }
-      info.queryInterrupt = void 0;
-      info.status = "cancelled";
-      info.cancelledAt = info.cancelledAt ?? (/* @__PURE__ */ new Date()).toISOString();
-      info.cancelledReason = info.cancelledReason ?? "Server shutting down";
-      info.cancelledSource = info.cancelledSource ?? "destroy";
-      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
-    }
-    this.drainingSessions.clear();
-    this.runtime.clear();
-    this.sessions.clear();
-    this.destroyed = true;
-  }
-  static pushEvent(buffer, event, isActivePermissionRequest) {
-    const pinned = event.pinned ?? (event.type === "permission_request" || event.type === "permission_result" || event.type === "result" || event.type === "error");
-    const full = {
-      id: buffer.nextId++,
-      type: event.type,
-      data: event.data,
-      timestamp: event.timestamp,
-      pinned
-    };
-    buffer.events.push(full);
-    _SessionManager.evictEventsToLimits(buffer, isActivePermissionRequest);
-    return full;
-  }
-  static evictEventsToLimits(buffer, isActivePermissionRequest) {
-    if (buffer.events.length <= buffer.maxSize && buffer.events.length <= buffer.hardMaxSize) {
-      return;
-    }
-    const droppedIds = /* @__PURE__ */ new Set();
-    let remaining = buffer.events.length;
-    const dropOldestMatching = (count, predicate) => {
-      if (count <= 0) return 0;
-      let dropped = 0;
-      for (const event of buffer.events) {
-        if (dropped >= count) break;
-        if (droppedIds.has(event.id)) continue;
-        if (!predicate(event)) continue;
-        droppedIds.add(event.id);
-        dropped += 1;
-      }
-      if (dropped > 0) {
-        remaining -= dropped;
-      }
-      return dropped;
-    };
-    const isDroppablePermissionEvent = (event) => {
-      if (event.type === "permission_result") return true;
-      if (event.type !== "permission_request") return false;
-      const requestId = event.data?.requestId;
-      if (typeof requestId !== "string") return true;
-      return isActivePermissionRequest ? !isActivePermissionRequest(requestId) : true;
-    };
-    const isNoisyProgressEvent = (event) => {
-      if (event.type !== "progress") return false;
-      const t = event.data?.type;
-      return t === "tool_progress" || t === "auth_status" || t === "api_retry" || t === "task_progress" || t === "hook_progress";
-    };
-    let toDropForSoftLimit = remaining - buffer.maxSize;
-    if (toDropForSoftLimit > 0) {
-      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, isNoisyProgressEvent);
-    }
-    if (toDropForSoftLimit > 0) {
-      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, (event) => !event.pinned);
-    }
-    if (toDropForSoftLimit > 0) {
-      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, isDroppablePermissionEvent);
-    }
-    let toDropForHardLimit = remaining - buffer.hardMaxSize;
-    if (toDropForHardLimit > 0) {
-      toDropForHardLimit -= dropOldestMatching(toDropForHardLimit, isDroppablePermissionEvent);
-    }
-    if (droppedIds.size > 0) {
-      buffer.events = buffer.events.filter((event) => !droppedIds.has(event.id));
-    }
-  }
-  static lowerBoundByEventId(events, startFrom) {
-    let left = 0;
-    let right = events.length;
-    while (left < right) {
-      const mid = Math.floor((left + right) / 2);
-      if (events[mid].id < startFrom) left = mid + 1;
-      else right = mid;
-    }
-    return left;
-  }
-  static readEvents(buffer, cursor) {
-    let cursorResetTo;
-    if (cursor != null) {
-      const earliest = buffer.events[0]?.id;
-      if (earliest != null && earliest > cursor) cursorResetTo = earliest;
-      if (earliest == null && buffer.nextId > cursor) cursorResetTo = buffer.nextId;
-    }
-    const startFrom = cursorResetTo ?? cursor ?? 0;
-    const startIndex = _SessionManager.lowerBoundByEventId(buffer.events, startFrom);
-    const filtered = buffer.events.slice(startIndex);
-    const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].id + 1 : startFrom;
-    return { events: filtered, nextCursor, cursorResetTo };
-  }
-  static clearTerminalEvents(buffer) {
-    buffer.events = buffer.events.filter((e3) => e3.type !== "result" && e3.type !== "error");
-  }
-  isDraining(sessionId) {
-    return (this.drainingSessions.get(sessionId) ?? 0) > 0;
-  }
-  beginDraining(sessionId) {
-    this.drainingSessions.set(sessionId, (this.drainingSessions.get(sessionId) ?? 0) + 1);
-  }
-  endDraining(sessionId) {
-    const current = this.drainingSessions.get(sessionId) ?? 0;
-    if (current <= 1) {
-      this.drainingSessions.delete(sessionId);
-      return;
-    }
-    this.drainingSessions.set(sessionId, current - 1);
-  }
-};
+// src/orchestrator/messaging.ts
+import { randomUUID as randomUUID4 } from "node:crypto";
 
 // node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs
 import { createRequire as mx } from "module";
@@ -51745,6 +48705,3280 @@ async function Bs($, X) {
   return hK($, X);
 }
 
+// src/orchestrator/messaging.ts
+var MAX_TEXT = 16e3;
+var MAX_MESSAGES = 128;
+var MAX_QUESTIONS = 16;
+var text = external_exports.string().min(1).max(MAX_TEXT).refine((value) => value.trim().length > 0);
+var messageId = external_exports.string().min(1).max(128).optional();
+function result(value, isError = false) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(value) }],
+    ...isError ? { isError } : {}
+  };
+}
+function selectWaitEvents(events, afterSeq, isPending) {
+  const selected2 = [];
+  const questions = /* @__PURE__ */ new Map();
+  for (const event of events) {
+    if (!event.actionable || event.seq <= afterSeq) continue;
+    const data = event.data;
+    if (event.type === "worker_question" && typeof data?.messageId === "string") {
+      if (!isPending(event)) continue;
+      const prev = questions.get(data.messageId);
+      if (prev !== void 0) selected2[prev] = event;
+      else {
+        questions.set(data.messageId, selected2.length);
+        selected2.push(event);
+      }
+    } else selected2.push(event);
+  }
+  return selected2.sort(
+    (a3, b) => Number(["permission_required", "worker_question"].includes(b.type)) - Number(["permission_required", "worker_question"].includes(a3.type))
+  );
+}
+var SupervisorMailbox = class {
+  constructor(reminderMs = 3e5) {
+    this.reminderMs = reminderMs;
+    if (!Number.isSafeInteger(reminderMs) || reminderMs < 1 || reminderMs > 2147483647)
+      throw new Error("INVALID_SUPERVISOR_QUESTION_TIMEOUT");
+  }
+  messages = /* @__PURE__ */ new Map();
+  deduplicated = /* @__PURE__ */ new Map();
+  listeners = /* @__PURE__ */ new Set();
+  pendingQuestions = 0;
+  closedReason;
+  /** SDK transports own their server instance; never share one between queries. */
+  createServer() {
+    return yx({
+      name: "codex_supervisor",
+      version: "1.0.0",
+      tools: [
+        Tx(
+          "notify_supervisor",
+          "Send a meaningful task milestone to Codex. Returns a transport receipt, not approval or acceptance. Message max 16000 characters; optional messageId deduplicates within this attempt.",
+          { messageId, message: text },
+          async (args) => this.send("update", args.message, args.messageId)
+        ),
+        Tx(
+          "ask_supervisor",
+          `Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. After ${this.reminderMs}ms, remind Codex once and keep this original question pending; elapsed waiting never supplies an answer. Cancellation, interruption, connection closure or the enclosing execution deadline ends the wait explicitly. Question max 16000 characters; optional messageId deduplicates within this attempt.`,
+          { messageId, question: text },
+          async (args, extra) => this.send(
+            "question",
+            args.question,
+            args.messageId,
+            extra?.signal
+          )
+        )
+      ]
+    });
+  }
+  subscribe(listener) {
+    if (this.closedReason !== void 0) return () => {
+    };
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+  respond(id2, answer) {
+    if (this.closedReason !== void 0 || !text.safeParse(answer).success) return false;
+    const record3 = this.messages.get(id2);
+    if (!record3?.finish) return false;
+    record3.finish(
+      result({ messageId: id2, clientMessageId: record3.clientMessageId, status: "answered", answer })
+    );
+    return true;
+  }
+  isPending(id2) {
+    return this.closedReason === void 0 && !!this.messages.get(id2)?.finish;
+  }
+  publish(event) {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener({ ...event });
+      } catch {
+      }
+    }
+  }
+  /** Native AskUserQuestion uses the same event/reply transport as ask_supervisor. */
+  askQuestion(question, signal) {
+    if (!text.safeParse(question).success)
+      return Promise.resolve(this.error("SUPERVISOR_QUESTION_INVALID"));
+    return this.send("question", question, void 0, signal);
+  }
+  close(reason = "Attempt ended") {
+    if (this.closedReason !== void 0) return;
+    this.closedReason = reason.slice(0, MAX_TEXT);
+    for (const record3 of this.messages.values())
+      record3.finish?.(this.error("SUPERVISOR_MAILBOX_CLOSED", record3.id, this.closedReason));
+    this.listeners.clear();
+  }
+  /**
+   * End pending questions without closing the mailbox. A native interruption or turn boundary
+   * abandons the originating tool call, so no answer may remain claimable or leave the worker
+   * waiting; the mailbox stays usable for the follow-on turn.
+   */
+  interruptPending(reason = "Native turn interrupted") {
+    for (const record3 of this.messages.values()) {
+      record3.finish?.(this.error("SUPERVISOR_INTERRUPTED", record3.id, reason.slice(0, MAX_TEXT)));
+    }
+  }
+  /** Release the previous attempt before reusing the query's SDK server. */
+  reset(reason = "A new attempt started") {
+    if (this.closedReason !== void 0) return;
+    for (const record3 of this.messages.values())
+      record3.finish?.(this.error("SUPERVISOR_ATTEMPT_RESET", record3.id, reason.slice(0, MAX_TEXT)));
+    this.messages.clear();
+    this.deduplicated.clear();
+  }
+  error(error48, id2, reason) {
+    return result(
+      { messageId: id2, status: "unanswered", error: error48, ...reason !== void 0 ? { reason } : {} },
+      true
+    );
+  }
+  send(kind, value, suppliedId, signal) {
+    const id2 = randomUUID4();
+    if (signal?.aborted) return Promise.resolve(this.error("SUPERVISOR_QUESTION_CANCELLED", id2));
+    if (this.closedReason !== void 0)
+      return Promise.resolve(this.error("SUPERVISOR_MAILBOX_CLOSED", id2, this.closedReason));
+    const prior = suppliedId === void 0 ? void 0 : this.deduplicated.get(suppliedId);
+    if (prior)
+      return prior.kind === kind && prior.text === value ? prior.outcome : Promise.resolve(this.error("SUPERVISOR_MESSAGE_ID_CONFLICT", prior.id));
+    if (this.messages.size >= MAX_MESSAGES)
+      return Promise.resolve(this.error("SUPERVISOR_MESSAGE_LIMIT", id2));
+    if (kind === "question" && this.pendingQuestions >= MAX_QUESTIONS)
+      return Promise.resolve(this.error("SUPERVISOR_QUESTION_LIMIT", id2));
+    const event = {
+      id: id2,
+      kind,
+      text: value,
+      ...kind === "question" ? { reminderAt: new Date(Date.now() + this.reminderMs).toISOString() } : {}
+    };
+    const record3 = {
+      ...event,
+      clientMessageId: suppliedId,
+      outcome: Promise.resolve(
+        result({ messageId: id2, clientMessageId: suppliedId, status: "delivered" })
+      )
+    };
+    if (kind === "question") {
+      this.pendingQuestions++;
+      record3.outcome = new Promise((resolve) => {
+        const abort = () => record3.finish?.(this.error("SUPERVISOR_QUESTION_CANCELLED", id2));
+        const timer = setTimeout(() => {
+          if (record3.finish) this.publish({ ...event, reminder: true });
+        }, this.reminderMs);
+        timer.unref();
+        record3.finish = (outcome) => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+          record3.finish = void 0;
+          this.pendingQuestions--;
+          resolve(outcome);
+        };
+        signal?.addEventListener("abort", abort, { once: true });
+      });
+    }
+    this.messages.set(id2, record3);
+    if (suppliedId !== void 0) this.deduplicated.set(suppliedId, record3);
+    this.publish(event);
+    return record3.outcome;
+  }
+};
+
+// src/orchestrator/controller.ts
+var DEFAULT_EXECUTION_WINDOW_MS = 72e5;
+var MIN_EXECUTION_WINDOW_MS = 1e3;
+var MAX_GUIDANCE_TEXT = 4e3;
+var MAX_GUIDANCE_RECORDS = 32;
+var MAX_GUIDANCE_QUEUE = 8;
+function taskContract(task2) {
+  const { id: id2, title, instructions, dependsOn, acceptance, artifacts, checks } = task2;
+  return { id: id2, title, instructions, dependsOn, acceptance, artifacts, checks };
+}
+function fail(message) {
+  throw new Error(message);
+}
+var Orchestrator = class {
+  constructor(dataDir, worker, poolRoot = dataDir) {
+    this.dataDir = dataDir;
+    this.worker = worker;
+    this.poolRoot = poolRoot;
+    mkdirSync3(dataDir, { recursive: true });
+    for (const file2 of readdirSync4(dataDir).filter((f6) => /^run-[\w-]+\.json$/.test(f6))) {
+      const run = JSON.parse(readFileSync8(path7.join(dataDir, file2), "utf8"));
+      this.migrate(run);
+      this.runs.set(run.id, run);
+    }
+    this.unsubscribe = worker.subscribe((event) => this.consume(event));
+    this.unsubscribeMessages = worker.subscribeMessages?.(({ sessionId, message }) => {
+      const run = [...this.runs.values()].find(
+        (r3) => r3.sessionId === sessionId && r3.activeTaskId && r3.status === "open"
+      ) ?? [...this.runs.values()].find(
+        (r3) => r3.activeTaskId && r3.status === "open" && this.startups.get(r3.id)?.valid
+      );
+      if (!run || this.closed || !this.owns(run)) return;
+      run.sessionId = sessionId;
+      if (message.kind === "question") {
+        this.pendingMessages.set(message.id, {
+          runId: run.id,
+          taskId: run.activeTaskId,
+          sessionId
+        });
+        const decisions = this.task(run, run.activeTaskId).decisions ??= [];
+        if (!decisions.some((d) => d.id === message.id))
+          decisions.push({
+            id: message.id,
+            kind: "question",
+            state: "pending",
+            text: message.text,
+            expiresAt: message.expiresAt,
+            reminderAt: message.reminderAt
+          });
+      }
+      this.emit(
+        run,
+        message.kind === "question" ? "worker_question" : "worker_message",
+        {
+          messageId: message.id,
+          kind: message.kind,
+          text: message.text,
+          trust: "worker_observation",
+          requiresResponse: message.kind === "question",
+          ...message.reminder ? { reminder: true, waiting: true } : {},
+          nextActions: message.kind === "question" ? ["respond_message"] : ["continue_wait"]
+        },
+        run.activeTaskId,
+        message.kind === "question"
+      );
+    });
+  }
+  runs = /* @__PURE__ */ new Map();
+  /** Execution-capacity records are memory-only so ledger reads never expose tokens. */
+  slots = /* @__PURE__ */ new Map();
+  listeners = /* @__PURE__ */ new Set();
+  seen = /* @__PURE__ */ new Map();
+  startups = /* @__PURE__ */ new Map();
+  timers = /* @__PURE__ */ new Map();
+  unsubscribe;
+  unsubscribeMessages;
+  pendingMessages = /* @__PURE__ */ new Map();
+  closed = false;
+  ownerId = randomUUID5();
+  interruptions = /* @__PURE__ */ new Map();
+  /** Per-message interrupt watchdogs; process-local and never persisted. */
+  guidanceTimers = /* @__PURE__ */ new Map();
+  reviewing = /* @__PURE__ */ new Set();
+  idleTimers = /* @__PURE__ */ new Map();
+  eventSubscribers = /* @__PURE__ */ new Set();
+  subscribeEvents(listener) {
+    this.eventSubscribers.add(listener);
+    return () => {
+      this.eventSubscribers.delete(listener);
+    };
+  }
+  metrics = {
+    waits: 0,
+    wakeups: 0,
+    waitTimeouts: 0,
+    statusReads: 0,
+    ledgerReads: 0,
+    logPolls: 0,
+    outputBytes: 0
+  };
+  respondMessage(runId, messageId2, answer) {
+    const run = this.get(runId);
+    const pending = this.pendingMessages.get(messageId2);
+    if (!pending || pending.runId !== runId || pending.taskId !== run.activeTaskId || run.sessionId !== pending.sessionId || !this.worker.respondMessage?.(messageId2, answer))
+      fail("MESSAGE_NOT_PENDING_OR_STALE");
+    this.pendingMessages.delete(messageId2);
+    const decision = this.task(run, pending.taskId).decisions?.find((d) => d.id === messageId2);
+    if (decision) decision.state = "answered";
+    this.emit(
+      run,
+      "supervisor_answered",
+      {
+        messageId: messageId2,
+        answer,
+        delivery: "answered_in_worker_tool",
+        trust: "supervisor_scope_guidance"
+      },
+      pending.taskId,
+      false
+    );
+    return {
+      runId,
+      messageId: messageId2,
+      delivery: "answered_in_worker_tool",
+      nextCursor: this.cursor(runId)
+    };
+  }
+  isQuestionPending(runId, messageId2) {
+    const run = this.get(runId, false);
+    const pending = this.pendingMessages.get(messageId2);
+    return !!pending && run.status === "open" && pending.runId === runId && pending.taskId === run.activeTaskId && pending.sessionId === run.sessionId && (this.worker.isQuestionPending?.(messageId2) ?? true);
+  }
+  /**
+   * Scoped guidance for an active, still-running task. `queue` records the text and returns
+   * without touching the native turn: delivery happens exactly once at the next native result
+   * boundary. `interrupt` additionally asks the worker to end the current turn, then delivers
+   * the guidance as the follow-on input in the same native conversation. Nothing is claimed as
+   * read by the model, and nothing survives a restart or a cancelled task.
+   */
+  sendGuidance(runId, input) {
+    const run = this.get(runId);
+    this.open(run, true);
+    if (["__proto__", "constructor", "prototype"].includes(input.requestId))
+      fail("INVALID_REQUEST_ID");
+    const text2 = typeof input.text === "string" ? input.text.trim() : "";
+    if (!text2) fail("GUIDANCE_TEXT_REQUIRED");
+    if (text2.length > MAX_GUIDANCE_TEXT) fail("GUIDANCE_TEXT_TOO_LONG");
+    const prior = run.guidance?.find((record4) => record4.requestId === input.requestId);
+    if (prior) {
+      if (prior.text !== text2 || prior.mode !== input.mode || input.taskId !== void 0 && input.taskId !== prior.taskId || input.taskRevision !== void 0 && input.taskRevision !== prior.taskRevision || input.sessionId !== void 0 && prior.sessionId !== void 0 && input.sessionId !== prior.sessionId)
+        fail("REQUEST_ID_CONFLICT");
+      return this.guidanceReceipt(run, prior, true);
+    }
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+    if (this.interruptions.has(run.id)) fail("EXECUTOR_STARTUP_DRAINING");
+    const task2 = run.activeTaskId ? this.task(run, run.activeTaskId) : void 0;
+    if (!task2 || task2.state !== "running" || !run.sessionId) fail("NO_ACTIVE_EXECUTION");
+    if (input.taskId !== void 0 && input.taskId !== task2.id) fail("GUIDANCE_TASK_NOT_ACTIVE");
+    if (input.taskRevision !== void 0 && input.taskRevision !== task2.revision)
+      fail("STALE_CONTRACT");
+    if (input.sessionId !== void 0 && input.sessionId !== run.sessionId)
+      fail("GUIDANCE_SESSION_MISMATCH");
+    const active2 = run.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (!active2 || active2.status !== "reserved") fail("NO_ACTIVE_EXECUTION");
+    if (this.pendingGuidance(run).length >= MAX_GUIDANCE_QUEUE) fail("GUIDANCE_QUEUE_FULL");
+    if ((run.guidance?.length ?? 0) >= MAX_GUIDANCE_RECORDS) fail("GUIDANCE_MESSAGE_LIMIT");
+    if (Date.now() >= run.deadline) fail("RUN_DEADLINE");
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const record3 = {
+      id: randomUUID5(),
+      requestId: input.requestId,
+      runId,
+      taskId: task2.id,
+      taskRevision: task2.revision,
+      sessionId: run.sessionId,
+      mode: input.mode,
+      text: text2,
+      state: input.mode === "interrupt" ? "interruption_requested" : "queued",
+      createdAt: now,
+      updatedAt: now
+    };
+    run.guidance ??= [];
+    run.guidance.push(record3);
+    this.save(run);
+    this.emit(
+      run,
+      input.mode === "interrupt" ? "guidance_interruption_requested" : "guidance_queued",
+      this.guidanceSummary(run, record3),
+      task2.id,
+      false
+    );
+    if (input.mode === "interrupt") this.requestGuidanceInterrupt(run, record3);
+    return this.guidanceReceipt(run, record3, false);
+  }
+  /** Pending guidance: interrupting messages outrank ordinary queued ones, then FIFO. */
+  pendingGuidance(run) {
+    const order = (record3) => record3.state === "interruption_requested" ? 0 : 1;
+    return (run.guidance ?? []).filter((record3) => record3.state === "queued" || record3.state === "interruption_requested").sort((a3, b) => order(a3) - order(b) || a3.createdAt.localeCompare(b.createdAt));
+  }
+  guidanceSummary(run, record3) {
+    return {
+      guidanceId: record3.id,
+      requestId: record3.requestId,
+      taskId: record3.taskId,
+      taskRevision: record3.taskRevision,
+      mode: record3.mode,
+      state: record3.state,
+      reason: record3.reason,
+      /** Truthful delivery only: input accepted, never a claim that the model read it. */
+      delivered: record3.state === "delivered",
+      pendingGuidance: this.pendingGuidance(run).length,
+      textPreview: record3.text.slice(0, 500),
+      truncated: record3.text.length > 500
+    };
+  }
+  guidanceReceipt(run, record3, deduplicated) {
+    return {
+      runId: run.id,
+      ...this.guidanceSummary(run, record3),
+      deduplicated,
+      states: {
+        queued: "Accepted; waits for the current native turn to reach its result boundary",
+        interruption_requested: "Native interruption requested; not yet input",
+        delivering: "Starting the follow-on native turn; transport acceptance is pending",
+        delivered: "Input accepted by the same native conversation for the follow-on turn",
+        failed: "Not delivered; interrupt, transport or allowance prevented it",
+        cancelled: "Dropped because the task, run, budget or conversation ended"
+      },
+      trust: "supervisor_scope_guidance",
+      nextCursor: this.cursor(run.id)
+    };
+  }
+  /**
+   * Ask the native runtime to abandon the current turn. Delivery stays with the native result
+   * boundary; if that boundary never arrives, the message fails instead of being sent late into
+   * an unknown turn.
+   */
+  async requestGuidanceInterrupt(run, record3) {
+    record3.state = "interruption_requested";
+    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const executionId = run.activeExecutionId;
+    this.save(run);
+    const watchdog = setTimeout(
+      () => {
+        if (record3.state !== "interruption_requested") return;
+        if (run.activeExecutionId !== executionId || run.activeTaskId !== record3.taskId) return;
+        this.settleGuidance(run, record3, "failed", "interrupt_boundary_timeout");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), record3.taskId);
+      },
+      Math.min(3e4, Math.max(1e3, run.deadline - Date.now()))
+    );
+    watchdog.unref();
+    this.guidanceTimers.set(record3.id, watchdog);
+    let issued = false;
+    try {
+      issued = await this.worker.interruptTurn?.(run.sessionId ?? "") ?? false;
+    } catch {
+      issued = false;
+    }
+    if (record3.state !== "interruption_requested") return;
+    if (!issued) {
+      this.settleGuidance(run, record3, "failed", "interrupt_failed");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), record3.taskId);
+      return;
+    }
+    this.save(run);
+  }
+  settleGuidance(run, record3, state, reason) {
+    record3.state = state;
+    record3.reason = reason;
+    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const timer = this.guidanceTimers.get(record3.id);
+    if (timer) {
+      clearTimeout(timer);
+      this.guidanceTimers.delete(record3.id);
+    }
+    this.save(run);
+  }
+  /**
+   * Deliver exactly one guidance message for the boundary that just settled. Exactly one user
+   * input crosses the native queue per boundary so two messages can never coalesce, and the
+   * follow-on segment is reserved before any input is sent.
+   */
+  deliverGuidance(run, record3) {
+    if (this.closed || !this.owns(run) || run.status !== "open" || !run.activeTaskId) {
+      this.settleGuidance(run, record3, "cancelled", "run_no_longer_active");
+      return false;
+    }
+    const task2 = this.task(run, run.activeTaskId);
+    if (Date.now() >= run.deadline) {
+      this.settleGuidance(run, record3, "failed", "execution_deadline");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
+      return false;
+    }
+    const requested = Math.max(
+      DEFAULT_SEGMENT_TURNS,
+      run.executions?.at(-1)?.requestedLimit ?? run.maxTurns
+    );
+    let nativeLimit;
+    if (this.teamManaged) {
+      const granted = this.parentGrant?.(run.id, requested) ?? 0;
+      if (granted < 1) {
+        this.settleGuidance(run, record3, "failed", "turn_budget_exhausted");
+        this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
+        return false;
+      }
+      run.turnBudget.limit = run.turnBudget.used + granted + 1;
+      run.turnBudget.reserved += granted + 1;
+      nativeLimit = granted;
+    } else {
+      extendFollowOnBudget(run.turnBudget);
+      nativeLimit = availableGrant(run.turnBudget, requested);
+      reserveGrant(run.turnBudget, nativeLimit);
+    }
+    const execution = {
+      id: randomUUID5(),
+      taskId: task2.id,
+      attempt: task2.attempts,
+      startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      requestedLimit: requested,
+      effectiveLimit: nativeLimit,
+      defaultLimit: run.maxTurns,
+      reservedTurns: nativeLimit + 1,
+      observedAssistantMessages: 0,
+      provisionalCharge: 0,
+      status: "reserved",
+      reason: "guidance_continuation"
+    };
+    execution.sessionId = run.sessionId;
+    run.executions.push(execution);
+    run.activeExecutionId = execution.id;
+    const timer = setTimeout(
+      () => this.stopExecution(run, "Execution deadline exceeded", "time_budget"),
+      Math.min(run.taskTimeoutMs, Math.max(1, run.deadline - Date.now()))
+    );
+    timer.unref();
+    const previousTimer = this.timers.get(run.id);
+    if (previousTimer) clearTimeout(previousTimer);
+    this.timers.set(run.id, timer);
+    this.save(run);
+    let sent = false;
+    this.worker.setSegment?.(run.executions.filter((e3) => e3.sessionId === run.sessionId).length);
+    record3.state = "delivering";
+    record3.executionId = execution.id;
+    record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    try {
+      sent = this.worker.guidance?.(run.sessionId ?? "", record3.text, nativeLimit) ?? false;
+    } catch {
+      sent = false;
+    }
+    if (typeof sent !== "boolean") {
+      const startup = { valid: true };
+      this.startups.set(run.id, startup);
+      let deliveryTimer;
+      const bounded = Promise.race([
+        sent,
+        new Promise((resolve) => {
+          deliveryTimer = setTimeout(
+            () => resolve(false),
+            Math.min(3e4, Math.max(1, run.deadline - Date.now()))
+          );
+          deliveryTimer.unref();
+        })
+      ]);
+      void bounded.then((accepted) => {
+        if (record3.state === "delivered") return;
+        if (!startup.valid || this.closed || !this.owns(run) || run.status !== "open" || run.activeExecutionId !== execution.id || record3.state !== "delivering") {
+          this.worker.stop(run.sessionId);
+          return;
+        }
+        if (!accepted) {
+          this.settleGuidance(run, record3, "failed", "transport_failed");
+          this.worker.stop(run.sessionId);
+          this.stoppedTask(
+            run,
+            task2,
+            "Guidance transport failed",
+            "guidance_transport",
+            "failed",
+            "worker_finished"
+          );
+          return;
+        }
+        execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
+        this.settleGuidance(run, record3, "delivered");
+        this.emit(run, "guidance_delivered", this.guidanceSummary(run, record3), task2.id, false);
+      }).catch(() => {
+        if (startup.valid && this.owns(run) && run.activeExecutionId === execution.id) {
+          this.settleGuidance(run, record3, "failed", "transport_failed");
+          this.worker.stop(run.sessionId);
+          this.stoppedTask(
+            run,
+            task2,
+            "Guidance transport failed",
+            "guidance_transport",
+            "failed",
+            "worker_finished"
+          );
+        }
+      }).finally(() => {
+        if (deliveryTimer) clearTimeout(deliveryTimer);
+        if (this.startups.get(run.id) === startup) {
+          this.startups.delete(run.id);
+          if (!run.activeTaskId && !run.sessionOperation) this.release(run);
+        }
+      });
+      this.save(run);
+      return true;
+    }
+    execution.epoch = this.worker.eventEpoch?.(run.sessionId ?? "") ?? 0;
+    if (!sent) {
+      settleReservation(run.turnBudget, execution.reservedTurns, void 0);
+      execution.reservedTurns = 0;
+      execution.status = "confirmed";
+      execution.reason = "guidance_transport_failed";
+      execution.settledAt = (/* @__PURE__ */ new Date()).toISOString();
+      if (run.activeExecutionId === execution.id) run.activeExecutionId = void 0;
+      this.settleGuidance(run, record3, "failed", "transport_failed");
+      this.emit(run, "guidance_failed", this.guidanceSummary(run, record3), task2.id);
+      return false;
+    }
+    this.settleGuidance(run, record3, "delivered");
+    this.emit(run, "guidance_delivered", this.guidanceSummary(run, record3), task2.id, false);
+    return true;
+  }
+  /** Drop every unsent message; the caller reports why. */
+  clearGuidance(run, reason) {
+    for (const record3 of (run.guidance ?? []).filter(
+      (entry) => ["queued", "interruption_requested", "delivering"].includes(entry.state)
+    )) {
+      const timer = this.guidanceTimers.get(record3.id);
+      if (timer) {
+        clearTimeout(timer);
+        this.guidanceTimers.delete(record3.id);
+      }
+      record3.state = "cancelled";
+      record3.reason = reason;
+      record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      this.emit(run, "guidance_cancelled", this.guidanceSummary(run, record3), record3.taskId);
+    }
+  }
+  migrate(run) {
+    run.executions ??= [];
+    for (const record3 of run.guidance ?? [])
+      if (["queued", "interruption_requested", "delivering"].includes(record3.state)) {
+        record3.state = "cancelled";
+        record3.reason = record3.reason ?? "not_replayed_after_restart";
+        record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      }
+    run.workerName ??= run.tasks[0]?.title;
+    if (run.renewals && !Array.isArray(run.renewals)) run.renewals = void 0;
+    if (!run.turnBudget) {
+      let used = 0, observed = 0;
+      for (const event of run.events)
+        if (event.type === "worker_finished") {
+          const count = event.data.result?.numTurns;
+          if (typeof count === "number" && Number.isFinite(count) && count >= 0) {
+            used += count;
+            observed++;
+          }
+        }
+      const missing = Math.max(0, run.tasks.reduce((n3, task2) => n3 + task2.attempts, 0) - observed);
+      run.turnBudget = normalizedBudget(
+        {
+          used: used + missing * (run.maxTurns + 1),
+          estimated: missing * (run.maxTurns + 1)
+        },
+        // Ledgers without a budget predate the raised default; keep the cap they ran under.
+        LEGACY_RUN_TURN_LIMIT
+      );
+    } else run.turnBudget = normalizedBudget(run.turnBudget);
+    for (const task2 of run.tasks) {
+      if (task2.repairs === void 0) {
+        let pendingRepair = false, repairs = 0;
+        for (const event of run.events.filter((event2) => event2.taskId === task2.id)) {
+          if (event.type === "task_rejected") pendingRepair = true;
+          if (event.type === "dispatch_intent") {
+            if (pendingRepair) repairs++;
+            pendingRepair = false;
+          }
+        }
+        task2.repairs = repairs;
+      }
+      task2.continuations ??= Math.max(0, task2.attempts - 1 - task2.repairs);
+      if (task2.state === "failed" && task2.result?.errorSubtype === "error_max_turns")
+        task2.state = "budget_exhausted";
+    }
+  }
+  artifactSnapshot(run, task2) {
+    return Object.fromEntries(
+      this.artifactPaths(task2).map((file2) => {
+        if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
+        const absolute = path7.resolve(run.cwd, file2);
+        return [
+          file2,
+          existsSync8(absolute) ? createHash3("sha256").update(readFileSync8(absolute)).digest("hex") : null
+        ];
+      })
+    );
+  }
+  captureCheckpoint(run, task2, reason, accountingKnown) {
+    this.inventory(run, task2);
+    const artifacts = this.artifactSnapshot(run, task2);
+    task2.checkpoint = {
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      taskRevision: task2.revision,
+      sessionId: run.sessionId,
+      reason,
+      artifacts,
+      artifactComparison: task2.baselineArtifacts ? "known" : "unavailable",
+      changedDeclaredArtifacts: task2.baselineArtifacts ? task2.artifacts.filter((file2) => artifacts[file2] !== task2.baselineArtifacts?.[file2]) : [],
+      accountingKnown
+    };
+    return task2.checkpoint;
+  }
+  artifactPaths(task2) {
+    return [.../* @__PURE__ */ new Set([...task2.artifacts, ...task2.additionalArtifacts ?? []])];
+  }
+  inventory(run, task2) {
+    const changes = changedSince(
+      task2.workspaceBaseline,
+      workspaceSnapshot(run.cwd, task2.artifacts, task2.workspaceBaseline?.heads)
+    );
+    const owned = changes.changedFiles.filter(
+      (file2) => this.worker.permitsArtifact?.(run.cwd, file2) !== false
+    );
+    const included = new Set(
+      this.artifactPaths(task2).map((file2) => path7.resolve(run.cwd, file2).toLowerCase())
+    );
+    for (const peer of run.tasks.filter((peer2) => peer2.id !== task2.id && peer2.state === "accepted"))
+      for (const file2 of this.artifactPaths(peer))
+        included.add(path7.resolve(run.cwd, file2).toLowerCase());
+    for (const file2 of run.peerArtifacts ?? [])
+      included.add(path7.resolve(run.cwd, file2).toLowerCase());
+    task2.changeInventory = {
+      ...changes,
+      changedFiles: changes.changedFiles,
+      outsideScopeObservations: changes.changedFiles.filter((file2) => !owned.includes(file2)),
+      undeclaredChanges: changes.changedFiles.filter(
+        (file2) => !included.has(path7.resolve(run.cwd, file2).toLowerCase())
+      )
+    };
+    return task2.changeInventory;
+  }
+  /** Coordinator-only coverage links. Every linked peer must pass review before team finish. */
+  setPeerArtifacts(runId, files) {
+    const run = this.get(runId);
+    const paths = [...new Set(files)].sort();
+    for (const file2 of paths) if (!inside(run.cwd, file2)) fail("PEER_ARTIFACT_OUTSIDE_WORKSPACE");
+    if (JSON.stringify(paths) !== JSON.stringify(run.peerArtifacts ?? [])) {
+      run.peerArtifacts = paths;
+      this.save(run);
+    }
+  }
+  includeArtifacts(runId, taskId, files, evidence) {
+    const run = this.get(runId), task2 = this.task(run, taskId);
+    this.open(run);
+    if (run.activeTaskId || run.sessionOperation || this.reviewing.has(run.id))
+      fail("EXECUTOR_BUSY");
+    if (!evidence.trim() || !files.length) fail("ARTIFACT_INCLUSION_EVIDENCE_REQUIRED");
+    if (task2.state === "accepted" || task2.state === "superseded") fail("TASK_NOT_RECONCILABLE");
+    for (const file2 of files) if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
+    task2.additionalArtifacts = [.../* @__PURE__ */ new Set([...task2.additionalArtifacts ?? [], ...files])];
+    this.inventory(run, task2);
+    if (task2.state === "awaiting_review") task2.artifactHash = this.hash(run, task2);
+    this.emit(
+      run,
+      "artifacts_included",
+      { files, evidence, artifactHash: task2.artifactHash },
+      taskId,
+      false
+    );
+    return {
+      runId,
+      taskId,
+      artifactHash: task2.artifactHash,
+      changeInventory: task2.changeInventory,
+      nextActions: ["reconcile", "review"]
+    };
+  }
+  settle(run, reported, reason) {
+    const execution = run.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (execution) settleExecution(run.turnBudget, execution, reported, reason);
+    else if (run.turnBudget.reserved)
+      settleReservation(run.turnBudget, run.turnBudget.reserved, reported);
+    run.activeExecutionId = void 0;
+  }
+  warnBudget(run, task2) {
+    const committed = run.turnBudget.used + run.turnBudget.reserved;
+    const pendingTasks = run.tasks.filter((t) => t.id !== task2.id && t.state === "pending").map((t) => t.id);
+    if (run.budgetWarningAt || committed < run.turnBudget.limit * 0.7 || !pendingTasks.length)
+      return;
+    run.budgetWarningAt = committed;
+    this.emit(
+      run,
+      "budget_risk",
+      {
+        budget: budgetSummary(run.turnBudget),
+        pendingTasks,
+        nextActions: ["review_checkpoint", "plan_remaining_stages"],
+        warning: "Charged or reserved allowance leaves limited room for pending stages; reservations are not observed use and no allowance is added"
+      },
+      task2.id
+    );
+  }
+  dependenciesAccepted(run, task2) {
+    return task2.dependsOn.every((id2) => {
+      let dependency = this.task(run, id2);
+      const seen = /* @__PURE__ */ new Set();
+      while (dependency.state === "superseded" && dependency.supersededBy && !seen.has(dependency.id)) {
+        seen.add(dependency.id);
+        dependency = this.task(run, dependency.supersededBy);
+      }
+      return dependency.state === "accepted";
+    });
+  }
+  stoppedTask(run, task2, reason, kind, state, eventType) {
+    const startup = this.startups.get(run.id);
+    if (startup) startup.valid = false;
+    this.clearGuidance(run, kind);
+    this.settle(run, void 0, kind);
+    run.activeTaskId = void 0;
+    run.sessionOperation = void 0;
+    run.sessionState = "closed";
+    this.release(run);
+    task2.state = state;
+    task2.failure = { kind };
+    task2.result = {
+      sessionId: run.sessionId ?? "",
+      result: reason,
+      isError: true,
+      errorSubtype: "orchestrator_" + kind,
+      numTurns: 0,
+      durationMs: Date.now() - (task2.startedAt ?? Date.now()),
+      totalCostUsd: 0
+    };
+    task2.checkpoint = void 0;
+    for (const decision of task2.decisions ?? [])
+      if (decision.state === "pending") decision.state = "interrupted";
+    let checkpoint;
+    try {
+      checkpoint = this.captureCheckpoint(run, task2, reason, false);
+    } catch (error48) {
+      task2.feedback = `Checkpoint capture failed: ${String(error48)}`;
+    }
+    this.emit(
+      run,
+      eventType,
+      {
+        state: task2.state,
+        result: task2.result,
+        reason,
+        failureClass: kind,
+        checkpointAvailable: !!checkpoint,
+        changedDeclaredArtifacts: checkpoint?.changedDeclaredArtifacts,
+        changeSummary: task2.changeInventory ? {
+          undeclaredChanges: task2.changeInventory.undeclaredChanges,
+          outsideScopeObservations: task2.changeInventory.outsideScopeObservations
+        } : void 0,
+        nextActions: Date.now() < run.deadline && (!!run.sessionId || availableGrant(run.turnBudget, run.maxTurns) > 0) ? ["continue", "reconcile", "cancel"] : ["reconcile", "cancel"],
+        turnBudget: run.turnBudget
+      },
+      task2.id
+    );
+    this.warnBudget(run, task2);
+  }
+  stopExecution(run, reason, kind) {
+    const startup = this.startups.get(run.id);
+    if (startup) startup.valid = false;
+    const task2 = run.activeTaskId ? this.task(run, run.activeTaskId) : void 0;
+    this.worker.stop(run.sessionId);
+    if (task2)
+      this.stoppedTask(
+        run,
+        task2,
+        reason,
+        kind,
+        kind === "time_budget" ? "budget_exhausted" : "interrupted",
+        "worker_finished"
+      );
+    else {
+      this.settle(run, void 0, kind);
+      run.sessionOperation = void 0;
+      run.sessionState = "closed";
+      this.release(run);
+      this.emit(run, "execution_interrupted", { reason, turnBudget: run.turnBudget });
+    }
+  }
+  save(run) {
+    const dest = path7.join(this.dataDir, `run-${run.id}.json`);
+    if (existsSync8(dest)) {
+      const disk = JSON.parse(readFileSync8(dest, "utf8"));
+      if (disk.ownerId && disk.ownerId !== run.ownerId && !disk.ownerReleased && processAlive(disk.ownerPid))
+        fail("STALE_SUPERVISOR_OWNER");
+      if ((disk.ownerGeneration ?? 0) > (run.ownerGeneration ?? 0)) fail("STALE_SUPERVISOR_OWNER");
+    }
+    const tmp = `${dest}.${process.pid}.tmp`;
+    writeFileSync2(tmp, JSON.stringify(run, null, 2), { mode: 384 });
+    renameSync2(tmp, dest);
+  }
+  emit(run, type, data, taskId, actionable = true) {
+    if (["worker_finished", "worker_failed", "task_blocked", "run_cancelled"].includes(type)) {
+      for (const [id2, pending] of this.pendingMessages)
+        if (pending.runId === run.id) this.pendingMessages.delete(id2);
+    }
+    if ([
+      "plan_created",
+      "plan_updated",
+      "task_accepted",
+      "task_rejected",
+      "candidate_delivered",
+      "task_superseded"
+    ].includes(type))
+      actionable = false;
+    const event = {
+      seq: (run.events.at(-1)?.seq ?? 0) + 1,
+      type,
+      data,
+      taskId,
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      actionable
+    };
+    run.events.push(event);
+    this.save(run);
+    for (const subscriber of [...this.eventSubscribers]) subscriber(run, event);
+    if (actionable) for (const listener of [...this.listeners]) listener(run.id);
+    return event;
+  }
+  get(id2, writable = true) {
+    const run = this.runs.get(id2) ?? fail("RUN_NOT_FOUND");
+    if (writable && (this.closed || !this.owns(run)))
+      fail("RUN_OWNED_BY_ANOTHER_CONNECTION: use plan attach after the owner disconnects");
+    return run;
+  }
+  owns(run) {
+    if (run.ownerPid !== process.pid || run.ownerReleased || run.ownerId && run.ownerId !== this.ownerId)
+      return false;
+    const file2 = path7.join(this.dataDir, `run-${run.id}.json`);
+    if (!existsSync8(file2)) return true;
+    const disk = JSON.parse(readFileSync8(file2, "utf8"));
+    return !disk.ownerReleased && disk.ownerPid === process.pid && disk.ownerId === run.ownerId && disk.ownerGeneration === run.ownerGeneration;
+  }
+  attach(runId) {
+    if (this.closed) fail("CONNECTION_CLOSED");
+    const file2 = path7.join(this.dataDir, `run-${runId}.json`);
+    if (!existsSync8(file2)) fail("RUN_NOT_FOUND");
+    const claim = `${file2}.claim`;
+    const releaseClaim = claimFile(claim);
+    try {
+      const run = JSON.parse(readFileSync8(file2, "utf8"));
+      if (!run.ownerReleased && processAlive(run.ownerPid) && (run.ownerPid !== process.pid || run.ownerId && run.ownerId !== this.ownerId))
+        fail("OWNER_STILL_ACTIVE: no takeover of a live supervisor");
+      if (this.startups.size || [...this.runs.values()].some((r3) => this.owns(r3) && (r3.activeTaskId || r3.sessionOperation)))
+        fail("EXECUTOR_BUSY");
+      if (run.ownerId === this.ownerId && !run.ownerReleased)
+        return {
+          runId,
+          attached: true,
+          generation: run.ownerGeneration,
+          nextCursor: this.cursor(runId)
+        };
+      this.migrate(run);
+      run.ownerPid = process.pid;
+      run.ownerId = this.ownerId;
+      run.ownerReleased = false;
+      run.ownerGeneration = (run.ownerGeneration ?? 0) + 1;
+      if (run.turnBudget.reserved) {
+        const orphaned = run.turnBudget.reserved;
+        this.settle(run, void 0, "owner_lost");
+        run.turnBudget.recovered = (run.turnBudget.recovered ?? 0) + orphaned;
+      }
+      run.activeTaskId = void 0;
+      run.sessionOperation = void 0;
+      run.sessionState = "closed";
+      for (const record3 of run.guidance ?? [])
+        if (["queued", "interruption_requested", "delivering"].includes(record3.state)) {
+          record3.state = "cancelled";
+          record3.reason = "owner_lost";
+          record3.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        }
+      for (const task2 of run.tasks) {
+        if (task2.state === "running") {
+          task2.state = "interrupted";
+          task2.failure = { kind: "interrupted" };
+          try {
+            this.captureCheckpoint(run, task2, "Owner was lost", false);
+          } catch {
+          }
+        }
+        for (const decision of task2.decisions ?? [])
+          if (decision.state === "pending") decision.state = "interrupted";
+      }
+      this.runs.set(runId, run);
+      this.emit(
+        run,
+        "supervisor_attached",
+        { generation: run.ownerGeneration, automaticReplay: false },
+        void 0,
+        false
+      );
+      return {
+        runId,
+        attached: true,
+        generation: run.ownerGeneration,
+        budget: budgetSummary(run.turnBudget),
+        nextCursor: this.cursor(runId),
+        nextActions: ["reconcile", "continue", "review"]
+      };
+    } finally {
+      releaseClaim();
+    }
+  }
+  cursor(runId) {
+    return this.get(runId, false).events.at(-1)?.seq ?? 0;
+  }
+  eventSummary(runId, event) {
+    return this.brief(event, runId);
+  }
+  brief(event, runId) {
+    if (event.type !== "worker_finished") return event;
+    const data = event.data;
+    return {
+      ...event,
+      data: {
+        state: data.state,
+        artifactHash: data.artifactHash,
+        elapsedMs: data.elapsedMs,
+        context: data.context,
+        artifacts: data.artifacts,
+        failureClass: data.failureClass,
+        checkpointAvailable: data.checkpointAvailable,
+        changedDeclaredArtifacts: data.changedDeclaredArtifacts,
+        nextActions: data.nextActions,
+        turnBudget: data.turnBudget,
+        changeSummary: data.changeSummary,
+        checkpointRef: data.checkpointAvailable ? { tool: "orchestrator_status", runId, taskId: event.taskId, sections: ["checkpoint"] } : void 0,
+        result: data.result ? {
+          sessionId: data.result.sessionId,
+          summary: data.state === "blocked" ? data.result.result : data.result.result.slice(0, 1e3),
+          truncated: data.state !== "blocked" && data.result.result.length > 1e3,
+          detailRef: {
+            runId,
+            taskId: event.taskId,
+            tool: "orchestrator_status",
+            sections: ["result"]
+          },
+          isError: data.result.isError,
+          numTurns: data.result.numTurns,
+          errorSubtype: data.result.errorSubtype,
+          structuredOutput: data.result.structuredOutput,
+          stopReason: data.result.stopReason,
+          permissionDenials: data.result.permissionDenials
+        } : void 0,
+        feedback: data.feedback ? {
+          summary: data.feedback.slice(0, 500),
+          truncated: data.feedback.length > 500,
+          evidenceRef: { runId, taskId: event.taskId, sections: ["error"] }
+        } : void 0
+      }
+    };
+  }
+  task(run, id2) {
+    return run.tasks.find((t) => t.id === id2) ?? fail("TASK_NOT_FOUND");
+  }
+  open(run, execution = false) {
+    if (this.closed || !this.owns(run)) fail("CONNECTION_CLOSED_OR_OWNER_CHANGED");
+    if (run.status !== "open") fail("RUN_CLOSED");
+    if (execution && Date.now() >= run.deadline) fail("RUN_DEADLINE");
+  }
+  validateTasks(cwd, specs) {
+    if (!specs.length || specs.length > 100) fail("Provide 1 to 100 tasks");
+    const ids = new Set(specs.map((t) => t.id));
+    if (ids.size !== specs.length) fail("DUPLICATE_TASK_ID");
+    for (const task2 of specs) {
+      if (!/^[a-zA-Z0-9_-]{1,80}$/.test(task2.id)) fail("INVALID_TASK_ID");
+      if (!task2.artifacts.length || !task2.checks.length)
+        fail("Each task needs artifacts and executable acceptance checks");
+      for (const file2 of task2.artifacts) if (!inside(cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
+      for (const id2 of task2.dependsOn) if (!ids.has(id2)) fail("UNKNOWN_DEPENDENCY");
+    }
+    const visiting = /* @__PURE__ */ new Set(), done = /* @__PURE__ */ new Set();
+    const visit = (id2) => {
+      if (visiting.has(id2)) fail("DEPENDENCY_CYCLE");
+      if (done.has(id2)) return;
+      visiting.add(id2);
+      for (const dep of specs.find((t) => t.id === id2).dependsOn) visit(dep);
+      visiting.delete(id2);
+      done.add(id2);
+    };
+    for (const id2 of ids) visit(id2);
+  }
+  validateReplacements(tasks, requireAccepted = false) {
+    for (const task2 of tasks.filter((t) => t.state === "superseded")) {
+      const seen = /* @__PURE__ */ new Set([task2.id]);
+      let current = task2;
+      while (current.state === "superseded") {
+        const next = tasks.find((t) => t.id === current.supersededBy);
+        if (!next) fail("MISSING_REPLACEMENT");
+        if (seen.has(next.id)) fail("REPLACEMENT_CYCLE");
+        seen.add(next.id);
+        current = next;
+      }
+      if (requireAccepted && current.state !== "accepted") fail("UNACCEPTED_REPLACEMENT");
+    }
+  }
+  plan(input) {
+    if (this.closed) fail("CONNECTION_CLOSED");
+    if (input.action === "create") {
+      if (!input.cwd || !input.goal || !input.design || !input.tasks)
+        fail("create requires cwd, goal, design, tasks");
+      const cwd = realpathSync4.native(input.cwd);
+      this.validateTasks(cwd, input.tasks);
+      if ([...this.runs.values()].some((r3) => this.owns(r3) && r3.status === "open"))
+        fail("OPEN_RUN_EXISTS: finish or cancel the current run before creating another");
+      for (const previous of this.runs.values())
+        if (this.owns(previous) && previous.status === "awaiting_user_review")
+          this.closeSession(previous);
+      const run2 = {
+        id: randomUUID5(),
+        goal: input.goal,
+        design: input.design,
+        cwd,
+        workerName: input.workerName ?? input.tasks[0].title,
+        revision: 1,
+        status: "open",
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        deadline: Date.now() + (input.runTimeoutMs ?? 72e5),
+        taskTimeoutMs: input.taskTimeoutMs ?? 72e5,
+        maxTurns: input.maxTurns ?? DEFAULT_SEGMENT_TURNS,
+        turnBudget: normalizedBudget(void 0, input.maxTotalTurns ?? DEFAULT_RUN_TURN_LIMIT),
+        maxRepairs: input.maxRepairs ?? 2,
+        tasks: input.tasks.map((t) => ({
+          ...t,
+          revision: 1,
+          state: "pending",
+          attempts: 0,
+          repairs: 0,
+          continuations: 0,
+          reviews: []
+        })),
+        events: [],
+        receipts: {},
+        ownerPid: process.pid,
+        ownerId: this.ownerId,
+        ownerGeneration: 1,
+        executions: []
+      };
+      this.runs.set(run2.id, run2);
+      this.emit(run2, "plan_created", { revision: 1 });
+      return run2;
+    }
+    const run = this.get(input.runId ?? "");
+    if (input.action === "approve") {
+      if (run.status !== "awaiting_user_review") fail("USER_REVIEW_NOT_PENDING");
+      this.closeSession(run);
+      run.status = "completed";
+      this.emit(
+        run,
+        "user_approved",
+        { sessionId: run.sessionId, transcriptRetained: true },
+        void 0,
+        false
+      );
+      return run;
+    }
+    if (input.action === "reopen" || input.action === "append") {
+      if ([...this.runs.values()].some((r3) => r3.id !== run.id && this.owns(r3) && r3.status === "open"))
+        fail("OPEN_RUN_EXISTS");
+      if (input.action === "append") {
+        const additions2 = input.tasks ?? fail("append requires new tasks");
+        if (additions2.some((t) => run.tasks.some((old) => old.id === t.id)))
+          fail("DUPLICATE_TASK_ID");
+        this.validateTasks(run.cwd, [...run.tasks, ...additions2]);
+      }
+      for (const previous of this.runs.values())
+        if (previous.id !== run.id && this.owns(previous) && previous.status === "awaiting_user_review")
+          this.closeSession(previous);
+      if (run.status === "awaiting_user_review" || run.status === "completed") {
+        run.status = "open";
+        const idle = this.idleTimers.get(run.id);
+        if (idle) clearTimeout(idle);
+        this.idleTimers.delete(run.id);
+      }
+      if (input.action === "reopen") {
+        this.open(run);
+        this.emit(run, "run_reopened", { sessionId: run.sessionId }, void 0, false);
+        return run;
+      }
+      const additions = input.tasks ?? fail("append requires new tasks");
+      if (additions.some((t) => run.tasks.some((old) => old.id === t.id)))
+        fail("DUPLICATE_TASK_ID");
+      const existing = run.tasks.map(
+        ({ id: id2, title, instructions, dependsOn, acceptance, artifacts, checks }) => ({
+          id: id2,
+          title,
+          instructions,
+          dependsOn,
+          acceptance,
+          artifacts,
+          checks
+        })
+      );
+      return this.plan({ ...input, action: "update", tasks: [...existing, ...additions] });
+    }
+    this.open(run);
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+    if (input.action === "supersede") {
+      const old = this.task(run, input.taskId ?? "");
+      const replacement = this.task(run, input.replacementId ?? "");
+      if (old.id === replacement.id || old.state === "running" || replacement.attempts !== 0 || replacement.state !== "pending")
+        fail("INVALID_REPLACEMENT");
+      const rewired = run.tasks.map(
+        (task2) => task2.attempts === 0 ? {
+          ...task2,
+          dependsOn: task2.dependsOn.map((id2) => id2 === old.id ? replacement.id : id2)
+        } : { ...task2 }
+      );
+      this.validateTasks(run.cwd, rewired);
+      const oldInPlan = rewired.find((t) => t.id === old.id);
+      oldInPlan.state = "superseded";
+      oldInPlan.supersededBy = replacement.id;
+      this.validateReplacements(rewired);
+      run.tasks = rewired;
+      run.revision++;
+      this.emit(
+        run,
+        "task_superseded",
+        { replacementId: replacement.id, revision: run.revision },
+        old.id
+      );
+      return run;
+    }
+    if (input.action === "finish") {
+      this.validateReplacements(run.tasks, true);
+      if (run.activeTaskId || run.tasks.some((t) => t.state !== "accepted" && t.state !== "superseded"))
+        fail("UNACCEPTED_TASKS");
+      for (const task2 of run.tasks.filter((t) => t.state === "accepted")) {
+        if (this.inventory(run, task2).undeclaredChanges.length) {
+          task2.state = "awaiting_review";
+          this.emit(
+            run,
+            "acceptance_invalidated",
+            {
+              reason: "Undeclared workspace changes after acceptance",
+              nextActions: ["include_artifacts", "review"]
+            },
+            task2.id
+          );
+          return run;
+        }
+        const hash2 = this.hash(run, task2);
+        if (hash2 !== task2.artifactHash) {
+          task2.state = "awaiting_review";
+          task2.artifactHash = hash2;
+          this.emit(
+            run,
+            "acceptance_invalidated",
+            { artifactHash: hash2, reason: "Artifact changed after acceptance; review again" },
+            task2.id
+          );
+          return run;
+        }
+      }
+      run.status = "awaiting_user_review";
+      run.sessionState = run.sessionId && this.worker.model(run.sessionId) ? "retained" : "closed";
+      this.emit(run, "candidate_delivered", {
+        acceptedTasks: run.tasks.filter((t) => t.state === "accepted").length,
+        supersededTasks: run.tasks.filter((t) => t.state === "superseded").length
+      });
+      this.release(run);
+      const idle = setTimeout(() => {
+        this.closeSession(run);
+        this.emit(run, "idle_session_suspended", { transcriptRetained: true }, void 0, false);
+      }, 18e5);
+      idle.unref();
+      this.idleTimers.set(run.id, idle);
+      return run;
+    }
+    if (!input.tasks) fail("update requires complete tasks list");
+    this.validateTasks(run.cwd, input.tasks);
+    for (const old of run.tasks.filter((t) => t.state === "superseded")) {
+      if (!input.tasks.some((t) => t.id === old.supersededBy)) fail("MISSING_REPLACEMENT");
+    }
+    for (const old of run.tasks.filter((t) => t.attempts > 0 || t.state === "superseded")) {
+      const next = input.tasks.find((t) => t.id === old.id) ?? fail("DISPATCHED_CONTRACT_IMMUTABLE");
+      const contract = {
+        id: old.id,
+        title: old.title,
+        instructions: old.instructions,
+        dependsOn: old.dependsOn,
+        acceptance: old.acceptance,
+        artifacts: old.artifacts,
+        checks: old.checks
+      };
+      if (JSON.stringify(contract) !== JSON.stringify(taskContract(next)))
+        fail("DISPATCHED_CONTRACT_IMMUTABLE");
+    }
+    run.revision++;
+    run.tasks = input.tasks.map((t) => {
+      const old = run.tasks.find((x) => x.id === t.id);
+      return old && (old.attempts > 0 || old.state === "superseded") ? old : {
+        ...t,
+        revision: run.revision,
+        state: "pending",
+        attempts: 0,
+        repairs: 0,
+        continuations: 0,
+        reviews: []
+      };
+    });
+    if (input.design) run.design = input.design;
+    this.emit(run, "plan_updated", { revision: run.revision });
+    return run;
+  }
+  closeSession(run) {
+    const startup = this.startups.get(run.id);
+    if (startup) startup.valid = false;
+    this.clearGuidance(run, "Session closed");
+    const timer = this.idleTimers.get(run.id);
+    if (timer) clearTimeout(timer);
+    this.idleTimers.delete(run.id);
+    if (run.sessionId && this.worker.model(run.sessionId)) this.worker.stop(run.sessionId);
+    run.sessionState = "closed";
+    if (run.sessionOperation) settleReservation(run.turnBudget, run.turnBudget.reserved, void 0);
+    run.sessionOperation = void 0;
+    this.release(run);
+    this.save(run);
+  }
+  makeCheckpoint(run) {
+    return JSON.stringify({
+      goal: run.goal,
+      designAndDecisions: run.design,
+      accepted: run.tasks.filter((t) => t.state === "accepted").map((t) => ({
+        id: t.id,
+        contract: t.acceptance,
+        artifacts: t.artifacts,
+        implementation: t.result?.result,
+        structuredOutput: t.result?.structuredOutput,
+        supervisorReview: t.reviews.at(-1)
+      })),
+      remaining: run.tasks.filter((t) => !["accepted", "superseded"].includes(t.state)).map((t) => ({ id: t.id, title: t.title, dependsOn: t.dependsOn, feedback: t.feedback }))
+    });
+  }
+  /**
+   * Explicit, evidence-backed renewal of the model-execution window. Callers must have proved the
+   * run is idle and owned. Nothing else (task contracts, revisions, native conversation, turn
+   * budget, usage, repairs, checks or receipts) is touched, and an implicit path never calls this.
+   */
+  renewDeadline(run, source, evidence, requestedRunTimeoutMs, deadline) {
+    const text2 = evidence.trim();
+    if (!text2) fail("RENEWAL_EVIDENCE_REQUIRED");
+    const window2 = requestedRunTimeoutMs ?? DEFAULT_EXECUTION_WINDOW_MS;
+    if (!Number.isSafeInteger(window2) || window2 < MIN_EXECUTION_WINDOW_MS || window2 > DEFAULT_EXECUTION_WINDOW_MS)
+      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    if (deadline !== void 0 && (!Number.isSafeInteger(deadline) || deadline <= 0))
+      fail("INVALID_RENEWAL_WINDOW: 1000..7200000 milliseconds");
+    const previousDeadline = run.deadline;
+    const next = Math.max(previousDeadline, deadline ?? Date.now() + window2);
+    const renewal = {
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      source,
+      previousDeadline,
+      deadline: next,
+      evidence: text2
+    };
+    if (requestedRunTimeoutMs !== void 0) renewal.requestedRunTimeoutMs = requestedRunTimeoutMs;
+    run.renewals ??= [];
+    run.renewals.push(renewal);
+    run.deadline = next;
+    this.save(run);
+    return renewal;
+  }
+  /**
+   * Renewal guard shared by ordinary and team paths. Busy, draining, reviewed, foreign-owned or
+   * closed runs cannot be renewed; a failed worker never reaches this method.
+   */
+  assertRenewable(run) {
+    this.open(run);
+    if (this.closed || !this.owns(run)) fail("RUN_OWNED_BY_ANOTHER_CONNECTION");
+    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
+    if (run.activeTaskId || run.sessionOperation) fail("SESSION_BUSY");
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+  }
+  /**
+   * A managed child's model-execution window is owned by its team: only the coordinator may move
+   * it, so an ordinary resume can never outlive an expired parent.
+   */
+  teamManaged = false;
+  /**
+   * Team children spend the shared team allowance, which the parent must reserve before any
+   * follow-on input. The handler returns the granted turns (0 when the team cannot afford it).
+   */
+  parentGrant;
+  setParentGrant(handler) {
+    this.parentGrant = handler;
+  }
+  setTeamManaged(managed) {
+    this.teamManaged = managed;
+  }
+  /**
+   * Team-coordinated renewal of one child's window. The team coordinator supplies the single
+   * evidence record and the parent deadline, so the team and its children never diverge.
+   */
+  renewExecutionWindow(runId, input) {
+    const run = this.get(runId);
+    this.assertRenewable(run);
+    return this.renewDeadline(
+      run,
+      input.source,
+      input.evidence,
+      input.runTimeoutMs,
+      input.deadline
+    );
+  }
+  /** True only for a run this connection currently owns and may mutate. */
+  isOwned(runId) {
+    const run = this.runs.get(runId);
+    return !!run && !this.closed && this.owns(run);
+  }
+  /** Non-throwing form used to pre-check a coordinated team renewal atomically. */
+  renewalEligibility(runId) {
+    try {
+      this.assertRenewable(this.get(runId));
+      return void 0;
+    } catch (error48) {
+      return error48 instanceof Error ? error48.message : String(error48);
+    }
+  }
+  async session(runId, action, options = {}) {
+    const run = this.get(runId), beforeCursor = this.cursor(runId);
+    if ((run.status === "completed" || run.status === "cancelled") && action !== "close")
+      fail("REOPEN_RUN_FIRST");
+    if (action !== "close" && [...this.runs.values()].some((r3) => r3.id !== run.id && this.owns(r3) && r3.status === "open"))
+      fail("OPEN_RUN_EXISTS");
+    if (run.activeTaskId || this.reviewing.has(run.id) || run.sessionOperation)
+      fail("SESSION_BUSY");
+    const renewalRequested = action === "resume" && (options.runTimeoutMs !== void 0 || options.evidence !== void 0);
+    if (options.runTimeoutMs !== void 0 && action !== "resume")
+      fail("BUDGET_CONFIG_CREATE_ONLY: runTimeoutMs is accepted only on create or explicit resume");
+    let renewal;
+    if (action === "close") this.closeSession(run);
+    else if (action === "new") {
+      run.checkpoint = this.makeCheckpoint(run);
+      this.closeSession(run);
+      run.previousSessions ??= [];
+      if (run.sessionId) run.previousSessions.push(run.sessionId);
+      run.sessionId = void 0;
+      run.lastContext = void 0;
+    } else if (action === "retain")
+      run.sessionState = run.sessionId && this.worker.model(run.sessionId) ? "retained" : "resume_pending";
+    else if (action === "resume") {
+      if (!run.sessionId) fail("NO_TRANSCRIPT_TO_RESUME");
+      if (renewalRequested) {
+        if (this.teamManaged)
+          fail(
+            "TEAM_RESUME_REQUIRED: renew a team child window through orchestrator_team action=resume"
+          );
+        this.assertRenewable(run);
+        renewal = this.renewDeadline(
+          run,
+          "explicit_session_resume",
+          options.evidence ?? "",
+          options.runTimeoutMs
+        );
+      }
+      run.sessionState = this.worker.model(run.sessionId) ? "retained" : "resume_pending";
+    } else {
+      if (!run.sessionId) fail("NO_SESSION_TO_COMPACT");
+      if (Date.now() >= run.deadline) fail("RUN_DEADLINE");
+      const nativeLimit = availableGrant(run.turnBudget, run.maxTurns);
+      if (nativeLimit < 1) fail("RUN_TURN_BUDGET_EXHAUSTED");
+      this.acquire(run);
+      reserveGrant(run.turnBudget, nativeLimit);
+      this.save(run);
+      run.sessionOperation = "compact";
+      run.compactBoundarySeen = false;
+      run.checkpoint = this.makeCheckpoint(run);
+      const timeout = setTimeout(
+        () => {
+          this.closeSession(run);
+          this.emit(run, "context_maintenance_failed", {
+            reason: "Compaction timed out; transcript retained. Resume or start a new context."
+          });
+        },
+        Math.min(18e4, Math.max(1, run.deadline - Date.now()))
+      );
+      timeout.unref();
+      this.timers.set(run.id, timeout);
+      const startup = { valid: true };
+      this.startups.set(run.id, startup);
+      try {
+        this.worker.setName?.(run.workerName);
+        const prompt = "/compact Preserve these supervisor-confirmed facts and user feedback; omit raw logs. " + run.checkpoint;
+        if (this.worker.model(run.sessionId) && this.worker.isLive?.(run.sessionId) !== false)
+          await this.worker.reply(run.sessionId, prompt, nativeLimit);
+        else {
+          this.seen.delete(run.sessionId);
+          run.sessionId = await this.worker.start(
+            run.cwd,
+            prompt,
+            nativeLimit,
+            void 0,
+            run.sessionId
+          );
+        }
+        if (startup.valid) run.sessionState = "retained";
+        else this.worker.stop(run.sessionId);
+      } catch (error48) {
+        if (startup.valid) {
+          settleReservation(run.turnBudget, run.turnBudget.reserved, void 0);
+          run.sessionOperation = void 0;
+          this.release(run);
+        }
+        throw error48;
+      } finally {
+        if (this.startups.get(run.id) === startup) {
+          this.startups.delete(run.id);
+          if (!run.activeTaskId && !run.sessionOperation) this.release(run);
+        }
+      }
+    }
+    this.emit(
+      run,
+      "session_policy",
+      {
+        action,
+        state: run.sessionState,
+        sessionId: run.sessionId,
+        renewal: renewal ? this.renewalSummary(run, renewal) : void 0
+      },
+      void 0,
+      false
+    );
+    return {
+      runId,
+      action,
+      state: run.sessionState,
+      sessionId: run.sessionId,
+      deadline: run.deadline,
+      renewal: renewal ? this.renewalSummary(run, renewal) : void 0,
+      nextCursor: beforeCursor
+    };
+  }
+  /** Effective window returned to the caller after an explicit renewal. */
+  renewalSummary(run, renewal) {
+    return {
+      source: renewal.source,
+      at: renewal.at,
+      previousDeadline: renewal.previousDeadline,
+      deadline: renewal.deadline,
+      effectiveDeadline: run.deadline,
+      requestedRunTimeoutMs: renewal.requestedRunTimeoutMs,
+      evidence: renewal.evidence,
+      renewalCount: run.renewals?.length ?? 0,
+      turnBudget: { ...run.turnBudget }
+    };
+  }
+  acquire(run) {
+    if (this.startups.size || this.interruptions.size) fail("EXECUTOR_STARTUP_DRAINING");
+    if (this.slots.has(run.id)) return;
+    withAdmissionGuard(this.poolRoot, () => {
+      if (workspaceReviewActive(this.poolRoot, run.cwd)) fail("WORKSPACE_REVIEW_IN_PROGRESS");
+      this.slots.set(run.id, acquireWorkerSlot(this.poolRoot, run.cwd, run.id));
+    });
+  }
+  dropSlot(runId) {
+    const slot = this.slots.get(runId);
+    if (!slot) return;
+    this.slots.delete(runId);
+    releaseWorkerSlot(this.poolRoot, slot);
+  }
+  release(run) {
+    const timer = this.timers.get(run.id);
+    if (timer) clearTimeout(timer);
+    this.timers.delete(run.id);
+    if (this.startups.has(run.id)) return;
+    this.dropSlot(run.id);
+  }
+  async dispatch(runId, taskId, requestId, signal, options = {}) {
+    const run = this.get(runId);
+    if (["__proto__", "constructor", "prototype"].includes(requestId)) fail("INVALID_REQUEST_ID");
+    const prior = Object.hasOwn(run.receipts, requestId) ? run.receipts[requestId] : void 0;
+    if (prior) {
+      if (prior.taskId !== taskId) fail("REQUEST_ID_CONFLICT");
+      return prior;
+    }
+    this.open(run, true);
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+    if (run.activeTaskId || run.sessionOperation) fail("EXECUTOR_BUSY");
+    this.clearGuidance(run, "New dispatch");
+    if (run.sessionId && run.lastContext && run.lastContext.inputTokens !== null && run.lastContext.inputTokens >= run.lastContext.hardLimit)
+      fail("CONTEXT_MAINTENANCE_REQUIRED: compact or new before dispatch");
+    const task2 = this.task(run, taskId);
+    if (![
+      "pending",
+      "needs_revision",
+      "blocked",
+      "failed",
+      "interrupted",
+      "budget_exhausted"
+    ].includes(task2.state))
+      fail("TASK_NOT_DISPATCHABLE");
+    if (options.mode === "continue" && !["budget_exhausted", "blocked", "failed", "interrupted"].includes(task2.state))
+      fail("TASK_NOT_CONTINUABLE");
+    if (task2.state === "budget_exhausted" && options.mode !== "continue")
+      fail("EXPLICIT_CONTINUATION_REQUIRED");
+    if (task2.state === "needs_revision" && task2.repairs >= run.maxRepairs) fail("REPAIR_LIMIT");
+    if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
+    const zeroProgress = task2.attempts > 0 && task2.result?.isError && task2.result.numTurns === 0 && task2.checkpoint?.accountingKnown && task2.checkpoint.changedDeclaredArtifacts.length === 0;
+    if (zeroProgress && (task2.zeroProgressRetries ?? 0) >= 2) fail("ZERO_PROGRESS_RETRY_LIMIT");
+    const configured = options.maxTurns ?? run.maxTurns;
+    if (!Number.isSafeInteger(configured) || configured < 1 || configured > 1e3)
+      fail("INVALID_NATIVE_TURN_LIMIT");
+    const followOn = !!run.sessionId;
+    const requested = followOn ? Math.max(DEFAULT_SEGMENT_TURNS, configured) : configured;
+    const nextBudget = { ...run.turnBudget };
+    if (followOn && !this.teamManaged) extendFollowOnBudget(nextBudget);
+    const nativeLimit = availableGrant(nextBudget, requested);
+    if (nativeLimit < 1) fail("RUN_TURN_BUDGET_EXHAUSTED");
+    const baseline = this.artifactSnapshot(run, task2);
+    this.acquire(run);
+    run.turnBudget.limit = nextBudget.limit;
+    reserveGrant(run.turnBudget, nativeLimit);
+    const execution = {
+      id: randomUUID5(),
+      taskId,
+      attempt: task2.attempts + 1,
+      startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      requestedLimit: requested,
+      effectiveLimit: nativeLimit,
+      defaultLimit: run.maxTurns,
+      reservedTurns: nativeLimit + 1,
+      observedAssistantMessages: 0,
+      provisionalCharge: 0,
+      status: "reserved"
+    };
+    run.executions.push(execution);
+    run.activeExecutionId = execution.id;
+    if (task2.state === "needs_revision") task2.repairs++;
+    else if (task2.attempts > 0) task2.continuations++;
+    if (options.feedback) task2.feedback = options.feedback;
+    if (zeroProgress) task2.zeroProgressRetries = (task2.zeroProgressRetries ?? 0) + 1;
+    else task2.zeroProgressRetries = 0;
+    task2.baselineArtifacts = baseline;
+    task2.workspaceBaseline ??= workspaceSnapshot(run.cwd, task2.artifacts);
+    task2.attempts++;
+    task2.startedAt = Date.now();
+    task2.state = "running";
+    task2.result = void 0;
+    task2.checkpoint = void 0;
+    task2.artifactHash = void 0;
+    run.activeTaskId = task2.id;
+    const receipt = {
+      taskId,
+      attempt: task2.attempts,
+      sessionId: run.sessionId,
+      status: "starting",
+      nextCursor: this.cursor(runId),
+      nativeLimit,
+      turnBudget: { ...run.turnBudget }
+    };
+    run.receipts[requestId] = receipt;
+    this.emit(
+      run,
+      "dispatch_intent",
+      { requestId, attempt: task2.attempts, taskRevision: task2.revision },
+      taskId,
+      false
+    );
+    this.warnBudget(run, task2);
+    const prompt = `Overall goal: ${run.goal}
+Design: ${run.design}
+Workspace: ${run.cwd}
+Task ${task2.id} (contract revision ${task2.revision}): ${task2.title}
+${task2.instructions}
+Capability use: proactively invoke relevant permitted skills and plugin/MCP tools available in this worker session, apply their guidance, and report actual use or material unavailability. Respect native invocation restrictions and reuse settled evidence.
+Acceptance: ${task2.acceptance}
+Expected artifacts: ${task2.artifacts.join(", ")}
+Fixed acceptance checks (command/args JSON; cwd is Workspace): ${JSON.stringify(task2.checks)}
+Use relevant development checks as needed; Codex review independently runs these fixed checks.
+Supervisor feedback: ${task2.feedback ?? "none"}
+Execute only this task. Follow its research owner and decision boundaries; reuse settled evidence, investigate assigned open questions, and ask with evidence and a recommendation at an unresolved material decision. Do not run downstream tasks. If blocked return BLOCKED: and a concrete question. Report findings, changed paths, checks/results and remaining limits; supervisor independently decides acceptance.`;
+    const timer = setTimeout(
+      () => {
+        this.stopExecution(run, "Execution deadline exceeded", "time_budget");
+      },
+      Math.min(run.taskTimeoutMs, run.deadline - Date.now())
+    );
+    timer.unref();
+    this.timers.set(run.id, timer);
+    const startup = { valid: true };
+    this.startups.set(run.id, startup);
+    try {
+      this.worker.setName?.(run.workerName);
+      this.worker.setSegment?.(
+        run.executions.filter((e3) => e3.id !== execution.id && e3.sessionId === run.sessionId).length + 1
+      );
+      if (run.sessionId && this.worker.model(run.sessionId) && this.worker.isLive?.(run.sessionId) !== false)
+        receipt.sessionId = await this.worker.reply(run.sessionId, prompt, nativeLimit, signal);
+      else {
+        if (run.sessionId) this.seen.delete(run.sessionId);
+        receipt.sessionId = await this.worker.start(
+          run.cwd,
+          (!run.sessionId && run.checkpoint ? "Supervisor checkpoint: " + this.makeCheckpoint(run) + "\n" : "") + prompt,
+          nativeLimit,
+          signal,
+          run.sessionId
+        );
+      }
+      if (!startup.valid || this.closed || run.status !== "open") {
+        receipt.status = "interrupted";
+        this.worker.stop(receipt.sessionId);
+        this.save(run);
+        return receipt;
+      }
+      run.sessionId = receipt.sessionId;
+      execution.sessionId = run.sessionId;
+      execution.epoch = this.worker.eventEpoch?.(run.sessionId) ?? 0;
+      run.sessionState = "retained";
+      receipt.startupMs = Date.now() - task2.startedAt;
+      receipt.status = "started";
+      run.workerCapabilities = await this.worker.refreshCapabilities?.(run.sessionId) ?? this.worker.capabilities?.(run.sessionId) ?? run.workerCapabilities;
+      receipt.workerCapabilities = compactCapabilities(run.workerCapabilities);
+      if (!startup.valid || this.closed || run.status !== "open") {
+        this.worker.stop(run.sessionId);
+        return receipt;
+      }
+      this.emit(
+        run,
+        "worker_started",
+        { requestId, sessionId: run.sessionId, model: this.worker.model(run.sessionId) },
+        taskId,
+        false
+      );
+      const events = await this.worker.replay(run.sessionId);
+      if (startup.valid && !this.closed && run.status === "open")
+        for (const event of events)
+          this.consume({
+            sessionId: run.sessionId,
+            event,
+            epoch: this.worker.eventEpoch?.(run.sessionId)
+          });
+      return receipt;
+    } catch (error48) {
+      if (startup.valid && !this.closed && run.status === "open") {
+        this.worker.stop(receipt.sessionId ?? run.sessionId);
+        this.stoppedTask(run, task2, String(error48), "startup", "failed", "worker_failed");
+        receipt.status = "failed";
+      } else receipt.status = "interrupted";
+      this.save(run);
+      return receipt;
+    } finally {
+      if (this.startups.get(run.id) === startup) {
+        this.startups.delete(run.id);
+        if (!run.activeTaskId && !run.sessionOperation) this.release(run);
+      }
+    }
+  }
+  hash(run, task2) {
+    const hash2 = createHash3("sha256");
+    for (const file2 of this.artifactPaths(task2).sort()) {
+      if (!inside(run.cwd, file2)) fail("ARTIFACT_OUTSIDE_WORKSPACE");
+      hash2.update(file2);
+      hash2.update("\0");
+      const absolute = path7.resolve(run.cwd, file2);
+      if (task2.additionalArtifacts?.includes(file2) && !existsSync8(absolute))
+        hash2.update("<deleted>");
+      else hash2.update(readFileSync8(absolute));
+    }
+    return hash2.digest("hex");
+  }
+  consume({ sessionId, event, epoch = 0 }) {
+    if (this.closed || !event) return;
+    const run = [...this.runs.values()].find(
+      (r3) => r3.sessionId === sessionId && (r3.activeTaskId || r3.sessionOperation) && (r3.status === "open" || r3.status === "awaiting_user_review")
+    );
+    const prior = this.seen.get(sessionId);
+    const activeAccount = run?.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (!run || activeAccount?.epoch !== void 0 && activeAccount.epoch !== epoch) {
+      if (!["result", "error"].includes(event.type)) return;
+      for (const candidate of this.runs.values()) {
+        if (!this.owns(candidate)) continue;
+        const execution = candidate.executions?.find(
+          (e3) => e3.sessionId === sessionId && e3.epoch === epoch && e3.status === "provisional"
+        );
+        const result2 = event.data;
+        if (execution && result2?.sessionId === sessionId && (!result2.isError || result2.errorSubtype) && settleExecution(candidate.turnBudget, execution, result2.numTurns, "late_native_result")) {
+          this.emit(
+            candidate,
+            "accounting_corrected",
+            { executionId: execution.id, budget: budgetSummary(candidate.turnBudget) },
+            execution.taskId,
+            false
+          );
+          break;
+        }
+      }
+      return;
+    }
+    if (!this.owns(run) || prior?.epoch === epoch && event.id <= prior.id) return;
+    this.seen.set(sessionId, { epoch, id: event.id });
+    if (run.sessionOperation === "compact") {
+      if (event.type === "progress" && event.data.type === "compact_boundary") {
+        run.compactBoundarySeen = true;
+        this.save(run);
+        return;
+      }
+      if (event.type === "result" || event.type === "error") {
+        const result2 = this.worker.result(sessionId);
+        settleReservation(
+          run.turnBudget,
+          run.turnBudget.reserved,
+          result2 && (!result2.isError || result2.errorSubtype) ? result2.numTurns : void 0
+        );
+        run.sessionOperation = void 0;
+        run.lastContext = this.worker.context?.(sessionId);
+        this.release(run);
+        this.emit(
+          run,
+          event.type === "error" || this.worker.result(sessionId)?.isError || !run.compactBoundarySeen ? "context_maintenance_failed" : "context_compacted",
+          { context: run.lastContext, boundaryObserved: run.compactBoundarySeen }
+        );
+      }
+      return;
+    }
+    const task2 = this.task(run, run.activeTaskId);
+    const account = run.executions?.find((e3) => e3.id === run.activeExecutionId);
+    if (account) {
+      account.sessionId = sessionId;
+      account.epoch = epoch;
+      const delivery = run.guidance?.find(
+        (record3) => record3.executionId === account.id && record3.state === "delivering"
+      );
+      if (delivery && ["output", "permission_request", "result", "error"].includes(event.type)) {
+        if (event.type === "error") {
+          this.settleGuidance(run, delivery, "failed", "native_transport_error");
+          this.emit(run, "guidance_failed", this.guidanceSummary(run, delivery), task2.id);
+        } else {
+          this.settleGuidance(run, delivery, "delivered");
+          this.emit(run, "guidance_delivered", this.guidanceSummary(run, delivery), task2.id, false);
+        }
+      }
+    }
+    if (account && event.type === "output" && event.data.message?.role === "assistant")
+      account.observedAssistantMessages++;
+    if (event.type === "permission_request") {
+      const pending = event.data;
+      task2.decisions ??= [];
+      task2.decisions.push({
+        id: pending.requestId,
+        kind: "permission",
+        state: "pending",
+        expiresAt: pending.expiresAt,
+        text: pending.summary,
+        inputHash: createHash3("sha256").update(JSON.stringify(pending.input ?? {})).digest("hex"),
+        toolName: pending.toolName,
+        input: pending.input,
+        reason: pending.decisionReason
+      });
+      this.emit(run, "permission_required", event.data, task2.id);
+      return;
+    }
+    if (event.type === "permission_result") {
+      const data2 = event.data;
+      const pending = task2.decisions?.find((d) => d.id === data2.requestId);
+      if (pending) pending.state = data2.source === "timeout" ? "expired" : "answered";
+      this.emit(run, "permission_resolved", event.data, task2.id, data2.behavior === "deny");
+      if (data2.behavior === "deny" && data2.source === "timeout") {
+        void this.interruptGracefully(
+          run.id,
+          "Permission expired; continue explicitly to re-evaluate current tool input",
+          "permission"
+        );
+      }
+      return;
+    }
+    if (event.type === "result" || event.type === "error") {
+      const nativeResult = this.worker.result(sessionId) ?? event.data;
+      const accountingKnown = !nativeResult.isError || !!nativeResult.errorSubtype;
+      const budgetStop = ["error_max_turns", "error_max_budget_usd"].includes(
+        nativeResult.errorSubtype ?? ""
+      );
+      const blocked = !nativeResult.isError && /^BLOCKED:/m.test(nativeResult.result);
+      const nextState = budgetStop ? "budget_exhausted" : nativeResult.isError ? "failed" : blocked ? "blocked" : "awaiting_review";
+      this.settle(
+        run,
+        accountingKnown ? nativeResult.numTurns : void 0,
+        nativeResult.errorSubtype ?? event.type
+      );
+      task2.result = nativeResult;
+      task2.failure = budgetStop ? {
+        kind: nativeResult.errorSubtype === "error_max_turns" ? "turn_budget" : "provider_budget",
+        subtype: nativeResult.errorSubtype
+      } : nativeResult.isError ? { kind: "execution", subtype: nativeResult.errorSubtype } : void 0;
+      if (budgetStop)
+        run.turnBudget.stopReason = nativeResult.errorSubtype === "error_max_turns" ? "native_max_turns" : "provider_budget_cap";
+      task2.state = nextState;
+      const interruption = this.interruptions.get(run.id);
+      if (interruption) {
+        task2.state = interruption.kind === "permission" ? "blocked" : "interrupted";
+        task2.failure = { kind: interruption.kind };
+      }
+      for (const decision of task2.decisions ?? [])
+        if (decision.state === "pending")
+          decision.state = interruption || decision.kind === "question" ? "interrupted" : "expired";
+      for (const [id2, pending2] of this.pendingMessages)
+        if (pending2.runId === run.id) this.pendingMessages.delete(id2);
+      const pending = this.pendingGuidance(run);
+      if (pending.length && !interruption && !this.closed && run.status === "open") {
+        this.emit(
+          run,
+          "native_boundary",
+          {
+            executionId: account?.id,
+            numTurns: nativeResult.numTurns,
+            accountingKnown,
+            boundaryState: task2.state,
+            pendingGuidance: pending.length,
+            turnBudget: run.turnBudget
+          },
+          task2.id,
+          false
+        );
+        const interruptRequested = pending.some((record3) => record3.mode === "interrupt");
+        const deliverable = interruptRequested || !nativeResult.isError && !blocked || nativeResult.errorSubtype === "error_max_turns";
+        if (deliverable && this.deliverGuidance(run, pending[0])) {
+          task2.state = "running";
+          task2.result = void 0;
+          task2.failure = void 0;
+          run.lastContext = this.worker.context?.(sessionId);
+          this.save(run);
+          this.warnBudget(run, task2);
+          return;
+        }
+        if (!deliverable || pending[0].state !== "delivered")
+          this.clearGuidance(run, `Boundary ${task2.state}`);
+      } else if (pending.length) this.clearGuidance(run, `Boundary ${task2.state}`);
+      if (task2.state === "awaiting_review") {
+        try {
+          task2.artifactHash = this.hash(run, task2);
+        } catch (error48) {
+          task2.state = "failed";
+          task2.feedback = `Artifact capture failed: ${String(error48)}`;
+        }
+      }
+      task2.provenance = { producer: "worker", at: (/* @__PURE__ */ new Date()).toISOString() };
+      try {
+        this.captureCheckpoint(run, task2, task2.failure?.kind ?? task2.state, accountingKnown);
+      } catch (error48) {
+        task2.feedback = `Checkpoint capture failed: ${String(error48)}`;
+      }
+      run.activeTaskId = void 0;
+      run.lastContext = this.worker.context?.(sessionId);
+      this.release(run);
+      this.emit(
+        run,
+        "worker_finished",
+        {
+          state: task2.state,
+          artifactHash: task2.artifactHash,
+          result: task2.result,
+          feedback: task2.feedback,
+          elapsedMs: Date.now() - (task2.startedAt ?? Date.now()),
+          context: run.lastContext,
+          artifacts: task2.artifacts,
+          failureClass: task2.failure?.kind,
+          checkpointAvailable: !!task2.checkpoint,
+          changedDeclaredArtifacts: task2.checkpoint?.changedDeclaredArtifacts,
+          changeSummary: task2.changeInventory ? {
+            undeclaredChanges: task2.changeInventory.undeclaredChanges,
+            outsideScopeObservations: task2.changeInventory.outsideScopeObservations
+          } : void 0,
+          nextActions: task2.state === "awaiting_review" ? task2.changeInventory?.undeclaredChanges.length ? ["inspect_changes", "include_artifacts", "review"] : ["review"] : Date.now() < run.deadline && (!!run.sessionId || availableGrant(run.turnBudget, run.maxTurns) > 0) ? ["continue", "reconcile", "cancel"] : ["reconcile", "cancel"],
+          turnBudget: run.turnBudget
+        },
+        task2.id
+      );
+      this.warnBudget(run, task2);
+      if (run.lastContext && run.lastContext.inputTokens !== null && run.lastContext.inputTokens >= run.lastContext.softLimit)
+        this.emit(run, "context_maintenance_recommended", run.lastContext, task2.id);
+      return;
+    }
+    const data = event.data;
+    const tools = data.message?.content?.filter((c3) => c3.type === "tool_use").map((c3) => c3.name);
+    if (tools?.length || data.tool_name)
+      this.emit(run, "tool_activity", { tools: tools ?? [data.tool_name] }, task2.id, false);
+  }
+  async wait(runId, afterSeq, timeoutMs = defaultWaitMs(), signal) {
+    const run = this.get(runId);
+    this.metrics.waits++;
+    const snapshot = () => ({
+      runId,
+      events: selectWaitEvents(
+        run.events,
+        afterSeq,
+        (e3) => this.isQuestionPending(runId, e3.data.messageId)
+      ).map((e3) => this.brief(e3, runId)),
+      nextCursor: run.events.at(-1)?.seq ?? 0,
+      status: run.status,
+      timedOut: false
+    });
+    if (afterSeq > (run.events.at(-1)?.seq ?? 0)) fail("CURSOR_AHEAD");
+    if (signal?.aborted) {
+      if (run.activeTaskId || run.sessionOperation)
+        this.stopExecution(run, "Host cancelled wait", "interrupted");
+      else {
+        this.closeSession(run);
+        this.emit(run, "host_wait_interrupted", { automaticReplay: false });
+      }
+      return snapshot();
+    }
+    if (snapshot().events.length || run.status !== "open" && !run.sessionOperation)
+      return snapshot();
+    return await new Promise((resolve) => {
+      let settled = false;
+      const finish = (timedOut = false) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.listeners.delete(listener);
+        signal?.removeEventListener("abort", abort);
+        if (timedOut) this.metrics.waitTimeouts++;
+        else this.metrics.wakeups++;
+        resolve({ ...snapshot(), timedOut });
+      };
+      const listener = (id2) => {
+        if (id2 === runId) finish();
+      };
+      const abort = () => {
+        if (run.activeTaskId || run.sessionOperation)
+          this.stopExecution(run, "Host cancelled wait", "interrupted");
+        else {
+          this.closeSession(run);
+          this.emit(run, "host_wait_interrupted", { automaticReplay: false });
+        }
+        finish();
+      };
+      const timer = setTimeout(() => finish(true), Math.min(MAX_WAIT_MS, Math.max(1, timeoutMs)));
+      this.listeners.add(listener);
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
+    });
+  }
+  interrupt(runId, reason) {
+    const run = this.get(runId);
+    this.open(run);
+    if (!reason.trim()) fail("INTERRUPTION_REASON_REQUIRED");
+    if (this.reviewing.has(run.id)) fail("REVIEW_IN_PROGRESS");
+    if (!run.activeTaskId && !run.sessionOperation) fail("NO_ACTIVE_EXECUTION");
+    this.clearGuidance(run, reason.slice(0, 200));
+    this.stopExecution(run, reason, "interrupted");
+    return {
+      runId,
+      status: run.status,
+      sessionId: run.sessionId,
+      turnBudget: run.turnBudget,
+      nextCursor: this.cursor(runId)
+    };
+  }
+  async interruptGracefully(runId, reason, kind = "interrupted") {
+    const run = this.get(runId);
+    this.open(run);
+    if (this.interruptions.has(runId)) fail("EXECUTOR_STARTUP_DRAINING");
+    if (!run.activeTaskId || !run.sessionId || !this.worker.interrupt) {
+      if (kind === "permission" && run.activeTaskId) {
+        this.worker.stop(run.sessionId);
+        this.stoppedTask(
+          run,
+          this.task(run, run.activeTaskId),
+          reason,
+          kind,
+          "blocked",
+          "task_blocked"
+        );
+        return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
+      }
+      return this.interrupt(runId, reason);
+    }
+    this.interruptions.set(runId, { reason, kind });
+    const sessionId = run.sessionId;
+    try {
+      await this.worker.interrupt(sessionId, 3e3);
+      if (this.closed || !this.owns(run)) return { runId, nextCursor: this.cursor(runId) };
+      for (const event of await this.worker.replay(sessionId))
+        this.consume({ sessionId, event, epoch: this.worker.eventEpoch?.(sessionId) });
+      if (run.activeTaskId) {
+        this.worker.stop(sessionId);
+        this.stoppedTask(
+          run,
+          this.task(run, run.activeTaskId),
+          reason,
+          kind,
+          kind === "permission" ? "blocked" : "interrupted",
+          "worker_finished"
+        );
+      } else {
+        this.worker.stop(sessionId);
+        run.sessionState = "closed";
+        this.save(run);
+      }
+      return { runId, turnBudget: run.turnBudget, nextCursor: this.cursor(runId) };
+    } finally {
+      this.interruptions.delete(runId);
+      if (!this.closed && this.owns(run))
+        this.emit(run, "execution_drained", { automaticReplay: false }, void 0, false);
+    }
+  }
+  reconcile(input) {
+    const run = this.get(input.runId);
+    this.open(run);
+    if (run.activeTaskId || run.sessionOperation || this.reviewing.has(run.id))
+      fail("EXECUTOR_BUSY");
+    const task2 = this.task(run, input.taskId);
+    if (input.taskRevision !== task2.revision) fail("STALE_CONTRACT");
+    if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
+    if (![
+      "pending",
+      "blocked",
+      "failed",
+      "interrupted",
+      "budget_exhausted",
+      "needs_revision",
+      "awaiting_review"
+    ].includes(task2.state))
+      fail("TASK_NOT_RECONCILABLE");
+    if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
+    try {
+      if (run.sessionId && this.worker.model(run.sessionId)) this.worker.stop(run.sessionId);
+      run.sessionState = "closed";
+      const hash2 = this.hash(run, task2);
+      task2.artifactHash = hash2;
+      task2.state = "awaiting_review";
+      task2.provenance = {
+        producer: "supervisor_reconcile",
+        at: (/* @__PURE__ */ new Date()).toISOString(),
+        note: input.evidence
+      };
+      task2.failure = void 0;
+      this.captureCheckpoint(run, task2, "supervisor_reconcile", true);
+      this.emit(
+        run,
+        "candidate_reconciled",
+        { artifactHash: hash2, provenance: task2.provenance, nextActions: ["review"] },
+        task2.id,
+        false
+      );
+      return task2;
+    } finally {
+      this.release(run);
+    }
+  }
+  async review(input, signal) {
+    const run = this.get(input.runId);
+    this.open(run);
+    const task2 = this.task(run, input.taskId);
+    if (!this.dependenciesAccepted(run, task2)) fail("DEPENDENCY_NOT_ACCEPTED");
+    if (task2.state !== "awaiting_review") fail("TASK_NOT_AWAITING_REVIEW");
+    if (this.inventory(run, task2).undeclaredChanges.length) {
+      this.save(run);
+      fail(
+        "UNDECLARED_CHANGES: inspect inventory and explicitly include_artifacts before acceptance"
+      );
+    }
+    if (input.taskRevision !== task2.revision || input.artifactHash !== task2.artifactHash || this.hash(run, task2) !== input.artifactHash)
+      fail("STALE_ARTIFACT_OR_CONTRACT");
+    if (!input.evidence.trim()) fail("INDEPENDENT_REVIEW_REQUIRED");
+    if (this.reviewing.has(run.id) || this.interruptions.has(run.id) || run.activeTaskId)
+      fail("EXECUTOR_BUSY");
+    if (this.startups.size) fail("EXECUTOR_STARTUP_DRAINING");
+    const admission = acquireWorkspaceReview(this.poolRoot, run.cwd, () => {
+      if (activeExecutionInWorkspace(this.poolRoot, run.cwd))
+        fail("CHECKS_REQUIRE_QUIESCENT_EXECUTOR");
+    });
+    this.reviewing.add(run.id);
+    const abort = new AbortController();
+    const hostCancel = () => {
+      abort.abort();
+      this.closeSession(run);
+    };
+    signal?.addEventListener("abort", hostCancel, { once: true });
+    const deadline = setTimeout(() => abort.abort(), checkTimeoutMs());
+    const checks = [];
+    try {
+      if (signal?.aborted) hostCancel();
+      for (const check3 of task2.checks) {
+        if (abort.signal.aborted) {
+          checks.push({
+            ...check3,
+            exitCode: null,
+            stdout: "",
+            stderr: "",
+            error: "Acceptance cancelled or deadline exceeded"
+          });
+          break;
+        }
+        checks.push({
+          ...check3,
+          ...await executeCheck(check3.command, check3.args, run.cwd, abort.signal)
+        });
+      }
+      if (abort.signal.aborted) {
+        task2.reviews.push({
+          at: (/* @__PURE__ */ new Date()).toISOString(),
+          decision: "interrupted",
+          artifactHash: input.artifactHash,
+          taskRevision: input.taskRevision,
+          evidence: input.evidence,
+          checks
+        });
+        this.emit(
+          run,
+          "review_interrupted",
+          {
+            reason: signal?.aborted ? "Host cancelled acceptance" : "Acceptance deadline exceeded",
+            artifactHash: input.artifactHash
+          },
+          task2.id
+        );
+        fail("REVIEW_INTERRUPTED");
+      }
+      this.open(run);
+      if (this.hash(run, task2) !== input.artifactHash) fail("CHECK_CHANGED_ARTIFACT");
+      if (this.inventory(run, task2).undeclaredChanges.length) {
+        this.save(run);
+        fail("CHECK_CHANGED_UNDECLARED_ARTIFACT");
+      }
+      const accepted = input.decision === "accept" && checks.every((c3) => c3.exitCode === 0 && !c3.error);
+      task2.reviews.push({
+        at: (/* @__PURE__ */ new Date()).toISOString(),
+        decision: accepted ? "accepted" : "rejected",
+        artifactHash: input.artifactHash,
+        taskRevision: task2.revision,
+        evidence: input.evidence,
+        checks
+      });
+      task2.state = accepted ? "accepted" : "needs_revision";
+      task2.feedback = accepted ? void 0 : `${input.evidence}
+Checks: ${JSON.stringify(checks.map((c3) => ({ exitCode: c3.exitCode, stderr: c3.stderr?.slice(0, 800) })))}`;
+      this.emit(
+        run,
+        accepted ? "task_accepted" : "task_rejected",
+        { checks, evidence: input.evidence, artifactHash: input.artifactHash },
+        task2.id
+      );
+      return {
+        taskId: task2.id,
+        state: task2.state,
+        checks,
+        remainingRepairs: Math.max(0, run.maxRepairs - task2.repairs)
+      };
+    } finally {
+      clearTimeout(deadline);
+      signal?.removeEventListener("abort", hostCancel);
+      this.reviewing.delete(run.id);
+      releaseWorkspaceReview(admission);
+    }
+  }
+  respond(runId, requestId, decision) {
+    const run = this.get(runId);
+    this.open(run);
+    if (!run.sessionId || !run.activeTaskId) fail("NO_ACTIVE_EXECUTION");
+    const request = this.worker.permissions(run.sessionId).find((p3) => p3.requestId === requestId) ?? fail("PERMISSION_EXPIRED_OR_UNKNOWN");
+    if (decision === "allow") {
+      if (!request.toolName.trim()) fail("INVALID_PENDING_TOOL");
+    }
+    if (!this.worker.respond(run.sessionId, requestId, decision === "allow"))
+      fail("PERMISSION_EXPIRED_OR_UNKNOWN");
+    return { requestId, decision };
+  }
+  status(runId) {
+    this.metrics.ledgerReads++;
+    return runId ? this.get(runId, false) : [...this.runs.values()];
+  }
+  hasActiveExecutions() {
+    return this.startups.size > 0 || this.interruptions.size > 0 || [...this.runs.values()].some(
+      (run) => this.owns(run) && (run.activeTaskId || run.sessionOperation)
+    );
+  }
+  reviewActive() {
+    return this.reviewing.size > 0;
+  }
+  cancel(runId, reason = "Supervisor cancelled") {
+    const run = this.get(runId);
+    if (run.status !== "open" && run.status !== "awaiting_user_review")
+      return { runId, status: run.status };
+    this.clearGuidance(run, "cancelled");
+    this.settle(run, void 0, "cancelled");
+    if (run.activeTaskId) {
+      const activeTask = this.task(run, run.activeTaskId);
+      activeTask.state = "interrupted";
+      for (const decision of activeTask.decisions ?? [])
+        if (decision.state === "pending") decision.state = "interrupted";
+    }
+    const startup = this.startups.get(run.id);
+    if (startup) startup.valid = false;
+    run.status = "cancelled";
+    run.activeTaskId = void 0;
+    this.worker.stop(run.sessionId);
+    const idle = this.idleTimers.get(run.id);
+    if (idle) clearTimeout(idle);
+    this.idleTimers.delete(run.id);
+    this.release(run);
+    this.emit(run, "run_cancelled", { reason });
+    return { runId, status: run.status };
+  }
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    let errors = 0;
+    for (const startup of this.startups.values()) startup.valid = false;
+    for (const run of this.runs.values()) {
+      if (!this.owns(run)) continue;
+      this.clearGuidance(run, "MCP connection closed");
+      try {
+        if (run.status === "open" || run.status === "awaiting_user_review") {
+          if (run.activeTaskId || run.sessionOperation)
+            this.stopExecution(run, "MCP connection closed", "interrupted");
+          else {
+            this.closeSession(run);
+            this.emit(run, "connection_closed", { automaticReplay: false }, void 0, false);
+          }
+        }
+      } catch {
+        errors++;
+      } finally {
+        if (run.activeTaskId) {
+          const activeTask = this.task(run, run.activeTaskId);
+          activeTask.state = "interrupted";
+          for (const decision of activeTask.decisions ?? [])
+            if (decision.state === "pending") decision.state = "interrupted";
+        }
+        this.settle(run, void 0, "connection_closed");
+        run.activeTaskId = void 0;
+        run.sessionOperation = void 0;
+        run.sessionState = "closed";
+        run.ownerReleased = true;
+        this.dropSlot(run.id);
+        try {
+          this.save(run);
+        } catch {
+          errors++;
+        }
+      }
+    }
+    for (const timer of this.guidanceTimers.values()) clearTimeout(timer);
+    this.guidanceTimers.clear();
+    for (const timer of this.idleTimers.values()) clearTimeout(timer);
+    this.idleTimers.clear();
+    for (const timer of this.timers.values()) clearTimeout(timer);
+    this.timers.clear();
+    this.unsubscribe();
+    this.unsubscribeMessages?.();
+    this.pendingMessages.clear();
+    try {
+      this.worker.destroy();
+    } catch {
+      errors++;
+    }
+    this.listeners.clear();
+    this.eventSubscribers.clear();
+    if (errors) console.error(`Orchestrator cleanup completed with ${errors} resource errors`);
+  }
+};
+
+// src/utils/normalize-windows-path.ts
+import path8 from "node:path";
+import os4 from "node:os";
+var TOOL_INPUT_PATH_FIELDS = [
+  "file_path",
+  "path",
+  "directory",
+  "folder",
+  "cwd",
+  "dest",
+  "destination",
+  "source",
+  "target"
+];
+function maybeAddWindowsLongPathPrefix(value) {
+  if (value.startsWith("\\\\?\\") || value.startsWith("\\\\.\\") || value.length < 240)
+    return value;
+  return path8.win32.toNamespacedPath(value);
+}
+function expandTilde(value, platform) {
+  if (value === "~") return os4.homedir();
+  if (!value.startsWith("~")) return value;
+  const next = value[1];
+  if (next !== "/" && next !== "\\") return value;
+  const rest = value.slice(2);
+  const join2 = platform === "win32" ? path8.win32.join : path8.posix.join;
+  return join2(os4.homedir(), rest);
+}
+function convertMsysToWindowsPath(rawPath) {
+  if (/^[a-zA-Z]:[\\/]/.test(rawPath) || rawPath.startsWith("\\\\")) return void 0;
+  if (rawPath.startsWith("//")) {
+    const m9 = rawPath.match(/^\/\/([^/]{2,})\/(.*)$/);
+    if (m9) {
+      const host = m9[1];
+      const rest2 = m9[2] ?? "";
+      return `\\\\${host}\\${rest2.replace(/\//g, "\\")}`;
+    }
+  }
+  const cyg = rawPath.match(/^\/cygdrive\/([a-zA-Z])\/(.*)$/);
+  if (cyg) {
+    const drive2 = cyg[1].toUpperCase();
+    const rest2 = cyg[2] ?? "";
+    return `${drive2}:\\${rest2.replace(/\//g, "\\")}`;
+  }
+  const m3 = rawPath.match(/^\/(?:mnt\/)?([a-zA-Z])\/(.*)$/);
+  if (!m3) return void 0;
+  const drive = m3[1].toUpperCase();
+  const rest = m3[2] ?? "";
+  return `${drive}:\\${rest.replace(/\//g, "\\")}`;
+}
+function normalizeMsysToWindowsPath(rawPath) {
+  const converted = convertMsysToWindowsPath(rawPath);
+  if (!converted) return void 0;
+  return path8.win32.normalize(converted);
+}
+function isUnsupportedPosixAbsolutePath(value, platform = process.platform) {
+  if (platform !== "win32") return false;
+  if (!value.startsWith("/")) return false;
+  return convertMsysToWindowsPath(value) === void 0;
+}
+function extractPosixHomePathFromCommand(command) {
+  const match = command.match(/\/home\/[^/\s"'`]+(?:\/[^\s"'`]*)?/);
+  return match?.[0];
+}
+function findUnsupportedPosixPathInToolInput(input, platform = process.platform) {
+  if (platform !== "win32") return void 0;
+  for (const key of TOOL_INPUT_PATH_FIELDS) {
+    const value = input[key];
+    if (typeof value !== "string") continue;
+    if (isUnsupportedPosixAbsolutePath(value, platform)) return value;
+  }
+  const command = input.command;
+  if (typeof command !== "string") return void 0;
+  const embeddedHomePath = extractPosixHomePathFromCommand(command);
+  if (!embeddedHomePath) return void 0;
+  return isUnsupportedPosixAbsolutePath(embeddedHomePath, platform) ? embeddedHomePath : void 0;
+}
+function normalizeWindowsPathLike(value, platform = process.platform) {
+  const expanded = expandTilde(value, platform);
+  if (platform !== "win32") return expanded;
+  const converted = normalizeMsysToWindowsPath(expanded);
+  if (!converted && expanded.startsWith("/")) return expanded;
+  const normalized = path8.win32.normalize(converted ?? expanded);
+  return maybeAddWindowsLongPathPrefix(normalized);
+}
+function normalizeWindowsPathArray(values, platform = process.platform) {
+  return values.map((v2) => normalizeWindowsPathLike(v2, platform));
+}
+
+// src/utils/normalize-tool-input.ts
+function normalizeToolInput(_toolName, input, platform = process.platform) {
+  if (platform !== "win32") return input;
+  const filePath = input.file_path;
+  if (typeof filePath !== "string") return input;
+  const normalized = normalizeWindowsPathLike(filePath, platform);
+  return normalized === filePath ? input : { ...input, file_path: normalized };
+}
+
+// src/session/manager.ts
+var DEFAULT_SESSION_TTL_MS = 30 * 60 * 1e3;
+var DEFAULT_RUNNING_SESSION_MAX_MS = 4 * 60 * 60 * 1e3;
+var DEFAULT_CLEANUP_INTERVAL_MS = 6e4;
+var DEFAULT_EVENT_BUFFER_MAX_SIZE = 1e3;
+var DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE = 2e3;
+var DEFAULT_MAX_SESSIONS = 128;
+var DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION = 64;
+function parsePositiveInt(raw) {
+  if (typeof raw !== "string" || raw.trim() === "") return void 0;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return void 0;
+  return parsed;
+}
+function normalizePositiveNumber(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return void 0;
+  return Math.trunc(value);
+}
+function normalizeToolPolicyNames(values) {
+  if (!Array.isArray(values) || values.length === 0) return [];
+  return values.filter((value) => typeof value === "string").map((value) => value.trim()).filter((value) => value !== "");
+}
+var SessionManager = class _SessionManager {
+  observers = /* @__PURE__ */ new Set();
+  /** Event subscribers run after the synchronous state/result commit, never by polling. */
+  subscribe(listener) {
+    this.observers.add(listener);
+    return () => this.observers.delete(listener);
+  }
+  notify(sessionId, event) {
+    const listeners = [...this.observers];
+    queueMicrotask(() => {
+      for (const listener of listeners) {
+        if (this.observers.has(listener)) listener(sessionId, event);
+      }
+    });
+  }
+  sessions = /* @__PURE__ */ new Map();
+  runtime = /* @__PURE__ */ new Map();
+  drainingSessions = /* @__PURE__ */ new Map();
+  cleanupTimer;
+  sessionTtlMs = DEFAULT_SESSION_TTL_MS;
+  runningSessionMaxMs = DEFAULT_RUNNING_SESSION_MAX_MS;
+  platform;
+  nativeToolHandling;
+  maxSessions;
+  maxPendingPermissionsPerSession;
+  eventBufferMaxSize;
+  eventBufferHardMaxSize;
+  destroyed = false;
+  constructor(opts) {
+    this.platform = opts?.platform ?? process.platform;
+    this.nativeToolHandling = opts?.nativeToolHandling ?? false;
+    this.sessionTtlMs = opts?.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
+    const envRaw = process.env.CLAUDE_CODE_MCP_MAX_SESSIONS;
+    const envParsed = typeof envRaw === "string" && envRaw.trim() !== "" ? Number.parseInt(envRaw, 10) : NaN;
+    const configured = opts?.maxSessions ?? (Number.isFinite(envParsed) ? envParsed : void 0);
+    this.maxSessions = typeof configured === "number" ? configured <= 0 ? Number.POSITIVE_INFINITY : configured : DEFAULT_MAX_SESSIONS;
+    const maxPendingEnvRaw = process.env.CLAUDE_CODE_MCP_MAX_PENDING_PERMISSIONS;
+    const maxPendingEnvParsed = typeof maxPendingEnvRaw === "string" && maxPendingEnvRaw.trim() !== "" ? Number.parseInt(maxPendingEnvRaw, 10) : NaN;
+    const maxPendingConfigured = opts?.maxPendingPermissionsPerSession ?? (Number.isFinite(maxPendingEnvParsed) ? maxPendingEnvParsed : void 0);
+    this.maxPendingPermissionsPerSession = typeof maxPendingConfigured === "number" ? maxPendingConfigured <= 0 ? Number.POSITIVE_INFINITY : maxPendingConfigured : DEFAULT_MAX_PENDING_PERMISSIONS_PER_SESSION;
+    const configuredEventBufferMaxSize = normalizePositiveNumber(opts?.eventBufferMaxSize) ?? parsePositiveInt(process.env.CLAUDE_CODE_MCP_EVENT_BUFFER_MAX_SIZE);
+    const configuredEventBufferHardMaxSize = normalizePositiveNumber(opts?.eventBufferHardMaxSize) ?? parsePositiveInt(process.env.CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE);
+    this.eventBufferMaxSize = configuredEventBufferMaxSize ?? DEFAULT_EVENT_BUFFER_MAX_SIZE;
+    const initialHardMaxSize = configuredEventBufferHardMaxSize ?? DEFAULT_EVENT_BUFFER_HARD_MAX_SIZE;
+    this.eventBufferHardMaxSize = Math.max(this.eventBufferMaxSize, initialHardMaxSize);
+    if (initialHardMaxSize < this.eventBufferMaxSize) {
+      console.error(
+        `[config] CLAUDE_CODE_MCP_EVENT_BUFFER_HARD_MAX_SIZE (${initialHardMaxSize}) is smaller than maxSize (${this.eventBufferMaxSize}); clamped to ${this.eventBufferHardMaxSize}.`
+      );
+    }
+    this.cleanupTimer = setInterval(() => this.cleanup(), DEFAULT_CLEANUP_INTERVAL_MS);
+    if (this.cleanupTimer.unref) {
+      this.cleanupTimer.unref();
+    }
+  }
+  getSessionCount() {
+    if (this.destroyed) return 0;
+    return this.sessions.size;
+  }
+  getMaxSessions() {
+    return this.maxSessions;
+  }
+  getMaxPendingPermissionsPerSession() {
+    return this.maxPendingPermissionsPerSession;
+  }
+  getEventBufferConfig() {
+    return {
+      maxSize: this.eventBufferMaxSize,
+      hardMaxSize: this.eventBufferHardMaxSize
+    };
+  }
+  getSessionTtlMs() {
+    return this.sessionTtlMs;
+  }
+  getRunningSessionMaxMs() {
+    return this.runningSessionMaxMs;
+  }
+  hasCapacityFor(additionalSessions) {
+    if (this.destroyed) return false;
+    if (additionalSessions <= 0) return true;
+    return this.sessions.size + additionalSessions <= this.maxSessions;
+  }
+  create(params) {
+    if (this.destroyed) {
+      throw new Error("SessionManager is destroyed and no longer accepts new sessions.");
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const existing = this.sessions.get(params.sessionId);
+    if (existing) {
+      throw new Error(`Session '${params.sessionId}' already exists (status: ${existing.status})`);
+    }
+    const info = {
+      sessionId: params.sessionId,
+      status: "running",
+      createdAt: now,
+      lastActiveAt: now,
+      totalTurns: 0,
+      totalCostUsd: 0,
+      cwd: params.cwd,
+      model: params.model,
+      permissionMode: params.permissionMode ?? "default",
+      allowedTools: params.allowedTools,
+      disallowedTools: params.disallowedTools,
+      strictAllowedTools: params.strictAllowedTools,
+      tools: params.tools,
+      maxTurns: params.maxTurns,
+      systemPrompt: params.systemPrompt,
+      agents: params.agents,
+      maxBudgetUsd: params.maxBudgetUsd,
+      effort: params.effort,
+      betas: params.betas,
+      additionalDirectories: params.additionalDirectories,
+      outputFormat: params.outputFormat,
+      thinking: params.thinking,
+      persistSession: params.persistSession,
+      pathToClaudeCodeExecutable: params.pathToClaudeCodeExecutable,
+      agent: params.agent,
+      mcpServers: params.mcpServers,
+      sandbox: params.sandbox,
+      fallbackModel: params.fallbackModel,
+      enableFileCheckpointing: params.enableFileCheckpointing,
+      toolConfig: params.toolConfig,
+      includePartialMessages: params.includePartialMessages,
+      promptSuggestions: params.promptSuggestions,
+      agentProgressSummaries: params.agentProgressSummaries,
+      strictMcpConfig: params.strictMcpConfig,
+      settings: params.settings,
+      settingSources: params.settingSources,
+      debug: params.debug,
+      debugFile: params.debugFile,
+      fastModeState: params.fastModeState,
+      env: params.env,
+      abortController: params.abortController,
+      queryInterrupt: params.queryInterrupt
+    };
+    this.sessions.set(params.sessionId, info);
+    this.runtime.set(params.sessionId, {
+      buffer: {
+        events: [],
+        maxSize: this.eventBufferMaxSize,
+        hardMaxSize: this.eventBufferHardMaxSize,
+        nextId: 0
+      },
+      pendingPermissions: /* @__PURE__ */ new Map()
+    });
+    return info;
+  }
+  get(sessionId) {
+    if (this.destroyed) return void 0;
+    return this.sessions.get(sessionId);
+  }
+  updateStatus(sessionId, status) {
+    return this.update(sessionId, { status });
+  }
+  list() {
+    if (this.destroyed) return [];
+    return Array.from(this.sessions.values());
+  }
+  update(sessionId, patch) {
+    if (this.destroyed) return void 0;
+    const info = this.sessions.get(sessionId);
+    if (!info) return void 0;
+    Object.assign(info, patch, { lastActiveAt: (/* @__PURE__ */ new Date()).toISOString() });
+    this.notify(sessionId);
+    return info;
+  }
+  /**
+   * Atomically transition a session's status from expectedStatus to "running".
+   * This only covers synchronous state mutation within SessionManager.
+   * Returns the session if successful, undefined if the session doesn't exist
+   * or its current status doesn't match `expectedStatus`.
+   */
+  tryAcquire(sessionId, expectedStatus, abortController) {
+    if (this.destroyed) return void 0;
+    if (expectedStatus !== "idle" && expectedStatus !== "error") return void 0;
+    const info = this.sessions.get(sessionId);
+    if (!info || info.status !== expectedStatus) return void 0;
+    info.status = "running";
+    info.abortController = abortController;
+    info.queryInterrupt = void 0;
+    info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+    this.clearTerminalEvents(sessionId);
+    return info;
+  }
+  cancel(sessionId, opts) {
+    if (this.destroyed) return false;
+    const info = this.sessions.get(sessionId);
+    if (!info) return false;
+    if (info.status !== "running" && info.status !== "waiting_permission") return false;
+    if (info.status === "waiting_permission") {
+      this.finishAllPending(
+        sessionId,
+        // `cancel()` already aborts the running query below. Avoid sending an additional
+        // interrupt=true control response while the stream is being torn down, which can race
+        // into SDK-level "Operation aborted" write errors on stdio clients.
+        { behavior: "deny", message: "Session cancelled", interrupt: false },
+        "cancel"
+      );
+    }
+    if (info.queryInterrupt) {
+      try {
+        info.queryInterrupt();
+      } catch {
+      }
+    }
+    if (info.abortController) {
+      info.abortController.abort();
+    }
+    info.status = "cancelled";
+    info.cancelledAt = (/* @__PURE__ */ new Date()).toISOString();
+    info.cancelledReason = opts?.reason ?? "Session cancelled";
+    info.cancelledSource = opts?.source ?? "cancel";
+    info.queryInterrupt = void 0;
+    info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+    this.notify(sessionId);
+    return true;
+  }
+  interrupt(sessionId, opts) {
+    if (this.destroyed) return false;
+    const info = this.sessions.get(sessionId);
+    if (!info) return false;
+    if (info.status !== "running" && info.status !== "waiting_permission") return false;
+    if (info.status === "waiting_permission") {
+      this.finishAllPending(
+        sessionId,
+        // Similar to cancel(), avoid emitting interrupt=true while the query stream is
+        // being torn down to reduce SDK-level write/teardown races on stdio clients.
+        { behavior: "deny", message: opts?.reason ?? "Session interrupted", interrupt: false },
+        "interrupt"
+      );
+    }
+    if (info.queryInterrupt) {
+      try {
+        info.queryInterrupt();
+      } catch {
+      }
+    }
+    if (info.abortController) {
+      info.abortController.abort();
+    }
+    this.pushEvent(sessionId, {
+      type: "progress",
+      data: {
+        type: "interrupted",
+        reason: opts?.reason ?? "Session interrupted",
+        source: opts?.source ?? "interrupt"
+      },
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+    return true;
+  }
+  delete(sessionId) {
+    if (this.destroyed) return false;
+    this.finishAllPending(
+      sessionId,
+      { behavior: "deny", message: "Session deleted", interrupt: true },
+      "cleanup",
+      { restoreRunning: false }
+    );
+    this.drainingSessions.delete(sessionId);
+    this.runtime.delete(sessionId);
+    this.notify(sessionId);
+    return this.sessions.delete(sessionId);
+  }
+  setResult(sessionId, result2) {
+    if (this.destroyed) return;
+    const state = this.runtime.get(sessionId);
+    if (!state) return;
+    state.storedResult = result2;
+  }
+  getResult(sessionId) {
+    if (this.destroyed) return void 0;
+    return this.runtime.get(sessionId)?.storedResult;
+  }
+  setInitTools(sessionId, tools) {
+    if (this.destroyed) return;
+    const state = this.runtime.get(sessionId);
+    if (!state) return;
+    state.initTools = tools;
+  }
+  getInitTools(sessionId) {
+    if (this.destroyed) return void 0;
+    return this.runtime.get(sessionId)?.initTools;
+  }
+  pushEvent(sessionId, event) {
+    if (this.destroyed) return void 0;
+    const state = this.runtime.get(sessionId);
+    if (!state) return void 0;
+    const full = _SessionManager.pushEvent(
+      state.buffer,
+      event,
+      (requestId) => state.pendingPermissions.has(requestId)
+    );
+    const info = this.sessions.get(sessionId);
+    if (info) {
+      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+      const data = event.data;
+      const toolUseId = typeof data?.tool_use_id === "string" && data.tool_use_id || typeof data?.toolUseID === "string" && data.toolUseID || typeof data?.parent_tool_use_id === "string" && data.parent_tool_use_id || void 0;
+      if (toolUseId) info.lastToolUseId = toolUseId;
+    }
+    this.notify(sessionId, full);
+    return full;
+  }
+  getLastEventId(sessionId) {
+    if (this.destroyed) return void 0;
+    const state = this.runtime.get(sessionId);
+    if (!state) return void 0;
+    return state.buffer.nextId > 0 ? state.buffer.nextId - 1 : void 0;
+  }
+  readEvents(sessionId, cursor) {
+    if (this.destroyed) return { events: [], nextCursor: cursor ?? 0 };
+    const state = this.runtime.get(sessionId);
+    if (!state) return { events: [], nextCursor: cursor ?? 0 };
+    return _SessionManager.readEvents(state.buffer, cursor);
+  }
+  clearTerminalEvents(sessionId) {
+    if (this.destroyed) return;
+    const state = this.runtime.get(sessionId);
+    if (!state) return;
+    _SessionManager.clearTerminalEvents(state.buffer);
+  }
+  setPendingPermission(sessionId, req, finish, timeoutMs) {
+    if (this.destroyed) return false;
+    const state = this.runtime.get(sessionId);
+    const info = this.sessions.get(sessionId);
+    if (!state || !info) return false;
+    if (info.status !== "running" && info.status !== "waiting_permission") {
+      try {
+        finish({
+          behavior: "deny",
+          message: `Session is not accepting permission requests (status: ${info.status}).`,
+          interrupt: true
+        });
+      } catch {
+      }
+      return false;
+    }
+    if (this.isDraining(sessionId)) {
+      try {
+        finish({
+          behavior: "deny",
+          message: "Session is finishing pending permission requests.",
+          interrupt: true
+        });
+      } catch {
+      }
+      return false;
+    }
+    if (!state.pendingPermissions.has(req.requestId)) {
+      if (state.pendingPermissions.size >= this.maxPendingPermissionsPerSession) {
+        const deny = {
+          behavior: "deny",
+          message: "Too many pending permission requests for this session.",
+          interrupt: false
+        };
+        this.pushEvent(sessionId, {
+          type: "permission_result",
+          data: {
+            requestId: req.requestId,
+            toolName: req.toolName,
+            behavior: "deny",
+            source: "policy",
+            message: deny.message,
+            interrupt: deny.interrupt
+          },
+          timestamp: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        try {
+          finish(deny);
+        } catch {
+        }
+        return false;
+      }
+      const inferredExpiresAt = new Date(Date.now() + timeoutMs).toISOString();
+      const record3 = {
+        ...req,
+        timeoutMs,
+        expiresAt: inferredExpiresAt
+      };
+      const timeoutId = setTimeout(() => {
+        this.finishRequest(
+          sessionId,
+          record3.requestId,
+          {
+            behavior: "deny",
+            message: `Permission request timed out after ${timeoutMs}ms.`,
+            interrupt: false
+          },
+          "timeout"
+        );
+      }, timeoutMs);
+      state.pendingPermissions.set(record3.requestId, { record: record3, finish, timeoutId });
+      info.status = "waiting_permission";
+      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+      this.pushEvent(sessionId, {
+        type: "permission_request",
+        data: record3,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return true;
+    }
+    return false;
+  }
+  getPendingPermissionCount(sessionId) {
+    if (this.destroyed) return 0;
+    return this.runtime.get(sessionId)?.pendingPermissions.size ?? 0;
+  }
+  getEventCount(sessionId) {
+    if (this.destroyed) return 0;
+    return this.runtime.get(sessionId)?.buffer.events.length ?? 0;
+  }
+  getCurrentCursor(sessionId) {
+    if (this.destroyed) return void 0;
+    const state = this.runtime.get(sessionId);
+    if (!state) return void 0;
+    return state.buffer.nextId;
+  }
+  getRemainingTtlMs(sessionId) {
+    if (this.destroyed) return void 0;
+    const session = this.sessions.get(sessionId);
+    if (!session) return void 0;
+    const lastActiveMs = Date.parse(session.lastActiveAt);
+    if (!Number.isFinite(lastActiveMs)) return void 0;
+    const limitMs = session.status === "running" || session.status === "waiting_permission" ? this.runningSessionMaxMs : this.sessionTtlMs;
+    return Math.max(0, limitMs - (Date.now() - lastActiveMs));
+  }
+  getRuntimeToolStats() {
+    if (this.destroyed) {
+      return { sessionsWithInitTools: 0, runtimeDiscoveredUniqueCount: 0 };
+    }
+    const unique = /* @__PURE__ */ new Set();
+    let sessionsWithInitTools = 0;
+    for (const state of this.runtime.values()) {
+      if (!Array.isArray(state.initTools) || state.initTools.length === 0) continue;
+      sessionsWithInitTools += 1;
+      for (const tool of state.initTools) {
+        if (typeof tool === "string" && tool.trim() !== "") {
+          unique.add(tool);
+        }
+      }
+    }
+    return {
+      sessionsWithInitTools,
+      runtimeDiscoveredUniqueCount: unique.size
+    };
+  }
+  listPendingPermissions(sessionId) {
+    if (this.destroyed) return [];
+    const state = this.runtime.get(sessionId);
+    if (!state) return [];
+    return Array.from(state.pendingPermissions.values()).map((p3) => p3.record).sort((a3, b) => a3.createdAt.localeCompare(b.createdAt));
+  }
+  getPendingPermission(sessionId, requestId) {
+    if (this.destroyed) return void 0;
+    const state = this.runtime.get(sessionId);
+    return state?.pendingPermissions.get(requestId)?.record;
+  }
+  allowToolForSession(sessionId, toolName) {
+    if (this.destroyed) return false;
+    const info = this.sessions.get(sessionId);
+    if (!info) return false;
+    const normalized = toolName.trim();
+    if (normalized === "") return false;
+    const disallowed = normalizeToolPolicyNames(info.disallowedTools);
+    if (disallowed.includes(normalized)) {
+      return false;
+    }
+    const allowed = Array.isArray(info.allowedTools) ? [...info.allowedTools] : [];
+    if (!allowed.includes(normalized)) {
+      allowed.push(normalized);
+      info.allowedTools = allowed;
+      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+      this.notify(info.sessionId);
+    }
+    return true;
+  }
+  finishRequest(sessionId, requestId, result2, source) {
+    if (this.destroyed) return false;
+    const state = this.runtime.get(sessionId);
+    const info = this.sessions.get(sessionId);
+    if (!state || !info) return false;
+    const pending = state.pendingPermissions.get(requestId);
+    if (!pending) return false;
+    let finalResult = result2;
+    if (finalResult.behavior === "allow") {
+      const disallowed = normalizeToolPolicyNames(info.disallowedTools);
+      const pendingToolName = pending.record.toolName.trim();
+      if (pendingToolName !== "" && disallowed.includes(pendingToolName)) {
+        finalResult = {
+          behavior: "deny",
+          message: `Tool '${pendingToolName}' is disallowed by session policy.`,
+          interrupt: false
+        };
+      }
+    }
+    if (finalResult.behavior === "allow") {
+      const updatedInput = finalResult.updatedInput;
+      const validRecord = updatedInput !== null && updatedInput !== void 0 && typeof updatedInput === "object" && !Array.isArray(updatedInput);
+      const original = validRecord ? updatedInput : pending.record.input;
+      const normalizedUpdatedInput = this.nativeToolHandling ? original : validRecord ? normalizeToolInput(
+        pending.record.toolName,
+        updatedInput,
+        this.platform
+      ) : normalizeToolInput(pending.record.toolName, pending.record.input, this.platform);
+      const unsupportedPath = !this.nativeToolHandling && findUnsupportedPosixPathInToolInput(normalizedUpdatedInput, this.platform);
+      if (unsupportedPath) {
+        finalResult = {
+          behavior: "deny",
+          message: `Tool '${pending.record.toolName}' attempted to allow an unsupported POSIX path '${unsupportedPath}' on Windows.`,
+          interrupt: false
+        };
+      } else {
+        finalResult = {
+          ...finalResult,
+          updatedInput: normalizedUpdatedInput
+        };
+      }
+    }
+    if (pending.timeoutId) clearTimeout(pending.timeoutId);
+    state.pendingPermissions.delete(requestId);
+    const eventData = {
+      requestId,
+      toolName: pending.record.toolName,
+      behavior: finalResult.behavior,
+      source
+    };
+    if (finalResult.behavior === "deny") {
+      eventData.message = finalResult.message;
+      eventData.interrupt = finalResult.interrupt;
+    } else {
+      const allow = finalResult;
+      if (allow.updatedInput !== void 0) eventData.updatedInput = allow.updatedInput;
+      if (allow.updatedPermissions !== void 0)
+        eventData.updatedPermissions = allow.updatedPermissions;
+    }
+    this.pushEvent(sessionId, {
+      type: "permission_result",
+      data: eventData,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    try {
+      pending.finish(finalResult);
+    } catch {
+    }
+    if (info.status === "waiting_permission" && state.pendingPermissions.size === 0 && !this.isDraining(sessionId)) {
+      info.status = "running";
+      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    return true;
+  }
+  finishAllPending(sessionId, result2, source, opts) {
+    if (this.destroyed) return;
+    const state = this.runtime.get(sessionId);
+    if (!state) return;
+    if (state.pendingPermissions.size === 0) return;
+    this.beginDraining(sessionId);
+    try {
+      while (state.pendingPermissions.size > 0) {
+        const next = state.pendingPermissions.keys().next();
+        if (next.done || typeof next.value !== "string") break;
+        const requestId = next.value;
+        const handled = this.finishRequest(sessionId, requestId, result2, source);
+        if (!handled) {
+          const pending = state.pendingPermissions.get(requestId);
+          if (pending?.timeoutId) clearTimeout(pending.timeoutId);
+          state.pendingPermissions.delete(requestId);
+          try {
+            pending?.finish(result2);
+          } catch {
+          }
+        }
+      }
+    } finally {
+      this.endDraining(sessionId);
+    }
+    const restoreRunning = opts?.restoreRunning ?? true;
+    const info = this.sessions.get(sessionId);
+    if (restoreRunning && info && info.status === "waiting_permission" && state.pendingPermissions.size === 0) {
+      info.status = "running";
+      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+    }
+  }
+  /** Remove sessions that have been idle for too long, or stuck running too long */
+  cleanup() {
+    if (this.destroyed) return;
+    const now = Date.now();
+    for (const [id2, info] of this.sessions) {
+      const lastActive = new Date(info.lastActiveAt).getTime();
+      if (Number.isNaN(lastActive)) {
+        this.finishAllPending(
+          id2,
+          { behavior: "deny", message: "Session expired", interrupt: true },
+          "cleanup",
+          { restoreRunning: false }
+        );
+        this.drainingSessions.delete(id2);
+        this.sessions.delete(id2);
+        this.runtime.delete(id2);
+      } else if (info.status === "running" && now - lastActive > this.runningSessionMaxMs) {
+        if (info.abortController) info.abortController.abort();
+        info.cancelledAt = info.cancelledAt ?? (/* @__PURE__ */ new Date()).toISOString();
+        info.cancelledReason = info.cancelledReason ?? "Session timed out";
+        info.cancelledSource = info.cancelledSource ?? "cleanup";
+        info.queryInterrupt = void 0;
+        info.status = "cancelled";
+        info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+      } else if (info.status === "waiting_permission" && now - lastActive > this.runningSessionMaxMs) {
+        this.finishAllPending(
+          id2,
+          { behavior: "deny", message: "Session timed out", interrupt: true },
+          "cleanup",
+          { restoreRunning: false }
+        );
+        if (info.abortController) info.abortController.abort();
+        info.cancelledAt = info.cancelledAt ?? (/* @__PURE__ */ new Date()).toISOString();
+        info.cancelledReason = info.cancelledReason ?? "Session timed out";
+        info.cancelledSource = info.cancelledSource ?? "cleanup";
+        info.queryInterrupt = void 0;
+        info.status = "cancelled";
+        info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+      } else if (info.status !== "running" && info.status !== "waiting_permission" && now - lastActive > this.sessionTtlMs) {
+        this.finishAllPending(
+          id2,
+          { behavior: "deny", message: "Session expired", interrupt: true },
+          "cleanup",
+          { restoreRunning: false }
+        );
+        this.drainingSessions.delete(id2);
+        this.sessions.delete(id2);
+        this.runtime.delete(id2);
+      }
+    }
+  }
+  /**
+   * Serialize session info for external consumption.
+   * Prefer explicit serializers below. This method is kept for backward compatibility
+   * but returns the redacted public shape.
+   */
+  toJSON(info) {
+    return this.toPublicJSON(info);
+  }
+  /** Serialize session info when includeSensitive=true (still excludes secrets like env) */
+  toSensitiveJSON(info) {
+    const base = this.toPublicJSON(info);
+    return {
+      ...base,
+      cwd: info.cwd,
+      systemPrompt: info.systemPrompt,
+      agents: info.agents,
+      additionalDirectories: info.additionalDirectories,
+      toolConfig: info.toolConfig
+    };
+  }
+  /** Serialize session info for listing/inspection (redacts sensitive fields) */
+  toPublicJSON(info) {
+    const {
+      abortController: _abortController,
+      queryInterrupt: _queryInterrupt,
+      cwd: _cwd,
+      systemPrompt: _systemPrompt,
+      agents: _agents,
+      additionalDirectories: _additionalDirectories,
+      pathToClaudeCodeExecutable: _pathToClaudeCodeExecutable,
+      toolConfig: _toolConfig,
+      mcpServers: _mcpServers,
+      sandbox: _sandbox,
+      settings: _settings,
+      settingSources: _settingSources,
+      debugFile: _debugFile,
+      env: _env,
+      ...rest
+    } = info;
+    return rest;
+  }
+  destroy() {
+    if (this.destroyed) return;
+    clearInterval(this.cleanupTimer);
+    for (const info of this.sessions.values()) {
+      this.finishAllPending(
+        info.sessionId,
+        { behavior: "deny", message: "Server shutting down", interrupt: true },
+        "destroy",
+        { restoreRunning: false }
+      );
+      if ((info.status === "running" || info.status === "waiting_permission") && info.abortController) {
+        info.abortController.abort();
+      }
+      info.queryInterrupt = void 0;
+      info.status = "cancelled";
+      info.cancelledAt = info.cancelledAt ?? (/* @__PURE__ */ new Date()).toISOString();
+      info.cancelledReason = info.cancelledReason ?? "Server shutting down";
+      info.cancelledSource = info.cancelledSource ?? "destroy";
+      info.lastActiveAt = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    this.drainingSessions.clear();
+    this.runtime.clear();
+    this.sessions.clear();
+    this.destroyed = true;
+  }
+  static pushEvent(buffer, event, isActivePermissionRequest) {
+    const pinned = event.pinned ?? (event.type === "permission_request" || event.type === "permission_result" || event.type === "result" || event.type === "error");
+    const full = {
+      id: buffer.nextId++,
+      type: event.type,
+      data: event.data,
+      timestamp: event.timestamp,
+      pinned
+    };
+    buffer.events.push(full);
+    _SessionManager.evictEventsToLimits(buffer, isActivePermissionRequest);
+    return full;
+  }
+  static evictEventsToLimits(buffer, isActivePermissionRequest) {
+    if (buffer.events.length <= buffer.maxSize && buffer.events.length <= buffer.hardMaxSize) {
+      return;
+    }
+    const droppedIds = /* @__PURE__ */ new Set();
+    let remaining = buffer.events.length;
+    const dropOldestMatching = (count, predicate) => {
+      if (count <= 0) return 0;
+      let dropped = 0;
+      for (const event of buffer.events) {
+        if (dropped >= count) break;
+        if (droppedIds.has(event.id)) continue;
+        if (!predicate(event)) continue;
+        droppedIds.add(event.id);
+        dropped += 1;
+      }
+      if (dropped > 0) {
+        remaining -= dropped;
+      }
+      return dropped;
+    };
+    const isDroppablePermissionEvent = (event) => {
+      if (event.type === "permission_result") return true;
+      if (event.type !== "permission_request") return false;
+      const requestId = event.data?.requestId;
+      if (typeof requestId !== "string") return true;
+      return isActivePermissionRequest ? !isActivePermissionRequest(requestId) : true;
+    };
+    const isNoisyProgressEvent = (event) => {
+      if (event.type !== "progress") return false;
+      const t = event.data?.type;
+      return t === "tool_progress" || t === "auth_status" || t === "api_retry" || t === "task_progress" || t === "hook_progress";
+    };
+    let toDropForSoftLimit = remaining - buffer.maxSize;
+    if (toDropForSoftLimit > 0) {
+      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, isNoisyProgressEvent);
+    }
+    if (toDropForSoftLimit > 0) {
+      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, (event) => !event.pinned);
+    }
+    if (toDropForSoftLimit > 0) {
+      toDropForSoftLimit -= dropOldestMatching(toDropForSoftLimit, isDroppablePermissionEvent);
+    }
+    let toDropForHardLimit = remaining - buffer.hardMaxSize;
+    if (toDropForHardLimit > 0) {
+      toDropForHardLimit -= dropOldestMatching(toDropForHardLimit, isDroppablePermissionEvent);
+    }
+    if (droppedIds.size > 0) {
+      buffer.events = buffer.events.filter((event) => !droppedIds.has(event.id));
+    }
+  }
+  static lowerBoundByEventId(events, startFrom) {
+    let left = 0;
+    let right = events.length;
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      if (events[mid].id < startFrom) left = mid + 1;
+      else right = mid;
+    }
+    return left;
+  }
+  static readEvents(buffer, cursor) {
+    let cursorResetTo;
+    if (cursor != null) {
+      const earliest = buffer.events[0]?.id;
+      if (earliest != null && earliest > cursor) cursorResetTo = earliest;
+      if (earliest == null && buffer.nextId > cursor) cursorResetTo = buffer.nextId;
+    }
+    const startFrom = cursorResetTo ?? cursor ?? 0;
+    const startIndex = _SessionManager.lowerBoundByEventId(buffer.events, startFrom);
+    const filtered = buffer.events.slice(startIndex);
+    const nextCursor = filtered.length > 0 ? filtered[filtered.length - 1].id + 1 : startFrom;
+    return { events: filtered, nextCursor, cursorResetTo };
+  }
+  static clearTerminalEvents(buffer) {
+    buffer.events = buffer.events.filter((e3) => e3.type !== "result" && e3.type !== "error");
+  }
+  isDraining(sessionId) {
+    return (this.drainingSessions.get(sessionId) ?? 0) > 0;
+  }
+  beginDraining(sessionId) {
+    this.drainingSessions.set(sessionId, (this.drainingSessions.get(sessionId) ?? 0) + 1);
+  }
+  endDraining(sessionId) {
+    const current = this.drainingSessions.get(sessionId) ?? 0;
+    if (current <= 1) {
+      this.drainingSessions.delete(sessionId);
+      return;
+    }
+    this.drainingSessions.set(sessionId, current - 1);
+  }
+};
+
 // src/types.ts
 var DEFAULT_SETTING_SOURCES = ["user", "project", "local"];
 
@@ -52657,159 +52891,30 @@ var InputQueue = class {
   }
 };
 
-// src/orchestrator/messaging.ts
-import { randomUUID as randomUUID5 } from "node:crypto";
-var MAX_TEXT = 16e3;
-var MAX_MESSAGES = 128;
-var MAX_QUESTIONS = 16;
-var text = external_exports.string().min(1).max(MAX_TEXT).refine((value) => value.trim().length > 0);
-var messageId = external_exports.string().min(1).max(128).optional();
-function result(value, isError = false) {
-  return {
-    content: [{ type: "text", text: JSON.stringify(value) }],
-    ...isError ? { isError } : {}
+// src/orchestrator/progress.ts
+function publicProgress(events, afterId, secrets = []) {
+  let latestOutput;
+  let latestTools;
+  const safe = (text2, limit) => {
+    for (const secret of secrets.filter(Boolean).sort((a3, b) => b.length - a3.length))
+      text2 = text2.split(secret).join("[redacted]");
+    return sanitizeWorkerName(text2, limit) ?? "";
   };
+  for (let i4 = events.length - 1; i4 >= 0 && (!latestOutput || !latestTools); i4--) {
+    const event = events[i4];
+    if (event.id <= afterId || event.type !== "output") continue;
+    if (!event.data || typeof event.data !== "object") continue;
+    const data = event.data;
+    if (data.type !== "assistant" || !Array.isArray(data.message?.content)) continue;
+    const blocks = data.message.content.filter((b) => b && typeof b === "object");
+    const text2 = blocks.filter((b) => b.type === "text" && typeof b.text === "string").map((b) => b.text).join("\n");
+    if (!latestOutput && text2.trim())
+      latestOutput = { at: event.timestamp, text: safe(text2, 1e3) };
+    const names = blocks.filter((b) => b.type === "tool_use" && typeof b.name === "string").map((b) => safe(b.name, 100));
+    if (!latestTools && names.length) latestTools = { at: event.timestamp, names };
+  }
+  return { source: "current_native_segment", latestOutput, latestTools };
 }
-var SupervisorMailbox = class {
-  constructor(timeoutMs = 3e5) {
-    this.timeoutMs = timeoutMs;
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647)
-      throw new Error("INVALID_SUPERVISOR_QUESTION_TIMEOUT");
-  }
-  messages = /* @__PURE__ */ new Map();
-  deduplicated = /* @__PURE__ */ new Map();
-  listeners = /* @__PURE__ */ new Set();
-  pendingQuestions = 0;
-  closedReason;
-  /** SDK transports own their server instance; never share one between queries. */
-  createServer() {
-    return yx({
-      name: "codex_supervisor",
-      version: "1.0.0",
-      tools: [
-        Tx(
-          "notify_supervisor",
-          "Send a meaningful task milestone to Codex. Returns a transport receipt, not approval or acceptance. Message max 16000 characters; optional messageId deduplicates within this attempt.",
-          { messageId, message: text },
-          async (args) => this.send("update", args.message, args.messageId)
-        ),
-        Tx(
-          "ask_supervisor",
-          `Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. Timeout ${this.timeoutMs}ms; interruption or timeout returns an explicit unanswered error. Question max 16000 characters; optional messageId deduplicates within this attempt.`,
-          { messageId, question: text },
-          async (args) => this.send("question", args.question, args.messageId)
-        )
-      ]
-    });
-  }
-  subscribe(listener) {
-    if (this.closedReason !== void 0) return () => {
-    };
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  }
-  respond(id2, answer) {
-    if (this.closedReason !== void 0 || !text.safeParse(answer).success) return false;
-    const record3 = this.messages.get(id2);
-    if (!record3?.finish) return false;
-    record3.finish(
-      result({ messageId: id2, clientMessageId: record3.clientMessageId, status: "answered", answer })
-    );
-    return true;
-  }
-  /** Native AskUserQuestion uses the same event/reply transport as ask_supervisor. */
-  askQuestion(question, signal) {
-    if (!text.safeParse(question).success)
-      return Promise.resolve(this.error("SUPERVISOR_QUESTION_INVALID"));
-    return this.send("question", question, void 0, signal);
-  }
-  close(reason = "Attempt ended") {
-    if (this.closedReason !== void 0) return;
-    this.closedReason = reason.slice(0, MAX_TEXT);
-    for (const record3 of this.messages.values())
-      record3.finish?.(this.error("SUPERVISOR_MAILBOX_CLOSED", record3.id, this.closedReason));
-    this.listeners.clear();
-  }
-  /**
-   * End pending questions without closing the mailbox. A native interruption or turn boundary
-   * abandons the originating tool call, so no answer may remain claimable or leave the worker
-   * waiting; the mailbox stays usable for the follow-on turn.
-   */
-  interruptPending(reason = "Native turn interrupted") {
-    for (const record3 of this.messages.values()) {
-      record3.finish?.(this.error("SUPERVISOR_INTERRUPTED", record3.id, reason.slice(0, MAX_TEXT)));
-    }
-  }
-  /** Release the previous attempt before reusing the query's SDK server. */
-  reset(reason = "A new attempt started") {
-    if (this.closedReason !== void 0) return;
-    for (const record3 of this.messages.values())
-      record3.finish?.(this.error("SUPERVISOR_ATTEMPT_RESET", record3.id, reason.slice(0, MAX_TEXT)));
-    this.messages.clear();
-    this.deduplicated.clear();
-  }
-  error(error48, id2, reason) {
-    return result(
-      { messageId: id2, status: "unanswered", error: error48, ...reason !== void 0 ? { reason } : {} },
-      true
-    );
-  }
-  send(kind, value, suppliedId, signal) {
-    const id2 = randomUUID5();
-    if (signal?.aborted) return Promise.resolve(this.error("SUPERVISOR_QUESTION_CANCELLED", id2));
-    if (this.closedReason !== void 0)
-      return Promise.resolve(this.error("SUPERVISOR_MAILBOX_CLOSED", id2, this.closedReason));
-    const prior = suppliedId === void 0 ? void 0 : this.deduplicated.get(suppliedId);
-    if (prior)
-      return prior.kind === kind && prior.text === value ? prior.outcome : Promise.resolve(this.error("SUPERVISOR_MESSAGE_ID_CONFLICT", prior.id));
-    if (this.messages.size >= MAX_MESSAGES)
-      return Promise.resolve(this.error("SUPERVISOR_MESSAGE_LIMIT", id2));
-    if (kind === "question" && this.pendingQuestions >= MAX_QUESTIONS)
-      return Promise.resolve(this.error("SUPERVISOR_QUESTION_LIMIT", id2));
-    const event = {
-      id: id2,
-      kind,
-      text: value,
-      ...kind === "question" ? { expiresAt: new Date(Date.now() + this.timeoutMs).toISOString() } : {}
-    };
-    const record3 = {
-      ...event,
-      clientMessageId: suppliedId,
-      outcome: Promise.resolve(
-        result({ messageId: id2, clientMessageId: suppliedId, status: "delivered" })
-      )
-    };
-    if (kind === "question") {
-      this.pendingQuestions++;
-      record3.outcome = new Promise((resolve) => {
-        const abort = () => record3.finish?.(this.error("SUPERVISOR_QUESTION_CANCELLED", id2));
-        const timer = setTimeout(() => {
-          record3.finish?.(this.error("SUPERVISOR_QUESTION_TIMEOUT", id2));
-        }, this.timeoutMs);
-        timer.unref();
-        record3.finish = (outcome) => {
-          clearTimeout(timer);
-          signal?.removeEventListener("abort", abort);
-          record3.finish = void 0;
-          this.pendingQuestions--;
-          resolve(outcome);
-        };
-        signal?.addEventListener("abort", abort, { once: true });
-      });
-    }
-    this.messages.set(id2, record3);
-    if (suppliedId !== void 0) this.deduplicated.set(suppliedId, record3);
-    for (const listener of [...this.listeners]) {
-      try {
-        listener({ ...event });
-      } catch {
-      }
-    }
-    return record3.outcome;
-  }
-};
 
 // src/orchestrator/user-question.ts
 var INSTRUCTION = 'Reply with JSON {"answers":{"<exact question text>":"<selected label or free text>"}} for every question. For multi-select, join labels with ", " or send a JSON array of labels. This is Codex guidance; obtain human input when the decision needs user authorization.';
@@ -52920,6 +53025,19 @@ var ClaudeWorker = class {
   writeScope;
   workerName;
   nativeError;
+  segment = 1;
+  progressSecrets = [];
+  setSegment(segment) {
+    this.segment = segment;
+  }
+  progress(sessionId) {
+    if (sessionId !== this.currentId) return void 0;
+    return publicProgress(
+      this.manager.readEvents(sessionId).events,
+      this.eventFloor,
+      this.progressSecrets
+    );
+  }
   interruptBarrier;
   setName(name) {
     this.workerName = name;
@@ -52940,6 +53058,9 @@ var ClaudeWorker = class {
   }
   respondMessage(id2, answer) {
     return this.mailbox?.respond(id2, answer) ?? false;
+  }
+  isQuestionPending(id2) {
+    return this.mailbox?.isPending(id2) ?? false;
   }
   captureUsage(message, source) {
     const usage = message?.usage;
@@ -52973,7 +53094,9 @@ var ClaudeWorker = class {
           this.lastInputTokens = null;
           this.contextSource = "unavailable";
         }
-        if (!["result", "error"].includes(event.type) || this.contextSource === "stream") return;
+        if (!["result", "error"].includes(event.type)) return;
+        if (generation === this.generation) this.mailbox?.interruptPending("Native turn ended");
+        if (this.contextSource === "stream") return;
         try {
           const messages = await Bs(sessionId, {
             dir: this.manager.get(sessionId)?.cwd
@@ -53034,6 +53157,7 @@ var ClaudeWorker = class {
     });
     this.hydrated.clear();
     const config2 = localConfig();
+    this.progressSecrets = Object.entries(config2.env).filter(([key, value]) => /TOKEN|KEY|PASSWORD|SECRET/i.test(key) && value).map(([, value]) => value);
     const permission = permissionSettings(cwd);
     if (resumeId && this.manager.get(resumeId)) this.manager.delete(resumeId);
     const model = config2.model;
@@ -53066,7 +53190,7 @@ var ClaudeWorker = class {
       systemPrompt: {
         type: "preset",
         preset: "claude_code",
-        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; native AskUserQuestion is also forwarded to Codex and its answer returned to you. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. Ask early rather than guessing: send a scoped ask_supervisor question as soon as a choice would change what you build or is hard to undo. Separate the three kinds of input explicitly: facts the user stated, decisions Codex actually answered, and research or implementation choices you are free to make yourself (use judgement there and proceed). Never present your own inference or a design you favour as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If the task text and Codex guidance disagree, follow the newest scoped guidance and say so in your report. Guidance Codex queues while you work arrives as a new user turn after your current one; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance intact. Whenever an ask_supervisor or AskUserQuestion answer returns, or guidance arrives as a new turn, begin your normal visible reply with one short sentence of ordinary text that names what you understood was decided and the next step you are taking, then continue the work. That sentence is the transcript's record of your own understanding: it is not a human approval, not technical acceptance, and it never substitutes for reporting real findings, checks or blockers. Do not invent an answer that did not arrive, and do not emit that sentence on your own without a Codex answer or guidance to acknowledge."
+        append: "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use notify_supervisor for meaningful milestones and ask_supervisor for decisions needed from Codex; native AskUserQuestion is also forwarded and its answer returned. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. Proactive capability use: before substantive work, match the task to the skill descriptions and tools exposed in this Claude Code session. Proactively invoke relevant permitted skills through the native Skill tool or supported skill mechanism, apply their guidance, and use helpful plugin-provided tools or connected MCP tools. Do not wait for Codex to remind you. Prioritize explicitly requested capabilities using their actual available names/namespaces. Plugins package capabilities; use their specific skills, tools or agents rather than assuming a generic plugin-call command. Respect native invocation restrictions, enabled states and permissions, including skills reserved for user invocation. If a requested capability is unavailable or restricted, report that gap and continue with a suitable available method within the task, asking only when the gap blocks acceptance or a material decision. Reuse already loaded guidance and settled evidence; select from exposed metadata with targeted discovery as needed, without scanning every plugin, forcing unrelated calls or repeating answered research. In normal progress or the result, briefly name capabilities actually used and how they helped; availability or intent alone is not actual use. Research handoff: follow the stage's assigned research owner. When Codex marks research as settled and supplies usable evidence, reuse those facts and decisions by default. Do not repeat whole-repository exploration, repeat research on a question already answered, or redo full planning at the same level. Execute the stated next step first. Re-read only the specific scope that is needed: a missing or stale piece, a native editing or tool precondition, tests or a run contradicting the handoff, or context lost to compaction. Give the reason briefly in your normal progress or result. New evidence may overturn a handoff conclusion, and material gaps or contradictions go through the existing asking mechanism. When you own research, investigate the assigned questions, diagnose and compare options, and return findings with sources and a recommendation; Codex waits for that evidence rather than duplicating your investigation. Do not ask Codex to perform research assigned to you. Give any native subagent distinct questions and outputs, reusing settled evidence rather than duplicating searches. If ownership is missing and would cause overlapping investigation, ask before broad research; otherwise legacy tasks keep their clear existing workflow. Ask early rather than guessing at an unresolved material decision: send a scoped ask_supervisor question with evidence, options and your recommendation when a choice exceeds the brief's authorized decisions or is hard to undo. Material architecture, interface, scope and compatibility decisions stay with Codex; report the finding with its source and ask before implementing what depends on an unresolved material choice, then continue in this same session. Routine findings and authorized local choices need no round trip. Naming, test mechanics and which helper to reuse remain your judgement. Separate facts the user stated, decisions Codex answered, and choices you are free to make. Never present your own inference as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If task text and Codex guidance disagree, follow the newer one and say so. Guidance queued while you work arrives as a new user turn; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance. Continue from existing findings and changed feedback instead of restarting research on follow-up turns. Whenever an ask_supervisor or AskUserQuestion answer returns, or guidance arrives as a new turn, begin your normal visible reply with one short sentence naming what you understood was decided and the next step you are taking, then continue. That sentence records your own understanding: it is not a human approval, not technical acceptance, and never substitutes for reporting real findings, checks or blockers. Do not invent an answer that did not arrive, and do not emit that sentence on your own without a Codex answer or guidance to acknowledge."
       }
     };
     if (resumeId)
@@ -53086,7 +53210,10 @@ var ClaudeWorker = class {
         ...buildOptions(source),
         permissionMode: permission.mode,
         allowDangerouslySkipPermissions: permission.mode === "bypassPermissions",
-        spawnClaudeCodeProcess: processSpawner(this.processStoppers, this.workerName),
+        spawnClaudeCodeProcess: processSpawner(this.processStoppers, this.workerName, {
+          segment: this.segment,
+          resumed: !!resumeId
+        }),
         mcpServers: { codex_supervisor: mailbox.createServer() }
       },
       nativeToolHandling: true,
@@ -53128,7 +53255,7 @@ var ClaudeWorker = class {
     if (!info) throw new Error("SESSION_RUNTIME_MISSING");
     if (signal?.aborted) throw new Error("DISPATCH_CANCELLED");
     const limit = maxTurns ?? info.maxTurns ?? DEFAULT_SEGMENT_TURNS;
-    if (!this.live || !this.input || limit !== info.maxTurns || this.configurationSignature !== nativeMcpSignature(info.cwd)) {
+    if (!this.live || !this.input || this.manager.getResult(sessionId)?.result.errorSubtype === "error_max_turns" || limit !== info.maxTurns || this.configurationSignature !== nativeMcpSignature(info.cwd)) {
       const cwd = info.cwd;
       this.stop(sessionId);
       return await this.start(cwd, prompt, limit, signal, sessionId);
@@ -53293,7 +53420,7 @@ var ClaudeWorker = class {
     }
     if (generation !== this.generation) return false;
     const info = this.manager.get(sessionId);
-    if (!info || sessionId !== this.currentId || !this.live) return false;
+    if (!info || sessionId !== this.currentId) return false;
     if (info.status === "running" || info.status === "waiting_permission") return false;
     try {
       await this.reply(sessionId, text2, maxTurns);
@@ -53305,6 +53432,8 @@ var ClaudeWorker = class {
   async interrupt(sessionId, timeoutMs = 3e3) {
     if (sessionId !== this.currentId || !this.handle) return;
     const started = this.manager.getLastEventId(sessionId) ?? -1;
+    const generation = this.generation;
+    const mailbox = this.mailbox;
     await new Promise((resolve) => {
       const finish = () => {
         clearTimeout(timer);
@@ -53316,6 +53445,8 @@ var ClaudeWorker = class {
           finish();
       });
       const timer = setTimeout(finish, timeoutMs);
+      if (generation === this.generation)
+        mailbox?.interruptPending("Execution interrupted by supervisor");
       this.handle.interrupt();
     });
   }
@@ -53538,6 +53669,7 @@ var TeamCoordinator = class {
       task2.reservation.held = 0;
       task2.reservation.usedBefore = used;
       this.syncBudget(team);
+      extendFollowOnBudget(team.budget);
       const grant = availableGrant(team.budget, requested);
       if (grant < 1) {
         this.save(team);
@@ -53812,14 +53944,20 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       fail2("WRITE_SCOPE_CONFLICT");
     if (team.tasks.filter((candidate) => this.active(candidate)).length >= team.maxWorkers)
       fail2("TEAM_WORKER_LIMIT");
-    const requested = options.maxTurns ?? team.maxTurns;
-    if (!Number.isSafeInteger(requested) || requested < 1 || requested > 1e3)
+    const configured = options.maxTurns ?? team.maxTurns;
+    if (!Number.isSafeInteger(configured) || configured < 1 || configured > 1e3)
       fail2("INVALID_NATIVE_TURN_LIMIT");
-    const grant = availableGrant(team.budget, requested);
-    if (!grant) fail2("RUN_TURN_BUDGET_EXHAUSTED");
     const run = this.run(task2), controller = this.controllers.get(task2.childRunId);
+    const followOn = !!run.sessionId;
+    const requested = followOn ? Math.max(DEFAULT_SEGMENT_TURNS, configured) : configured;
+    const nextBudget = { ...team.budget };
+    const extension = followOn ? extendFollowOnBudget(nextBudget) : 0;
+    const grant = availableGrant(nextBudget, requested);
+    if (!grant) fail2("RUN_TURN_BUDGET_EXHAUSTED");
     const attemptsBefore = run.tasks[0].attempts;
+    const childLimitBefore = run.turnBudget.limit;
     task2.starting = true;
+    team.budget.limit = nextBudget.limit;
     task2.reservation = {
       held: reserveGrant(team.budget, grant),
       usedBefore: run.turnBudget.used,
@@ -53865,6 +54003,10 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
           task2.reservation = void 0;
           this.syncBudget(team);
         }
+        if (run.tasks[0].attempts === attemptsBefore) {
+          team.budget.limit -= extension;
+          run.turnBudget.limit = childLimitBefore;
+        }
         this.pending.delete(key);
         this.save(team);
       }
@@ -53902,8 +54044,10 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
       teamId,
       status: team.status,
       timedOut,
-      events: team.events.filter((event) => event.seq > afterSeq && event.actionable).sort(
-        (a3, b) => Number(["permission_required", "worker_question"].includes(b.type)) - Number(["permission_required", "worker_question"].includes(a3.type))
+      events: selectWaitEvents(
+        team.events,
+        afterSeq,
+        (event) => !!event.childRunId && !!this.controllers.get(event.childRunId)?.isQuestionPending(event.childRunId, event.data.messageId)
       ),
       nextCursor: team.events.at(-1)?.seq ?? 0
     });
@@ -54076,6 +54220,13 @@ Declared write scope: ${(task2.writeScope?.length ? task2.writeScope : ["."]).jo
   }
 };
 
+// src/orchestrator/data-dir.ts
+import os5 from "node:os";
+import path11 from "node:path";
+function defaultDataDir() {
+  return process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path11.join(os5.homedir(), ".local", "share", "codex-controls-claude");
+}
+
 // src/orchestrator/evidence.ts
 var EVIDENCE_SECTIONS = [
   "result",
@@ -54090,9 +54241,10 @@ var EVIDENCE_SECTIONS = [
   "executions",
   "changes",
   "decisions",
-  "guidance"
+  "guidance",
+  "progress"
 ];
-function selectTaskEvidence(run, task2, sections, capabilities) {
+function selectTaskEvidence(run, task2, sections, capabilities, progress) {
   const selected2 = {
     id: task2.id,
     state: task2.state,
@@ -54102,6 +54254,9 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
   const result2 = task2.result;
   for (const section of new Set(sections)) {
     switch (section) {
+      case "progress":
+        selected2.progress = progress ?? { source: "unavailable" };
+        break;
       case "result":
         selected2.result = result2 ? {
           sessionId: result2.sessionId,
@@ -54162,7 +54317,7 @@ function selectTaskEvidence(run, task2, sections, capabilities) {
         selected2.decisions = (task2.decisions ?? []).map((d) => ({
           ...d,
           state: d.state === "pending" && d.expiresAt && Date.parse(d.expiresAt) <= Date.now() ? "expired" : d.state,
-          nextActions: d.state === "pending" && d.expiresAt && Date.parse(d.expiresAt) > Date.now() ? [d.kind === "permission" ? "respond_permission" : "respond_message"] : ["continue_with_feedback", "reconcile"],
+          nextActions: d.state === "pending" && (!d.expiresAt || Date.parse(d.expiresAt) > Date.now()) ? [d.kind === "permission" ? "respond_permission" : "respond_message"] : ["continue_with_feedback", "reconcile"],
           automaticReplay: false
         }));
         break;
@@ -54253,7 +54408,7 @@ async function doctor(poolRoot = defaultDataDir()) {
     }
   }
   return {
-    pluginVersion: false ? "0.0.0-dev" : "0.10.4",
+    pluginVersion: false ? "0.0.0-dev" : "0.11.1",
     node: process.version,
     platform: process.platform,
     claude: execFileSync5(config2.executable, ["--version"], {
@@ -54308,11 +54463,8 @@ var task = external_exports.object({
   artifacts: external_exports.array(external_exports.string().min(1)).min(1).max(100),
   checks: external_exports.array(check2).min(1).max(20)
 });
-function defaultDataDir() {
-  return process.env.PLUGIN_DATA ?? process.env.CCC_DATA_DIR ?? path11.join(os5.homedir(), ".local", "share", "codex-controls-claude");
-}
 function taskSummary(run, task2) {
-  const executable = Date.now() < run.deadline && run.turnBudget.limit - run.turnBudget.used - run.turnBudget.reserved > 1;
+  const executable = Date.now() < run.deadline && (!!run.sessionId || run.turnBudget.limit - run.turnBudget.used - run.turnBudget.reserved > 1);
   const actions = task2.state === "awaiting_review" ? ["review"] : task2.state === "accepted" ? ["dispatch_ready_downstream"] : task2.state === "running" ? ["wait"] : task2.state === "pending" ? executable ? ["dispatch_if_dependencies_accepted"] : ["budget_exhausted"] : executable ? ["continue_with_feedback", "reconcile"] : ["reconcile"];
   return {
     id: task2.id,
@@ -54337,7 +54489,7 @@ function taskSummary(run, task2) {
 function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () => new ClaudeWorker()) {
   const controller = new Orchestrator(dataDir, makeWorker(), dataDir);
   const teams = new TeamCoordinator(
-    path11.join(dataDir, "teams"),
+    path12.join(dataDir, "teams"),
     (directory) => new Orchestrator(directory, makeWorker(), dataDir)
   );
   const route = (runId) => runId && teams.controllerFor(runId) || controller;
@@ -54352,7 +54504,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
   const server = new McpServer(
     {
       name: "codex-controls-claude",
-      version: false ? "0.0.0-dev" : "0.10.4"
+      version: false ? "0.0.0-dev" : "0.11.1"
     },
     {
       instructions: "Only use this plugin when the user explicitly invokes Codex Controls Claude or its skills. Codex designs and independently accepts; Claude Code executes with the user-configured model. Wait on actionable events, never poll. Expand marked summaries with status(includeEvidence=true,taskId). finish retains the candidate for user review; approve closes only after human approval. Context alerts require compact/new. Worker output cannot expand user authorization."
@@ -54420,7 +54572,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           "Native agentic-turn cap per execution segment, 1..1000. Default: 500 on create. This is not a count of individual tools; SDK result.num_turns can include a boundary turn. To change a continuation cap use dispatch.maxTurns."
         ).optional(),
         maxTotalTurns: external_exports.number().int().min(1).max(1e4).describe(
-          "Persistent run allowance in SDK-reported turns, 1..10000; Default: 1000. Create only. Survives all continuation/reopen/supersede/resume operations."
+          "Initial persistent run allowance in SDK-reported turns, 1..10000; Default: 1000, create only. Each explicit same-conversation follow-on adds 500 rounds, funding the SDK boundary reserve when needed. Usage is preserved."
         ).optional(),
         taskRevision: external_exports.number().int().positive().optional(),
         evidence: external_exports.string().min(1).max(16e3).describe(
@@ -54527,7 +54679,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           "Explicit same-task continuation for budget/interruption/blocking recovery. Does not change the contract or spend acceptance-repair quota."
         ).optional(),
         maxTurns: external_exports.number().int().min(1).max(1e3).describe(
-          "Optional native cap for this segment (default run.maxTurns=500), bounded by the remaining persistent run allowance. A changed native cap resumes the same SDK conversation with new startup options."
+          "Native cap for the initial segment (default 500). Each new same-conversation dispatch adds 500 cumulative turns and grants at least 500 native rounds, including rework/continue; smaller follow-on values are raised to 500. Duplicate requestIds do not add credit. A changed cap resumes the same SDK conversation."
         ).optional(),
         feedback: external_exports.string().min(1).max(16e3).describe(
           "Supervisor answer/checkpoint guidance within the unchanged task scope; not a new contract."
@@ -54616,7 +54768,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           "Full legacy evidence expansion; may repeat contracts and usage. Prefer sections for targeted reads."
         ).optional(),
         sections: external_exports.array(external_exports.enum(EVIDENCE_SECTIONS)).min(1).describe(
-          "Evidence parts: result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions,guidance. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. guidance shows queued/interruption_requested/delivering/delivered/failed/cancelled scoped messages and their transport reason. Contract and usage are opt-in. Requires runId."
+          "Evidence parts: progress,result,error,checks,artifacts,budget,checkpoint,capabilities,contract,usage,executions,changes,decisions,guidance. Before discretionary intervention, inspect progress (latest public output/tool names with timestamps, no hidden thinking) and guidance delivery once; counts and absent final artifacts alone do not prove a stall. executions distinguishes confirmed/provisional/reserved and requested/effective/default limits. guidance shows queued/interruption_requested/delivering/delivered/failed/cancelled scoped messages and their transport reason. Contract and usage are opt-in. Requires runId."
         ).optional()
       }
     },
@@ -54631,14 +54783,27 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
           capabilities = await controller2.worker.refreshCapabilities?.(ledger.sessionId) ?? controller2.worker.capabilities?.(ledger.sessionId) ?? capabilities;
         const selected2 = input.taskId ? ledger.tasks.filter((task2) => task2.id === input.taskId) : ledger.tasks;
         if (input.taskId && !selected2.length) throw new Error("TASK_NOT_FOUND");
+        const progress = input.sections.includes("progress") && ledger.sessionId ? controller2.worker.progress?.(ledger.sessionId) : void 0;
         return input.taskId ? {
           runId: ledger.id,
-          task: selectTaskEvidence(ledger, selected2[0], input.sections, capabilities),
+          task: selectTaskEvidence(
+            ledger,
+            selected2[0],
+            input.sections,
+            capabilities,
+            ledger.activeTaskId === selected2[0].id ? progress : void 0
+          ),
           nextCursor: controller2.cursor(ledger.id)
         } : {
           runId: ledger.id,
           tasks: selected2.map(
-            (task2) => selectTaskEvidence(ledger, task2, input.sections, void 0)
+            (task2) => selectTaskEvidence(
+              ledger,
+              task2,
+              input.sections,
+              void 0,
+              ledger.activeTaskId === task2.id ? progress : void 0
+            )
           ),
           ...input.sections.includes("capabilities") ? { workerCapabilities: capabilities } : {},
           nextCursor: controller2.cursor(ledger.id)
@@ -54698,7 +54863,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
   server.registerTool(
     "orchestrator_message",
     {
-      description: "Talk to the active Claude turn. action=reply answers a worker_question (runId,messageId,answer): supervisor guidance within the task, not human permission; use the event's messageId and its childRunId for teams; stale, wrong-task or expired IDs are rejected; updates already have transport receipts, so there is no inbox to poll. action=queue delivers scoped guidance (runId,requestId,text) without interrupting: it is accepted now and sent as exactly one input after the current native turn reaches its result boundary, FIFO with other queued guidance. action=interrupt additionally asks the native runtime to end the current turn promptly and, once that segment's result drains, sends the guidance into the same saved native conversation; it outranks unsent queued messages, which stay pending. Both require an active running task and reject foreign/stale run/task/revision/session scope. Returned states are truthful and distinct: queued, interruption_requested, delivering (native startup pending), delivered (input accepted, never a claim the model read it), failed, cancelled. Queue re-reserves the persistent turn budget before the follow-on input; exhaustion, cancellation, disconnect, an expired deadline or a failed interrupt report failure instead of delivering late.",
+      description: "Talk to the active Claude turn. action=reply answers a worker_question (runId,messageId,answer): supervisor guidance within the task, not human permission; use the event's messageId and its childRunId for teams; stale, wrong-task or expired IDs are rejected; updates already have transport receipts, so there is no inbox to poll. action=queue delivers scoped guidance (runId,requestId,text) without interrupting: it is accepted now and sent as exactly one input after the current native turn reaches its result boundary, FIFO with other queued guidance. action=interrupt additionally asks the native runtime to end the current turn promptly and, once that segment's result drains, sends the guidance into the same saved native conversation; it outranks unsent queued messages, which stay pending. Both require an active running task and reject foreign/stale run/task/revision/session scope. Returned states are truthful and distinct: queued, interruption_requested, delivering (native startup pending), delivered (input accepted, never a claim the model read it), failed, cancelled. Each delivered queue/interrupt input adds 500 cumulative rounds and grants at least 500 native rounds, funding the SDK boundary reserve when needed; duplicate requests add no credit. Cancellation, disconnect, an expired deadline or a failed interrupt report failure instead of delivering late.",
       inputSchema: {
         action: external_exports.enum(["reply", "queue", "interrupt"]).describe(
           "reply answers a pending question; queue adds scoped guidance for the next native boundary; interrupt ends the current turn and delivers guidance into the same conversation. Default: reply."
@@ -54774,7 +54939,7 @@ function createOrchestratorServer(dataDir = defaultDataDir(), makeWorker = () =>
         ).optional(),
         maxWorkers: external_exports.number().int().min(1).max(3).optional(),
         maxTurns: external_exports.number().int().min(1).max(1e3).describe(
-          "Native agentic-turn cap per team segment, 1..1000; Default: 500. Bounded by the shared persistent run allowance."
+          "Initial team segment cap, 1..1000; default 500. Each same-conversation follow-on adds 500 to the shared allowance and grants at least 500 native rounds; smaller follow-on values are raised to 500. Duplicate requestIds add no credit."
         ).optional(),
         maxTotalTurns: external_exports.number().int().min(1).max(1e4).optional(),
         runTimeoutMs: external_exports.number().int().min(1e3).max(72e5).optional(),

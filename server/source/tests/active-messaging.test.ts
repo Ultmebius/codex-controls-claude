@@ -19,13 +19,19 @@ class GuidanceWorker implements Worker {
   failInterrupt = false;
   final?: AgentResult;
   count = 0;
+  grants: number[] = [];
+  segments: number[] = [];
+  setSegment(segment: number) {
+    this.segments.push(segment);
+  }
   subscribe(fn: (event: WorkerEvent) => void) {
     this.listener = fn;
     return () => {
       this.listener = undefined;
     };
   }
-  async start(_cwd: string, prompt: string) {
+  async start(_cwd: string, prompt: string, maxTurns: number) {
+    this.grants.push(maxTurns);
     this.live = true;
     this.inputs.push(prompt);
     return "session";
@@ -34,8 +40,9 @@ class GuidanceWorker implements Worker {
     this.inputs.push(prompt);
     return "session";
   }
-  guidance(_session: string, text: string) {
+  guidance(_session: string, text: string, maxTurns?: number) {
     if (this.failGuidance || !this.live) return false;
+    if (maxTurns) this.grants.push(maxTurns);
     this.inputs.push(text);
     return true;
   }
@@ -176,6 +183,7 @@ describe("queued scoped guidance", () => {
     // With nothing queued the third boundary is a real task result.
     expect(f.run.tasks[0].state).toBe("awaiting_review");
     expect(f.worker.inputs).toHaveLength(3);
+    expect(f.worker.segments).toEqual([1, 2, 3]);
   });
 
   it("arms a separate settled segment for every delivered boundary", async () => {
@@ -204,6 +212,9 @@ describe("queued scoped guidance", () => {
     expect(repeat).toMatchObject({ guidanceId: receipt.guidanceId, deduplicated: true });
     expect(() => f.send("same", "different text")).toThrow("REQUEST_ID_CONFLICT");
     expect(f.run.guidance).toHaveLength(1);
+    f.worker.finish();
+    expect(f.run.turnBudget.limit).toBe(1500);
+    expect(f.worker.grants).toEqual([500, 500]);
   });
 
   it("rejects guidance for an idle, foreign, stale or missing target", async () => {
@@ -341,16 +352,17 @@ describe("failure, cancellation and budget races", () => {
     expect(f.run.activeExecutionId).toBeUndefined();
   });
 
-  it("fails queued guidance when the run cannot afford the follow-on segment", async () => {
+  it("adds 500 rounds for queued work even when the previous segment exhausted its budget", async () => {
     const f = fixture({ maxTurns: 3, maxTotalTurns: 5 });
     await f.controller.dispatch(f.run.id, "a", "first");
-    f.send("q1", "too expensive");
-    f.worker.finish({ numTurns: 5 });
+    f.send("q1", "follow-on work");
+    f.worker.finish({ numTurns: 5, isError: true, errorSubtype: "error_max_turns" });
     expect(f.run.guidance![0]).toMatchObject({
-      state: "failed",
-      reason: "turn_budget_exhausted",
+      state: "delivered",
     });
-    expect(f.worker.inputs).toHaveLength(1);
+    expect(f.worker.inputs).toHaveLength(2);
+    expect(f.worker.grants).toEqual([3, 500]);
+    expect(f.run.turnBudget).toMatchObject({ limit: 506, used: 5, reserved: 501 });
   });
 
   it("cancels pending guidance on cancellation and never delivers it afterwards", async () => {
@@ -371,6 +383,12 @@ describe("failure, cancellation and budget races", () => {
     f.controller.interrupt(f.run.id, "stop now");
     expect(f.run.guidance![0]).toMatchObject({ state: "cancelled" });
     expect(f.run.tasks[0].state).toBe("interrupted");
+    const cancelled = f.run.events.filter((e) => e.type === "guidance_cancelled");
+    expect(cancelled).toHaveLength(1);
+    expect(cancelled[0]).toMatchObject({
+      actionable: true,
+      data: { requestId: "q1", state: "cancelled", delivered: false },
+    });
   });
 
   it("cancels guidance queued for a previous segment on a new dispatch", async () => {

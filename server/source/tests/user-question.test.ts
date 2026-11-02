@@ -160,14 +160,29 @@ describe("native AskUserQuestion bridge", () => {
     f.mailbox.respond(f.events[0].id, answer);
     expect(await pending).toMatchObject({ behavior: "deny", interrupt: false });
   });
-  it.each(["timeout", "abort", "reset", "close"])(
+  it("reminds after the reminder interval while keeping AskUserQuestion pending and answerable", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    const pending = askCodex(f.mailbox, input, f.abort.signal);
+    expect(f.events).toHaveLength(1);
+    const id = f.events[0].id;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.events).toHaveLength(2);
+    expect(f.events[1]).toEqual({ ...f.events[0], reminder: true });
+    expect(f.mailbox.isPending(id)).toBe(true);
+    const answers = { "保留界面？": "保留", "哪些组件？": "CLI, Docker" };
+    expect(f.mailbox.respond(id, JSON.stringify({ answers }))).toBe(true);
+    expect(await pending).toEqual({ behavior: "allow", updatedInput: { ...input, answers } });
+  });
+  it.each(["interrupt", "abort", "reset", "close"])(
     "settles %s without inventing an answer or accepting a stale reply",
     async (action) => {
       vi.useFakeTimers();
       const f = fixture();
       const pending = askCodex(f.mailbox, input, f.abort.signal);
       const id = f.events[0].id;
-      if (action === "timeout") await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(1000);
+      if (action === "interrupt") f.mailbox.interruptPending();
       if (action === "abort") f.abort.abort();
       if (action === "reset") f.mailbox.reset();
       if (action === "close") f.mailbox.close();

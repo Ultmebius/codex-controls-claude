@@ -16,6 +16,7 @@ import {
 } from "./runtime.js";
 import { InputQueue } from "./input-queue.js";
 import { DEFAULT_SEGMENT_TURNS } from "./budget.js";
+import { publicProgress } from "./progress.js";
 import { SupervisorMailbox, type SupervisorMessage } from "./messaging.js";
 import { askCodex } from "./user-question.js";
 import { getSessionMessages, type SDKSystemMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -44,6 +45,7 @@ export interface Worker {
     listener: (event: { sessionId: string; message: SupervisorMessage }) => void
   ): () => void;
   respondMessage?(id: string, answer: string): boolean;
+  isQuestionPending?(id: string): boolean;
   subscribe(listener: (event: WorkerEvent) => void): () => void;
   start(
     cwd: string,
@@ -67,6 +69,8 @@ export interface Worker {
   respond(sessionId: string, requestId: string, allow: boolean): boolean;
   model(sessionId: string): string | undefined;
   context?(sessionId: string): ContextInfo;
+  progress?(sessionId: string): ReturnType<typeof publicProgress> | undefined;
+  setSegment?(segment: number): void;
   isLive?(sessionId: string): boolean;
   maintenanceComplete?(sessionId: string): void;
   interrupt?(sessionId: string, timeoutMs?: number): Promise<void>;
@@ -112,6 +116,19 @@ export class ClaudeWorker implements Worker {
   private writeScope?: { cwd: string; paths: string[] };
   private workerName?: string;
   private nativeError?: string;
+  private segment = 1;
+  private progressSecrets: string[] = [];
+  setSegment(segment: number) {
+    this.segment = segment;
+  }
+  progress(sessionId: string) {
+    if (sessionId !== this.currentId) return undefined;
+    return publicProgress(
+      this.manager.readEvents(sessionId).events,
+      this.eventFloor,
+      this.progressSecrets
+    );
+  }
   private interruptBarrier?: Promise<boolean>;
   setName(name: string | undefined) {
     this.workerName = name;
@@ -140,6 +157,9 @@ export class ClaudeWorker implements Worker {
   }
   respondMessage(id: string, answer: string) {
     return this.mailbox?.respond(id, answer) ?? false;
+  }
+  isQuestionPending(id: string) {
+    return this.mailbox?.isPending(id) ?? false;
   }
 
   private captureUsage(message: unknown, source: ContextInfo["source"]) {
@@ -188,7 +208,9 @@ export class ClaudeWorker implements Worker {
           this.lastInputTokens = null;
           this.contextSource = "unavailable";
         }
-        if (!["result", "error"].includes(event.type) || this.contextSource === "stream") return;
+        if (!["result", "error"].includes(event.type)) return;
+        if (generation === this.generation) this.mailbox?.interruptPending("Native turn ended");
+        if (this.contextSource === "stream") return;
         // One local SDK transcript read at a terminal event; never periodic log polling.
         try {
           const messages = await getSessionMessages(sessionId, {
@@ -258,6 +280,9 @@ export class ClaudeWorker implements Worker {
     });
     this.hydrated.clear();
     const config = localConfig();
+    this.progressSecrets = Object.entries(config.env)
+      .filter(([key, value]) => /TOKEN|KEY|PASSWORD|SECRET/i.test(key) && value)
+      .map(([, value]) => value!);
     const permission = permissionSettings(cwd);
     if (resumeId && this.manager.get(resumeId)) this.manager.delete(resumeId);
     const model = config.model;
@@ -291,9 +316,11 @@ export class ClaudeWorker implements Worker {
         type: "preset" as const,
         preset: "claude_code" as const,
         append:
-          "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use codex_supervisor notify_supervisor for meaningful milestones and ask_supervisor for design decisions needed from Codex; native AskUserQuestion is also forwarded to Codex and its answer returned to you. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. " +
-          "Ask early rather than guessing: send a scoped ask_supervisor question as soon as a choice would change what you build or is hard to undo. Separate the three kinds of input explicitly: facts the user stated, decisions Codex actually answered, and research or implementation choices you are free to make yourself (use judgement there and proceed). Never present your own inference or a design you favour as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If the task text and Codex guidance disagree, follow the newest scoped guidance and say so in your report. Guidance Codex queues while you work arrives as a new user turn after your current one; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance intact. " +
-          "Whenever an ask_supervisor or AskUserQuestion answer returns, or guidance arrives as a new turn, begin your normal visible reply with one short sentence of ordinary text that names what you understood was decided and the next step you are taking, then continue the work. That sentence is the transcript's record of your own understanding: it is not a human approval, not technical acceptance, and it never substitutes for reporting real findings, checks or blockers. Do not invent an answer that did not arrive, and do not emit that sentence on your own without a Codex answer or guidance to acknowledge.",
+          "You execute the assigned task for Codex. Use your native configured tools, hooks and permissions normally, including subagents and your own validation as useful. Codex independently accepts the final work. Report changed paths, checks, important findings and blockers concisely without omitting acceptance-relevant information. Use notify_supervisor for meaningful milestones and ask_supervisor for decisions needed from Codex; native AskUserQuestion is also forwarded and its answer returned. An answer is Codex guidance, not human permission or acceptance. If unanswered, report BLOCKED: with the question. Codex schedules up to3 managed top-level sessions; native subagents follow Claude Code policies. Supervisor tools are not necessarily yours; select from your actually available tools. " +
+          "Proactive capability use: before substantive work, match the task to the skill descriptions and tools exposed in this Claude Code session. Proactively invoke relevant permitted skills through the native Skill tool or supported skill mechanism, apply their guidance, and use helpful plugin-provided tools or connected MCP tools. Do not wait for Codex to remind you. Prioritize explicitly requested capabilities using their actual available names/namespaces. Plugins package capabilities; use their specific skills, tools or agents rather than assuming a generic plugin-call command. Respect native invocation restrictions, enabled states and permissions, including skills reserved for user invocation. If a requested capability is unavailable or restricted, report that gap and continue with a suitable available method within the task, asking only when the gap blocks acceptance or a material decision. Reuse already loaded guidance and settled evidence; select from exposed metadata with targeted discovery as needed, without scanning every plugin, forcing unrelated calls or repeating answered research. In normal progress or the result, briefly name capabilities actually used and how they helped; availability or intent alone is not actual use. " +
+          "Research handoff: follow the stage's assigned research owner. When Codex marks research as settled and supplies usable evidence, reuse those facts and decisions by default. Do not repeat whole-repository exploration, repeat research on a question already answered, or redo full planning at the same level. Execute the stated next step first. Re-read only the specific scope that is needed: a missing or stale piece, a native editing or tool precondition, tests or a run contradicting the handoff, or context lost to compaction. Give the reason briefly in your normal progress or result. New evidence may overturn a handoff conclusion, and material gaps or contradictions go through the existing asking mechanism. When you own research, investigate the assigned questions, diagnose and compare options, and return findings with sources and a recommendation; Codex waits for that evidence rather than duplicating your investigation. Do not ask Codex to perform research assigned to you. Give any native subagent distinct questions and outputs, reusing settled evidence rather than duplicating searches. If ownership is missing and would cause overlapping investigation, ask before broad research; otherwise legacy tasks keep their clear existing workflow. " +
+          "Ask early rather than guessing at an unresolved material decision: send a scoped ask_supervisor question with evidence, options and your recommendation when a choice exceeds the brief's authorized decisions or is hard to undo. Material architecture, interface, scope and compatibility decisions stay with Codex; report the finding with its source and ask before implementing what depends on an unresolved material choice, then continue in this same session. Routine findings and authorized local choices need no round trip. Naming, test mechanics and which helper to reuse remain your judgement. Separate facts the user stated, decisions Codex answered, and choices you are free to make. Never present your own inference as a user approval, Codex decision or existing requirement, and never fabricate a user authorisation for destructive, outward-facing or scope-expanding work. If task text and Codex guidance disagree, follow the newer one and say so. Guidance queued while you work arrives as a new user turn; treat it as scope guidance for the same task, not a new task, and keep the original contract, checks and acceptance. Continue from existing findings and changed feedback instead of restarting research on follow-up turns. " +
+          "Whenever an ask_supervisor or AskUserQuestion answer returns, or guidance arrives as a new turn, begin your normal visible reply with one short sentence naming what you understood was decided and the next step you are taking, then continue. That sentence records your own understanding: it is not a human approval, not technical acceptance, and never substitutes for reporting real findings, checks or blockers. Do not invent an answer that did not arrive, and do not emit that sentence on your own without a Codex answer or guidance to acknowledge.",
       },
     };
     if (resumeId)
@@ -313,7 +340,10 @@ export class ClaudeWorker implements Worker {
         ...buildOptions(source),
         permissionMode: permission.mode,
         allowDangerouslySkipPermissions: permission.mode === "bypassPermissions",
-        spawnClaudeCodeProcess: processSpawner(this.processStoppers, this.workerName),
+        spawnClaudeCodeProcess: processSpawner(this.processStoppers, this.workerName, {
+          segment: this.segment,
+          resumed: !!resumeId,
+        }),
         mcpServers: { codex_supervisor: mailbox.createServer() },
       },
       nativeToolHandling: true,
@@ -363,6 +393,7 @@ export class ClaudeWorker implements Worker {
     if (
       !this.live ||
       !this.input ||
+      this.manager.getResult(sessionId)?.result.errorSubtype === "error_max_turns" ||
       limit !== info.maxTurns ||
       this.configurationSignature !== nativeMcpSignature(info.cwd)
     ) {
@@ -543,7 +574,7 @@ export class ClaudeWorker implements Worker {
     }
     if (generation !== this.generation) return false;
     const info = this.manager.get(sessionId);
-    if (!info || sessionId !== this.currentId || !this.live) return false;
+    if (!info || sessionId !== this.currentId) return false;
     // A turn that is still running cannot accept a follow-on input.
     if (info.status === "running" || info.status === "waiting_permission") return false;
     try {
@@ -557,6 +588,8 @@ export class ClaudeWorker implements Worker {
   async interrupt(sessionId: string, timeoutMs = 3000) {
     if (sessionId !== this.currentId || !this.handle) return;
     const started = this.manager.getLastEventId(sessionId) ?? -1;
+    const generation = this.generation;
+    const mailbox = this.mailbox;
     // Subscribe before requesting interruption so an immediate native result is retained.
     await new Promise<void>((resolve) => {
       const finish = () => {
@@ -574,6 +607,8 @@ export class ClaudeWorker implements Worker {
           finish();
       });
       const timer = setTimeout(finish, timeoutMs);
+      if (generation === this.generation)
+        mailbox?.interruptPending("Execution interrupted by supervisor");
       this.handle!.interrupt();
     });
   }

@@ -64,6 +64,7 @@ interface LaunchInfo {
   cwd?: string;
 }
 interface TerminalOptions {
+  continuity?: { segment: number; resumed: boolean };
   launch?: (
     info: LaunchInfo,
     onWindow: (window: WindowInfo) => void,
@@ -349,6 +350,7 @@ export class TerminalProcess extends EventEmitter implements SpawnedProcess {
       env,
       effort: this.options.effort ?? "unknown",
       effortSource: this.options.effortSource ?? "not reported",
+      continuity: this.options.continuity,
       windowHandle: this.info.windowHandle,
       // Observed before the worker existed: the host compares it against the system input tick when
       // the first frame is painted, so Windows Terminal's own startup activation is not mistaken for

@@ -27,12 +27,14 @@ import {
   type WorkerSlot,
 } from "./worker-slots.js";
 import { compactCapabilities, type WorkerCapabilities } from "./capabilities.js";
+import { selectWaitEvents } from "./messaging.js";
 import {
   DEFAULT_SEGMENT_TURNS,
   DEFAULT_RUN_TURN_LIMIT,
   LEGACY_RUN_TURN_LIMIT,
   normalizedBudget,
   availableGrant,
+  extendFollowOnBudget,
   reserveGrant,
   settleReservation,
   type TurnBudget,
@@ -120,6 +122,7 @@ export interface Task extends TaskSpec {
     kind: "permission" | "question";
     state: "pending" | "answered" | "expired" | "interrupted";
     expiresAt?: string;
+    reminderAt?: string;
     text?: string;
     inputHash?: string;
     toolName?: string;
@@ -291,14 +294,16 @@ export class Orchestrator {
           taskId: run.activeTaskId!,
           sessionId,
         });
-        this.task(run, run.activeTaskId!).decisions ??= [];
-        this.task(run, run.activeTaskId!).decisions!.push({
-          id: message.id,
-          kind: "question",
-          state: "pending",
-          text: message.text,
-          expiresAt: message.expiresAt,
-        });
+        const decisions = (this.task(run, run.activeTaskId!).decisions ??= []);
+        if (!decisions.some((d) => d.id === message.id))
+          decisions.push({
+            id: message.id,
+            kind: "question",
+            state: "pending",
+            text: message.text,
+            expiresAt: message.expiresAt,
+            reminderAt: message.reminderAt,
+          });
       }
       this.emit(
         run,
@@ -309,6 +314,7 @@ export class Orchestrator {
           text: message.text,
           trust: "worker_observation",
           requiresResponse: message.kind === "question",
+          ...(message.reminder ? { reminder: true, waiting: true } : {}),
           nextActions: message.kind === "question" ? ["respond_message"] : ["continue_wait"],
         },
         run.activeTaskId,
@@ -349,6 +355,19 @@ export class Orchestrator {
       delivery: "answered_in_worker_tool",
       nextCursor: this.cursor(runId),
     };
+  }
+
+  isQuestionPending(runId: string, messageId: string): boolean {
+    const run = this.get(runId, false);
+    const pending = this.pendingMessages.get(messageId);
+    return (
+      !!pending &&
+      run.status === "open" &&
+      pending.runId === runId &&
+      pending.taskId === run.activeTaskId &&
+      pending.sessionId === run.sessionId &&
+      (this.worker.isQuestionPending?.(messageId) ?? true)
+    );
   }
 
   /**
@@ -553,8 +572,11 @@ export class Orchestrator {
       this.emit(run, "guidance_failed", this.guidanceSummary(run, record), task.id);
       return false;
     }
-    const requested = run.executions?.at(-1)?.requestedLimit ?? run.maxTurns;
-    let nativeLimit = availableGrant(run.turnBudget, requested);
+    const requested = Math.max(
+      DEFAULT_SEGMENT_TURNS,
+      run.executions?.at(-1)?.requestedLimit ?? run.maxTurns
+    );
+    let nativeLimit: number;
     if (this.teamManaged) {
       // The child's own allowance is one dispatch grant; the shared team budget funds the rest.
       const granted = this.parentGrant?.(run.id, requested) ?? 0;
@@ -568,11 +590,8 @@ export class Orchestrator {
       run.turnBudget.reserved += granted + 1;
       nativeLimit = granted;
     } else {
-      if (nativeLimit < 1) {
-        this.settleGuidance(run, record, "failed", "turn_budget_exhausted");
-        this.emit(run, "guidance_failed", this.guidanceSummary(run, record), task.id);
-        return false;
-      }
+      extendFollowOnBudget(run.turnBudget);
+      nativeLimit = availableGrant(run.turnBudget, requested);
       reserveGrant(run.turnBudget, nativeLimit);
     }
     const execution: ExecutionAccount = {
@@ -603,6 +622,7 @@ export class Orchestrator {
     this.timers.set(run.id, timer);
     this.save(run);
     let sent: boolean | Promise<boolean> = false;
+    this.worker.setSegment?.(run.executions!.filter((e) => e.sessionId === run.sessionId).length);
     record.state = "delivering";
     record.executionId = execution.id;
     record.updatedAt = new Date().toISOString();
@@ -712,6 +732,7 @@ export class Orchestrator {
       record.state = "cancelled";
       record.reason = reason;
       record.updatedAt = new Date().toISOString();
+      this.emit(run, "guidance_cancelled", this.guidanceSummary(run, record), record.taskId);
     }
   }
 
@@ -960,7 +981,8 @@ export class Orchestrator {
             }
           : undefined,
         nextActions:
-          Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0
+          Date.now() < run.deadline &&
+          (!!run.sessionId || availableGrant(run.turnBudget, run.maxTurns) > 0)
             ? ["continue", "reconcile", "cancel"]
             : ["reconcile", "cancel"],
         turnBudget: run.turnBudget,
@@ -1878,13 +1900,18 @@ export class Orchestrator {
       task.checkpoint?.accountingKnown &&
       task.checkpoint.changedDeclaredArtifacts.length === 0;
     if (zeroProgress && (task.zeroProgressRetries ?? 0) >= 2) fail("ZERO_PROGRESS_RETRY_LIMIT");
-    const requested = options.maxTurns ?? run.maxTurns;
-    if (!Number.isSafeInteger(requested) || requested < 1 || requested > 1000)
+    const configured = options.maxTurns ?? run.maxTurns;
+    if (!Number.isSafeInteger(configured) || configured < 1 || configured > 1000)
       fail("INVALID_NATIVE_TURN_LIMIT");
-    const nativeLimit = availableGrant(run.turnBudget, requested);
+    const followOn = !!run.sessionId;
+    const requested = followOn ? Math.max(DEFAULT_SEGMENT_TURNS, configured) : configured;
+    const nextBudget = { ...run.turnBudget };
+    if (followOn && !this.teamManaged) extendFollowOnBudget(nextBudget);
+    const nativeLimit = availableGrant(nextBudget, requested);
     if (nativeLimit < 1) fail("RUN_TURN_BUDGET_EXHAUSTED");
     const baseline = this.artifactSnapshot(run, task);
     this.acquire(run);
+    run.turnBudget.limit = nextBudget.limit;
     reserveGrant(run.turnBudget, nativeLimit);
     const execution: ExecutionAccount = {
       id: randomUUID(),
@@ -1933,7 +1960,7 @@ export class Orchestrator {
       false
     );
     this.warnBudget(run, task);
-    const prompt = `Overall goal: ${run.goal}\nDesign: ${run.design}\nWorkspace: ${run.cwd}\nTask ${task.id} (contract revision ${task.revision}): ${task.title}\n${task.instructions}\nAcceptance: ${task.acceptance}\nExpected artifacts: ${task.artifacts.join(", ")}\nSupervisor feedback: ${task.feedback ?? "none"}\nExecute only this task. Do not run downstream tasks. If blocked return BLOCKED: and a concrete question. Report changed paths and checks; supervisor independently decides acceptance.`;
+    const prompt = `Overall goal: ${run.goal}\nDesign: ${run.design}\nWorkspace: ${run.cwd}\nTask ${task.id} (contract revision ${task.revision}): ${task.title}\n${task.instructions}\nCapability use: proactively invoke relevant permitted skills and plugin/MCP tools available in this worker session, apply their guidance, and report actual use or material unavailability. Respect native invocation restrictions and reuse settled evidence.\nAcceptance: ${task.acceptance}\nExpected artifacts: ${task.artifacts.join(", ")}\nFixed acceptance checks (command/args JSON; cwd is Workspace): ${JSON.stringify(task.checks)}\nUse relevant development checks as needed; Codex review independently runs these fixed checks.\nSupervisor feedback: ${task.feedback ?? "none"}\nExecute only this task. Follow its research owner and decision boundaries; reuse settled evidence, investigate assigned open questions, and ask with evidence and a recommendation at an unresolved material decision. Do not run downstream tasks. If blocked return BLOCKED: and a concrete question. Report findings, changed paths, checks/results and remaining limits; supervisor independently decides acceptance.`;
     const timer = setTimeout(
       () => {
         this.stopExecution(run, "Execution deadline exceeded", "time_budget");
@@ -1947,6 +1974,10 @@ export class Orchestrator {
     try {
       // A display label set before startup; it never changes the task contract.
       this.worker.setName?.(run.workerName);
+      this.worker.setSegment?.(
+        run.executions!.filter((e) => e.id !== execution.id && e.sessionId === run.sessionId)
+          .length + 1
+      );
       // A recovered transcript is never replayed automatically. Explicit dispatch starts a new session if runtime is gone.
       if (
         run.sessionId &&
@@ -2209,7 +2240,10 @@ export class Orchestrator {
       }
       // The settled turn cannot answer anything it left pending.
       for (const decision of task.decisions ?? [])
-        if (decision.state === "pending") decision.state = "expired";
+        if (decision.state === "pending")
+          decision.state = interruption || decision.kind === "question" ? "interrupted" : "expired";
+      for (const [id, pending] of this.pendingMessages)
+        if (pending.runId === run.id) this.pendingMessages.delete(id);
       const pending = this.pendingGuidance(run);
       if (pending.length && !interruption && !this.closed && run.status === "open") {
         this.emit(
@@ -2228,7 +2262,10 @@ export class Orchestrator {
         );
         // A queued message waits for a clean boundary; an interrupting message outranks it.
         const interruptRequested = pending.some((record) => record.mode === "interrupt");
-        const deliverable = interruptRequested || (!nativeResult.isError && !blocked);
+        const deliverable =
+          interruptRequested ||
+          (!nativeResult.isError && !blocked) ||
+          nativeResult.errorSubtype === "error_max_turns";
         if (deliverable && this.deliverGuidance(run, pending[0])) {
           // The task continues in the same native conversation; the ledger keeps no
           // intermediate result and the next boundary decides the outcome.
@@ -2287,7 +2324,8 @@ export class Orchestrator {
               ? task.changeInventory?.undeclaredChanges.length
                 ? ["inspect_changes", "include_artifacts", "review"]
                 : ["review"]
-              : Date.now() < run.deadline && availableGrant(run.turnBudget, run.maxTurns) > 0
+              : Date.now() < run.deadline &&
+                  (!!run.sessionId || availableGrant(run.turnBudget, run.maxTurns) > 0)
                 ? ["continue", "reconcile", "cancel"]
                 : ["reconcile", "cancel"],
           turnBudget: run.turnBudget,
@@ -2319,14 +2357,9 @@ export class Orchestrator {
     this.metrics.waits++;
     const snapshot = () => ({
       runId,
-      events: run.events
-        .filter((e) => e.seq > afterSeq && e.actionable)
-        .map((e) => this.brief(e, runId))
-        .sort(
-          (a, b) =>
-            Number(["permission_required", "worker_question"].includes(b.type)) -
-            Number(["permission_required", "worker_question"].includes(a.type))
-        ),
+      events: selectWaitEvents(run.events, afterSeq, (e) =>
+        this.isQuestionPending(runId, (e.data as { messageId: string }).messageId)
+      ).map((e) => this.brief(e, runId)),
       nextCursor: run.events.at(-1)?.seq ?? 0,
       status: run.status,
       timedOut: false,
@@ -2659,7 +2692,12 @@ export class Orchestrator {
       return { runId, status: run.status };
     this.clearGuidance(run, "cancelled");
     this.settle(run, undefined, "cancelled");
-    if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
+    if (run.activeTaskId) {
+      const activeTask = this.task(run, run.activeTaskId);
+      activeTask.state = "interrupted";
+      for (const decision of activeTask.decisions ?? [])
+        if (decision.state === "pending") decision.state = "interrupted";
+    }
     const startup = this.startups.get(run.id);
     if (startup) startup.valid = false;
     run.status = "cancelled";
@@ -2693,7 +2731,12 @@ export class Orchestrator {
       } catch {
         errors++;
       } finally {
-        if (run.activeTaskId) this.task(run, run.activeTaskId).state = "interrupted";
+        if (run.activeTaskId) {
+          const activeTask = this.task(run, run.activeTaskId);
+          activeTask.state = "interrupted";
+          for (const decision of activeTask.decisions ?? [])
+            if (decision.state === "pending") decision.state = "interrupted";
+        }
         this.settle(run, undefined, "connection_closed");
         run.activeTaskId = undefined;
         run.sessionOperation = undefined;

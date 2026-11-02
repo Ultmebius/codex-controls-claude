@@ -402,20 +402,23 @@ describe("explicit team scheduling", () => {
     await expect(f.dispatch("d", "exhausted")).rejects.toThrow("RUN_TURN_BUDGET_EXHAUSTED");
   });
 
-  it("continues the same child contract without resetting budget or repairs", async () => {
+  it("adds 500 rounds for each same-child continuation without resetting usage or repairs", async () => {
     const f = fixture({ maxTurns: 2, maxTotalTurns: 5 });
     const before = f.child("a");
     await f.dispatch("a");
     f.workers.get("a")!.finish(3, "error_max_turns");
     await f.dispatch("a", "continuation", { mode: "continue" });
     expect(f.child("a")).toBe(before);
-    expect(f.run("a").turnBudget.limit).toBe(5);
+    expect(f.run("a").turnBudget.limit).toBe(504);
+    expect(f.summary().turnBudget.limit).toBe(505);
     expect(f.run("a").tasks[0]).toMatchObject({ revision: 1, repairs: 0, continuations: 1 });
     f.workers.get("a")!.finish(2, "error_max_turns");
     expect(f.summary().turnBudget).toMatchObject({ used: 5, reserved: 0 });
-    await expect(f.dispatch("a", "too-many", { mode: "continue" })).rejects.toThrow(
-      "RUN_TURN_BUDGET_EXHAUSTED"
-    );
+    await f.dispatch("a", "more-work", { mode: "continue", maxTurns: 5 });
+    expect(f.summary().turnBudget).toMatchObject({ limit: 1005, used: 5, reserved: 501 });
+    expect(f.run("a").executions?.at(-1)?.effectiveLimit).toBe(500);
+    await f.dispatch("a", "more-work", { mode: "continue", maxTurns: 5 });
+    expect(f.summary().turnBudget.limit).toBe(1005);
   });
 
   it("deduplicates a concurrent startup and returns one receipt and one reservation", async () => {
@@ -432,6 +435,17 @@ describe("explicit team scheduling", () => {
     expect(await duplicate).toEqual(await first);
     expect(f.run("a").tasks[0].attempts).toBe(1);
     await expect(f.dispatch("b", "stable")).rejects.toThrow("REQUEST_ID_CONFLICT");
+  });
+
+  it("leaves the shared allowance unchanged when a retained-child dispatch is rejected", async () => {
+    const f = fixture();
+    await f.dispatch("a");
+    writeFileSync(path.join(f.cwd, "a.txt"), "42");
+    f.workers.get("a")!.finish();
+    const before = { ...f.summary().turnBudget };
+    await expect(f.dispatch("a", "unreviewed")).rejects.toThrow("TASK_NOT_DISPATCHABLE");
+    expect(f.summary().turnBudget).toEqual(before);
+    expect(f.run("a").tasks[0].attempts).toBe(1);
   });
 
   it("wakes an active team wait on a child event and includes both identities", async () => {
@@ -684,7 +698,7 @@ describe("explicit team scheduling", () => {
     f.workers.get("a")!.finish(3, "error_max_turns");
     await f.coordinator.dispatch(team.teamId, "a", "continue", { mode: "continue" });
     expect(run.deadline).toBe(team.deadline);
-    expect(run.turnBudget.limit).toBe(6);
+    expect(run.turnBudget.limit).toBe(504);
   });
 
   it("closes already-created controllers when a later child contract fails validation", () => {
@@ -735,7 +749,10 @@ describe("team child guidance routing", () => {
     f.workers.get("a")!.finish(1);
     expect(f.run("a").guidance![0].state).toBe("delivered");
     expect(f.run("a").tasks[0].state).toBe("running");
-    expect(f.summary().turnBudget.used + f.summary().turnBudget.reserved).toBeLessThanOrEqual(1000);
+    expect(f.summary().turnBudget.limit).toBe(1500);
+    expect(f.summary().turnBudget.used + f.summary().turnBudget.reserved).toBeLessThanOrEqual(1500);
+    expect(f.run("a").executions?.at(-1)?.effectiveLimit).toBe(500);
+    expect(f.run("b").turnBudget.reserved).toBe(499);
     f.workers.get("a")!.finish(2);
     f.workers.get("b")!.finish(3);
     expect(f.summary().turnBudget.used).toBe(6);

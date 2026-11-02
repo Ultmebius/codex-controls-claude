@@ -25,6 +25,29 @@ readline.createInterface({input:socket}).on('line',line=>{
 socket.on('close',()=>process.exit(0));socket.on('error',()=>process.exit(1));
 `;
 describe("Windows Terminal SDK transport", () => {
+  it("forwards resumed-conversation identity and segment number to the dashboard host", async () => {
+    const process = new TerminalProcess(
+      { command: "fixture", args: [], env: {}, signal: new AbortController().signal },
+      {
+        continuity: { segment: 3, resumed: true },
+        launch(info, window) {
+          const source = script.replace("m.env.ANTHROPIC_MODEL", "JSON.stringify(m.continuity)");
+          const helper = spawn(globalThis.process.execPath, ["-e", source, info.pipe, info.token], {
+            windowsHide: true,
+            stdio: "ignore",
+          });
+          helpers.push(helper);
+          window({ handle: "0", pid: 0, minimized: false });
+        },
+      }
+    );
+    const output: Buffer[] = [];
+    process.stdout.on("data", (chunk: Buffer) => output.push(chunk));
+    const done = once(process, "exit");
+    process.stdin.end();
+    await done;
+    expect(JSON.parse(Buffer.concat(output).toString())).toEqual({ segment: 3, resumed: true });
+  });
   it("starts the worker while the window still paints, then records the single post-frame minimization", async () => {
     const abort = new AbortController();
     const process = new TerminalProcess(

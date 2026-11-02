@@ -2,6 +2,8 @@
 
 After one meaningful dispatch, keep an event wait pending. Only questions, residual native permission decisions, failures, budget/context warnings and review candidates need Codex reasoning. Ordinary work stays with Claude. Never accompany an empty wait with status, logs, filesystem discovery, replanning or repeated commentary.
 
+Name the stage's research owner before dispatch. While the worker owns an investigation, Codex does not search the same code/docs questions or reproduce the same fault in parallel. Other supervisor work must have a named distinct question/output and not depend on that pending finding; if none exists, wait. A worker's question should carry findings and a recommendation so Codex can decide from the return; fetch only the specific missing evidence needed for that decision. After completion, review the real changes and fixed checks rather than restarting discovery. See [research handoff](research-handoff.md) for brief and transfer rules.
+
 The server default and maximum are both 20 minutes (1200000ms, `CCC_WAIT_MS` may lower the default). One wait is one pending event promise: a completion, question, residual permission, failure, budget warning or cancellation wakes it at once; only an idle run reaches the timeout.
 
 **Never pass `timeoutMs` unless an actual host tool-timeout failure already happened.** Omit it for `orchestrator_wait` and `orchestrator_team(action="wait")` so the 20-minute default applies. Mandatory omissions, none of which shorten the wait:

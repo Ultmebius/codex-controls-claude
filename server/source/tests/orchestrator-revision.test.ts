@@ -26,6 +26,7 @@ class FixtureWorker implements Worker {
   count = 0;
   starts = 0;
   grants: number[] = [];
+  prompts: string[] = [];
   resumeIds: (string | undefined)[] = [];
   subscribe(fn: (event: WorkerEvent) => void) {
     this.listener = fn;
@@ -35,17 +36,19 @@ class FixtureWorker implements Worker {
   }
   async start(
     _cwd: string,
-    _prompt: string,
+    prompt: string,
     turns: number,
     _signal?: AbortSignal,
     resumeId?: string
   ) {
     this.starts++;
+    this.prompts.push(prompt);
     this.grants.push(turns);
     this.resumeIds.push(resumeId);
     return "session";
   }
-  async reply(_session: string, _prompt: string, turns?: number) {
+  async reply(_session: string, prompt: string, turns?: number) {
+    this.prompts.push(prompt);
     if (turns) this.grants.push(turns);
     return "session";
   }
@@ -306,6 +309,42 @@ describe("budget continuation and reconciliation", () => {
     expect(f.run.maxTurns).toBe(500);
     expect(budget(f.run)).toMatchObject({ limit: 1000, used: 0, reserved: 0 });
   });
+  it("delivers exact fixed checks and ownership briefs on dispatch and continuation", async () => {
+    const f = fixture();
+    const checks = [
+      ...f.spec.checks,
+      { command: "tool with spaces", args: ["a b", 'literal "quote"', "$()", "line\nbreak"] },
+    ];
+    f.controller.plan({
+      action: "update",
+      runId: f.run.id,
+      tasks: [
+        { ...f.spec, instructions: "Worker owns import diagnosis; ask at API migration.", checks },
+      ],
+    });
+    await f.controller.dispatch(f.run.id, "a", "first");
+    f.worker.finish("error_max_turns", 2);
+    await f.controller.dispatch(f.run.id, "a", "continued", undefined, {
+      mode: "continue",
+      feedback: "Existing task continues. New finding: import fixture reproduces the failure.",
+    });
+    expect(f.worker.prompts).toHaveLength(2);
+    for (const prompt of f.worker.prompts) {
+      const line = prompt.split("\n").find((line) => line.startsWith("Fixed acceptance checks"));
+      expect(line).toBeDefined();
+      expect(JSON.parse(line!.slice(line!.indexOf(": ") + 2))).toEqual(checks);
+      expect(prompt).toContain("cwd is Workspace");
+      expect(prompt).toContain("Worker owns import diagnosis; ask at API migration.");
+      expect(prompt).toContain("Codex review independently runs these fixed checks");
+      expect(prompt).toContain("Capability use: proactively invoke relevant permitted skills");
+      expect(prompt).toContain("available in this worker session");
+      expect(prompt).toContain("report actual use or material unavailability");
+      expect(prompt).toContain("Respect native invocation restrictions and reuse settled evidence");
+    }
+    expect(f.worker.prompts[1]).toContain("New finding: import fixture reproduces the failure.");
+    expect(f.run.tasks[0].checks).toEqual(checks);
+    expect(f.run.tasks[0].revision).toBe(2);
+  });
   it("continues the identical contract without spending repairs or duplicating receipts", async () => {
     const f = fixture({ maxTurns: 2 });
     await f.controller.dispatch(f.run.id, "a", "first");
@@ -344,12 +383,13 @@ describe("budget continuation and reconciliation", () => {
       "REPAIR_LIMIT"
     );
   });
-  it("bounds the final native grant and cannot evade total budget through replacement", async () => {
+  it("adds credit only on explicit follow-on dispatch while replacement preserves prior charges", async () => {
     const f = fixture({ maxTurns: 2, maxTotalTurns: 5 });
     await f.controller.dispatch(f.run.id, "a", "first");
     f.worker.finish("error_max_turns", 3);
     await continueTask(f, "second");
-    expect(f.worker.grants.at(-1)).toBe(1);
+    expect(f.worker.grants.at(-1)).toBe(500);
+    expect(budget(f.run).limit).toBe(505);
     f.worker.finish("error_max_turns", 2);
     f.controller.plan({
       action: "update",
@@ -363,9 +403,9 @@ describe("budget continuation and reconciliation", () => {
       replacementId: "replacement",
     });
     expect(budget(f.run).used).toBe(5);
-    await expect(f.controller.dispatch(f.run.id, "replacement", "evade")).rejects.toThrow(
-      "RUN_TURN_BUDGET"
-    );
+    expect(budget(f.run).limit).toBe(505);
+    await f.controller.dispatch(f.run.id, "replacement", "follow-on");
+    expect(budget(f.run)).toMatchObject({ limit: 1005, used: 5, reserved: 501 });
   });
   it("does not reset an expired execution deadline on reopen and permits verification only", async () => {
     const f = fixture();
@@ -502,7 +542,7 @@ describe("explicit expired-run resume renewal", () => {
     await continueTask(f, "cold-resume");
     expect(f.worker.resumeIds.at(-1)).toBe("session");
     expect(f.run.sessionId).toBe("session");
-    expect(budget(f.run).limit).toBe(1000);
+    expect(budget(f.run).limit).toBe(1500);
     expect(f.run.tasks[0].revision).toBe(1);
   });
   it("cannot shorten a live window and keeps an ordinary resume at the current deadline", async () => {

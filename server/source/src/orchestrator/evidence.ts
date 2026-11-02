@@ -14,13 +14,15 @@ export const EVIDENCE_SECTIONS = [
   "changes",
   "decisions",
   "guidance",
+  "progress",
 ] as const;
 export type EvidenceSection = (typeof EVIDENCE_SECTIONS)[number];
 export function selectTaskEvidence(
   run: Run,
   task: Task,
   sections: EvidenceSection[],
-  capabilities?: unknown
+  capabilities?: unknown,
+  progress?: unknown
 ) {
   const selected: Record<string, unknown> = {
     id: task.id,
@@ -31,6 +33,9 @@ export function selectTaskEvidence(
   const result = task.result;
   for (const section of new Set(sections)) {
     switch (section) {
+      case "progress":
+        selected.progress = progress ?? { source: "unavailable" };
+        break;
       case "result":
         selected.result = result
           ? {
@@ -97,7 +102,7 @@ export function selectTaskEvidence(
               ? "expired"
               : d.state,
           nextActions:
-            d.state === "pending" && d.expiresAt && Date.parse(d.expiresAt) > Date.now()
+            d.state === "pending" && (!d.expiresAt || Date.parse(d.expiresAt) > Date.now())
               ? [d.kind === "permission" ? "respond_permission" : "respond_message"]
               : ["continue_with_feedback", "reconcile"],
           automaticReplay: false,

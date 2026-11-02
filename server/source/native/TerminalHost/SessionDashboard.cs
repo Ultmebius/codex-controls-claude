@@ -177,6 +177,8 @@ internal sealed class SessionDashboard : IDisposable
         public string[] Secrets = [];
         public List<Entry> Log = [];
         public int Tools;
+        public int Segment = 1;
+        public bool Resumed, PromptSeen;
         // Live display of the current query's streamed text blocks. It is reset at a query boundary
         // and never contributes to usage counting, which stays on UsageMessages alone.
         public Dictionary<string, StreamMessage> StreamMessages = [];
@@ -220,6 +222,7 @@ internal sealed class SessionDashboard : IDisposable
         public bool Ended;
         public DateTime Started = DateTime.Now;
         public DateTime Stopped = DateTime.MinValue;
+        public TimeSpan ElapsedBefore;
         public int Scroll;
         // The content the user is actually reading, anchored to an ENTRY rather than a line index:
         // a new entry appended below, a streamed block growing in place and the bounded-log drop all
@@ -397,11 +400,19 @@ internal sealed class SessionDashboard : IDisposable
         lock (gate)
         {
             if (Find(id) is not { } session) return;
+            if (!session.Ended) session.Stopped = DateTime.Now;
             session.Ended = true;
             session.ExitCode = code;
-            session.Stopped = DateTime.Now;
             session.Status = code == 0 ? "done" : "failed";
             Append(session, "exit", code == 0 ? "session finished" : "session exited with code " + code);
+        }
+    }
+
+    internal void BackdateForTest(string id, TimeSpan shift)
+    {
+        lock (gate)
+        {
+            if (Find(id) is { } session) session.Started -= shift;
         }
     }
 
@@ -803,6 +814,16 @@ internal sealed class SessionDashboard : IDisposable
 
     private static readonly Regex Whitespace = new(@"\s+", RegexOptions.Compiled);
 
+    public void Continuation(string id, int segment, bool resumed)
+    {
+        lock (gate)
+        {
+            if (Find(id) is not { } session) return;
+            session.Segment = Math.Max(1, segment);
+            session.Resumed = resumed;
+        }
+    }
+
     // Full parse happens here, synchronously, so the caller's JsonDocument can be disposed.
     public void Observe(string id, JsonElement message)
     {
@@ -838,7 +859,9 @@ internal sealed class SessionDashboard : IDisposable
         if (message.TryGetProperty("mcp_servers", out var servers) && servers.ValueKind == JsonValueKind.Array)
             session.Mcp = servers.EnumerateArray().Count(server => Text(server, "status") == "connected");
         Metadata(session, message, "system/init");
-        Append(session, "system", "session initialised");
+        Append(session, "system", session.Resumed
+            ? "existing conversation resumed · segment " + session.Segment.ToString(Culture)
+            : "session initialised");
     }
 
     // SDK-provided effort is recorded separately from the configured effort so both provenance chains stay visible.
@@ -1675,6 +1698,14 @@ internal sealed class SessionDashboard : IDisposable
                 if (title.Length > 0) { session.Name = title; session.TitleAssigned = true; }
             }
             session.Status = "working";
+            if (session.PromptSeen) session.Segment++;
+            session.PromptSeen = true;
+            if (session.Ended)
+            {
+                if (session.Stopped > session.Started)
+                    session.ElapsedBefore += session.Stopped - session.Started;
+                session.Started = DateTime.Now;
+            }
             session.NativeError = false;
             session.Ended = false; session.Stopped = DateTime.MinValue;
             BeginTurn(session);
@@ -2025,8 +2056,8 @@ internal sealed class SessionDashboard : IDisposable
         // values can never be added a second time.
         var identity = ResultIdentity(message);
         if (identity.Length == 0 || session.ResultIds.Add(identity)) ApplyResultUsage(session, message);
+        if (!session.Ended) session.Stopped = DateTime.Now;
         session.Ended = true;
-        session.Stopped = DateTime.Now;
         session.Status = failed ? "failed" : "review";
         var turns = Text(message, "num_turns");
         Append(session, failed ? "error" : "result", (failed ? Text(message, "subtype") : "awaiting independent review") + (turns.Length > 0 ? " · turns " + turns : ""));
@@ -2928,8 +2959,10 @@ internal sealed class SessionDashboard : IDisposable
         }
         var right = StatusRow(session, Math.Min(width, Math.Max(10, Math.Min(42, width / 2))), now);
         var nameWidth = width - SegWidth(right);
+        var continuity = session.Resumed ? "RESUMED #" + session.Segment.ToString(Culture) + " · "
+            : session.Segment > 1 ? "CONTINUED #" + session.Segment.ToString(Culture) + " · " : "";
         var heading = nameWidth >= 4
-            ? Pad([new Seg(Fit(SessionName(session), nameWidth - 2), Tone.Title)], nameWidth)
+            ? Pad([new Seg(Fit(continuity + SessionName(session), nameWidth - 2), Tone.Title)], nameWidth)
             : new List<Seg>();
         heading.AddRange(right); // right edge is the metadata region's right edge
         lines.Add(heading);
@@ -3729,7 +3762,11 @@ internal sealed class SessionDashboard : IDisposable
         return "unknown";
     }
 
-    private static TimeSpan Elapsed(Session session, DateTime now) => (session.Ended && session.Stopped > session.Started ? session.Stopped : now) - session.Started;
+    private static TimeSpan Elapsed(Session session, DateTime now)
+    {
+        var end = session.Ended && session.Stopped != DateTime.MinValue ? session.Stopped : now;
+        return session.ElapsedBefore + (end > session.Started ? end - session.Started : TimeSpan.Zero);
+    }
 
     private static string StatusText(Session session)
         => session.Status
@@ -5816,7 +5853,24 @@ internal sealed class SessionDashboard : IDisposable
         Require(SessionDashboard.Title("Task Keep (my notes) intact") == "Keep (my notes) intact");
         Require(SessionDashboard.Title("Plain heading") == "Plain heading");
 
-        // A later task stage must not rename the conversation or imply a second one.
+        // Segment labels survive a cold-resume pane promotion.
+        using (var continuity = new SessionDashboard())
+        {
+            continuity.Add("starting", "Report", "high", "config", []);
+            continuity.Continuation("starting", 3, true);
+            Require(continuity.Promote("starting", "saved-session", "high", "config", []));
+            using (var continuityInit = JsonDocument.Parse("{\"type\":\"system\",\"subtype\":\"init\",\"model\":\"demo\"}"))
+                continuity.Observe("saved-session", continuityInit.RootElement);
+            using (var continuityPrompt = JsonDocument.Parse("{\"type\":\"user\",\"message\":{\"content\":\"Finish report\"}}"))
+                continuity.Observe("saved-session", continuityPrompt.RootElement);
+            var screen = string.Join("\n", continuity.Frame(150, 24));
+            Require(screen.Contains("RESUMED #3") && screen.Contains("1 conversation"));
+            Require(screen.Contains("TOOLS 0"));
+            Require(continuity.LogText("saved-session").Contains("existing conversation resumed"));
+        }
+
+        // A later task stage must not rename the conversation or imply a second one, and TIME/TOOLS
+        // accumulate execution across all task stages in this terminal.
         using (var stages = new SessionDashboard())
         {
             stages.Add("s", "Conversation 01", "", "", []);
@@ -5826,11 +5880,25 @@ internal sealed class SessionDashboard : IDisposable
             var titleRow = Array.FindIndex(named, row => row.Contains("First stage"));
             Require(titleRow >= 0 && !named[titleRow].Contains("revision"));
             Require(stages.LogText("s").Contains("contract revision 1"));
+            stages.Observe("s", JsonDocument.Parse("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"tu-stage-1\",\"name\":\"Bash\",\"input\":{\"command\":\"echo 1\"}}]}}").RootElement);
+            stages.BackdateForTest("s", new TimeSpan(0, 12, 0));
+            stages.Observe("s", JsonDocument.Parse("{\"type\":\"result\",\"is_error\":false,\"num_turns\":2,\"result\":\"stage 1 done\"}").RootElement);
+            Require(stages.Frame(100, 24).Any(row => row.Contains("TOOLS 1")));
+            Require(stages.Frame(100, 24).Any(row => row.Contains("TIME  00:12:00")));
             stages.Observe("s", JsonDocument.Parse("{\"type\":\"user\",\"message\":{\"content\":\"Task t2 (contract revision 2): Second stage\"}}").RootElement);
             var after = stages.Frame(100, 24);
             Require(after.Any(row => row.Contains("First stage")));      // name unchanged
             Require(stages.LogText("s").Contains("Second stage"));       // later task text still logged
             Require(after.Any(row => row.Contains("1 conversation")));   // still one conversation
+            Require(after.Any(row => row.Contains("CONTINUED #2")));
+            Require(after.Any(row => row.Contains("TOOLS 1")));
+            Require(after.Any(row => row.Contains("TIME  00:12:00")));
+            stages.Observe("s", JsonDocument.Parse("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"tu-stage-2\",\"name\":\"Bash\",\"input\":{\"command\":\"echo 2\"}}]}}").RootElement);
+            stages.BackdateForTest("s", new TimeSpan(0, 3, 19));
+            stages.Observe("s", JsonDocument.Parse("{\"type\":\"result\",\"is_error\":false,\"num_turns\":3,\"result\":\"stage 2 done\"}").RootElement);
+            var finalStage = stages.Frame(100, 24);
+            Require(finalStage.Any(row => row.Contains("TOOLS 2")));
+            Require(finalStage.Any(row => row.Contains("TIME  00:15:19")));
         }
 
         // The first task heading stores the WHOLE title. An early Fit would lose text permanently, so a

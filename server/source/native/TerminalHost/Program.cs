@@ -216,6 +216,12 @@ internal static class Program
                         secrets = start.Environment.Where(e => Regex.IsMatch(e.Key, "TOKEN|KEY|PASSWORD|SECRET", RegexOptions.IgnoreCase) && e.Value?.Length > 0).Select(e => e.Value!).OrderByDescending(value => value.Length).ToArray();
                         effort = Value(message, "effort"); effortSource = Value(message, "effortSource");
                         view.Add(displayId, "Starting Claude Code", effort, effortSource, secrets);
+                        if (message.TryGetProperty("continuity", out var continuity)
+                            && continuity.ValueKind == JsonValueKind.Object
+                            && continuity.TryGetProperty("segment", out var segment)
+                            && segment.TryGetInt32(out var segmentNumber) && segmentNumber > 0)
+                            view.Continuation(displayId, segmentNumber,
+                                continuity.TryGetProperty("resumed", out var resumed) && resumed.ValueKind == JsonValueKind.True);
                         // The launcher recorded the system last-input tick from before this launch.
                         // Comparing it at first-frame time separates a real user restore from Windows
                         // Terminal's own startup activation. Missing/invalid input means "not known",

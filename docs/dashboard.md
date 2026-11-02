@@ -6,6 +6,8 @@ The [README](../README.md#worker-dashboard) shows the public default logo in a d
 
 The header displays the reported runtime model, permission mode, effort, tool count, elapsed time, activity, cumulative tokens and conversation information. Effort can be configured until authoritative native metadata is reported. Conversation selectors appear when the terminal actually has multiple native conversation IDs.
 
+`RESUMED #N` identifies a restored conversation; `CONTINUED #N` identifies a later task segment in the same terminal. Time and tool counts accumulate across stages retained in that terminal. A cold resume starts new terminal counters; unavailable historical time and tool totals remain unknown.
+
 The circular pixel ring stays inside the 144×96 canvas: a 24×16 logical grid with solid 6×6 pixels, a 96-pixel outer diameter and an 18-pixel ring thickness. Codex blue (`#3B82F6`), Claude red (`#D97757`) and their intermediate shades travel clockwise through 60 cached phases at about 30 fps. Animation pauses while minimized. SIXEL-capable terminals render the image; the static half-block fallback preserves its circular silhouette and palette without SIXEL. Narrow layouts drop the logo before essential model/permission metadata. CJK display widths are accounted for.
 
 Assistant text grows an OUTPUT entry while streaming and reconciles with the completed message. Terminal Markdown supports headings, lists, block quotes, bold, inline code, fenced code and pipe tables. Tables align and wrap cells, with a literal source fallback when needed. TASK and TOOL text are stored whole and wrapped across the available body width.

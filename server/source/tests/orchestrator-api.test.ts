@@ -62,6 +62,31 @@ async function fixture() {
   return { cwd, api, client, call, run };
 }
 describe("orchestrator MCP revision contract", () => {
+  it("returns current public progress only when explicitly requested for the active task", async () => {
+    const f = await fixture();
+    f.run.sessionId = "retained-session";
+    f.run.activeTaskId = "a";
+    const progress = vi.spyOn(f.api.controller.worker, "progress").mockReturnValue({
+      source: "current_native_segment",
+      latestOutput: { at: "2026-10-23T05:09:28Z", text: "Evidence is complete; writing report." },
+      latestTools: undefined,
+    });
+    const result = await f.call("orchestrator_status", {
+      runId: f.run.id,
+      taskId: "a",
+      sections: ["progress", "guidance"],
+    });
+    expect(result.isError).toBe(false);
+    expect(result.value.task.progress.latestOutput.text).toContain("writing report");
+    expect(progress).toHaveBeenCalledWith("retained-session");
+    f.run.activeTaskId = undefined;
+    const idle = await f.call("orchestrator_status", {
+      runId: f.run.id,
+      taskId: "a",
+      sections: ["progress"],
+    });
+    expect(idle.value.task.progress).toEqual({ source: "unavailable" });
+  });
   it("rechecks supervisor activity after awaiting retained-session closure", async () => {
     const f = await fixture();
     f.run.tasks[0].checks = [

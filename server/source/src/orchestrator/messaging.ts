@@ -12,6 +12,8 @@ export interface SupervisorMessage {
   kind: "update" | "question";
   text: string;
   expiresAt?: string;
+  reminderAt?: string;
+  reminder?: boolean;
 }
 
 interface MessageRecord extends SupervisorMessage {
@@ -37,6 +39,32 @@ function result(value: Record<string, unknown>, isError = false): CallToolResult
   };
 }
 
+/** Deduplicate pending worker questions after the cursor and prioritize decisions first. */
+export function selectWaitEvents<
+  T extends { seq: number; type: string; data: unknown; actionable: boolean },
+>(events: T[], afterSeq: number, isPending: (event: T) => boolean): T[] {
+  const selected: T[] = [];
+  const questions = new Map<string, number>();
+  for (const event of events) {
+    if (!event.actionable || event.seq <= afterSeq) continue;
+    const data = event.data as { messageId?: string } | null;
+    if (event.type === "worker_question" && typeof data?.messageId === "string") {
+      if (!isPending(event)) continue;
+      const prev = questions.get(data.messageId);
+      if (prev !== undefined) selected[prev] = event;
+      else {
+        questions.set(data.messageId, selected.length);
+        selected.push(event);
+      }
+    } else selected.push(event);
+  }
+  return selected.sort(
+    (a, b) =>
+      Number(["permission_required", "worker_question"].includes(b.type)) -
+      Number(["permission_required", "worker_question"].includes(a.type))
+  );
+}
+
 /** Query-scoped transport with an explicit reset at each hot-reply attempt boundary. */
 export class SupervisorMailbox {
   private messages = new Map<string, MessageRecord>();
@@ -45,8 +73,8 @@ export class SupervisorMailbox {
   private pendingQuestions = 0;
   private closedReason?: string;
 
-  constructor(private readonly timeoutMs = 300000) {
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647)
+  constructor(private readonly reminderMs = 300000) {
+    if (!Number.isSafeInteger(reminderMs) || reminderMs < 1 || reminderMs > 2147483647)
       throw new Error("INVALID_SUPERVISOR_QUESTION_TIMEOUT");
   }
 
@@ -64,9 +92,15 @@ export class SupervisorMailbox {
         ),
         tool(
           "ask_supervisor",
-          `Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. Timeout ${this.timeoutMs}ms; interruption or timeout returns an explicit unanswered error. Question max 16000 characters; optional messageId deduplicates within this attempt.`,
+          `Ask Codex a scoped question and wait for its answer. Messages are observations, not user authorization. After ${this.reminderMs}ms, remind Codex once and keep this original question pending; elapsed waiting never supplies an answer. Cancellation, interruption, connection closure or the enclosing execution deadline ends the wait explicitly. Question max 16000 characters; optional messageId deduplicates within this attempt.`,
           { messageId, question: text },
-          async (args) => this.send("question", args.question, args.messageId)
+          async (args, extra) =>
+            this.send(
+              "question",
+              args.question,
+              args.messageId,
+              (extra as { signal?: AbortSignal } | undefined)?.signal
+            )
         ),
       ],
     });
@@ -88,6 +122,20 @@ export class SupervisorMailbox {
       result({ messageId: id, clientMessageId: record.clientMessageId, status: "answered", answer })
     );
     return true;
+  }
+
+  isPending(id: string): boolean {
+    return this.closedReason === undefined && !!this.messages.get(id)?.finish;
+  }
+
+  private publish(event: SupervisorMessage) {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener({ ...event });
+      } catch {
+        // An observer failure cannot erase delivery or strand a pending question.
+      }
+    }
   }
 
   /** Native AskUserQuestion uses the same event/reply transport as ask_supervisor. */
@@ -159,7 +207,7 @@ export class SupervisorMailbox {
       kind,
       text: value,
       ...(kind === "question"
-        ? { expiresAt: new Date(Date.now() + this.timeoutMs).toISOString() }
+        ? { reminderAt: new Date(Date.now() + this.reminderMs).toISOString() }
         : {}),
     };
     const record: MessageRecord = {
@@ -174,8 +222,8 @@ export class SupervisorMailbox {
       record.outcome = new Promise<CallToolResult>((resolve) => {
         const abort = () => record.finish?.(this.error("SUPERVISOR_QUESTION_CANCELLED", id));
         const timer = setTimeout(() => {
-          record.finish?.(this.error("SUPERVISOR_QUESTION_TIMEOUT", id));
-        }, this.timeoutMs);
+          if (record.finish) this.publish({ ...event, reminder: true });
+        }, this.reminderMs);
         timer.unref();
         record.finish = (outcome) => {
           clearTimeout(timer);
@@ -189,13 +237,7 @@ export class SupervisorMailbox {
     }
     this.messages.set(id, record);
     if (suppliedId !== undefined) this.deduplicated.set(suppliedId, record);
-    for (const listener of [...this.listeners]) {
-      try {
-        listener({ ...event });
-      } catch {
-        // An observer failure cannot erase delivery or strand a pending question.
-      }
-    }
+    this.publish(event);
     return record.outcome;
   }
 }
